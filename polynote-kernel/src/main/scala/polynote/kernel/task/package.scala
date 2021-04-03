@@ -40,8 +40,7 @@ package object task {
         id: String,
         label: String = "",
         detail: String = "",
-        errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause),
-        onUnqueue: UIO[Unit] = ZIO.unit
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause)
       )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]]
 
       /**
@@ -137,8 +136,7 @@ package object task {
       override def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](
         id: String, label: String = "",
         detail: String = "",
-        errorWith: Cause[Throwable] => TaskInfo => TaskInfo,
-        onUnqueue: UIO[Unit] = ZIO.unit
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo
       )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] = queueing.withPermit {
         for {
           statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Queued))
@@ -157,7 +155,7 @@ package object task {
               .tap(_.fold(err => fail(Cause.fail(err)), _ => complete)) <* updater.join
           }
           _             <- readyQueue.offer(QueuedTask(id, myTurn, imDone))
-          wait           = myTurn.await.onInterrupt(imDone.interrupt *> onUnqueue)
+          wait           = myTurn.await.onInterrupt(imDone.interrupt)
           runTask        = (wait *> statusRef.update(_.running) *> taskBody)
             .onTermination(fail)
             .ensuring(imDone.succeed(()))
@@ -276,10 +274,9 @@ package object task {
       id: String,
       label: String = "",
       detail: String = "",
-      errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause),
-      onUnqueue: UIO[Unit] = ZIO.unit
+      errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause)
     )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] =
-      access.flatMap(_.queue[R, A, R1](id, label, detail, errorWith, onUnqueue)(task))
+      access.flatMap(_.queue[R, A, R1](id, label, detail, errorWith)(task))
 
     def run[R <: TaskManager, A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[CurrentTask with R, A]): RIO[R, A] =
       access.flatMap(_.run[R, A](id, label, detail, errorWith)(task))

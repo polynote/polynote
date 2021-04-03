@@ -37,9 +37,11 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
       subscriber.checkPermission(Permission.ModifyNotebook) *> subscriber.update(update)
 
     case RunCell(ids) =>
-      if (ids.isEmpty) ZIO.unit else {
-        ids.map(id => subscriber.checkPermission(Permission.ExecuteCell(_, id))).reduce(_ *> _) *>
-          ids.map(id => subscriber.publisher.queueCell(id)).sequence.flatMap(_.sequence).unit
+      ZIO.unless(ids.isEmpty) {
+        ZIO.foreachPar_(ids)(id => subscriber.checkPermission(Permission.ExecuteCell(_, id))) *>
+          ZIO.foreach(ids.toList)(id => subscriber.publisher.queueCell(id)).flatMap {
+            tasks => ZIO.collectAll_(tasks).forkDaemon
+          }
       }
 
     case req@CompletionsAt(id, pos, _) => for {

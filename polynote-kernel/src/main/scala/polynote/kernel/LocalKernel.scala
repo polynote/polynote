@@ -38,7 +38,7 @@ class LocalKernel private[kernel] (
     publishStatus =>
       val notifyCancelled = publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie
       val notifyErrored   = publishStatus.publish1(CellStatusUpdate(id, ErrorStatus)).orDie
-      val queueTask: RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed, onUnqueue = notifyCancelled) {
+      val queueTask: RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
         currentTime.flatMap {
           startTime =>
             def publishEndTime: RIO[PublishResult with Clock, Unit] =
@@ -81,6 +81,11 @@ class LocalKernel private[kernel] (
             }
         }
       }
+
+      for {
+        inner <- queueTask
+        _     <- publishStatus.publish1(CellStatusUpdate(id, Queued))
+      } yield inner.onInterrupt(notifyCancelled)
 
       PublishStatus(CellStatusUpdate(id, Queued)) *>
         queueTask.map(_.onInterrupt(_ => notifyCancelled))
