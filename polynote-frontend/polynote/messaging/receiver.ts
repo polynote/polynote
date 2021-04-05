@@ -338,7 +338,6 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     .when(messages.DeleteCell, (g, l, id: number) => {
                         const idx = s.cellOrder.indexOf(id)
                         if (idx > -1) {
-                            // "soft" delete cell in client so it can be undone
                             return {
                                 cells: {
                                     [id]: {
