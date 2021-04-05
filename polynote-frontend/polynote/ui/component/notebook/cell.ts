@@ -593,9 +593,11 @@ abstract class Cell extends Disposable {
             })
             .when("InsertAbove", () => {
                 this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
+                return ["stopPropagation", "preventDefault"]
             })
             .when("InsertBelow", () => {
                 this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
+                return ["stopPropagation", "preventDefault"]
             })
             .when("Delete", () => {
                 this.notebookState.deleteCell()
@@ -1342,24 +1344,31 @@ export class CodeCell extends Cell {
                 }))
                 .when("SelectPrevious", ifNoSuggestion(() => {
                     this.notebookState.selectCell(this.id, {relative: "above", editing: true})
+                    return ["stopPropagation", "preventDefault"]
                 }))
                 .when("SelectNext", ifNoSuggestion(() => {
                     this.notebookState.selectCell(this.id, {relative: "below", editing: true})
+                    return ["stopPropagation", "preventDefault"]
                 }))
                 .when("InsertAbove", ifNoSuggestion(() => {
                     this.notebookState.insertCell("above").then(id => this.notebookState.selectCell(id))
+                    return ["stopPropagation", "preventDefault"]
                 }))
                 .when("InsertBelow", ifNoSuggestion(() => {
                     this.notebookState.insertCell("below").then(id => this.notebookState.selectCell(id))
+                    return ["stopPropagation", "preventDefault"]
                 }))
                 .when("Delete", ifNoSuggestion(() => {
                     this.notebookState.deleteCell()
+                    return ["stopPropagation", "preventDefault"]
                 }))
                 .when("RunAll", ifNoSuggestion(() => {
                     this.dispatcher.runCells([])
+                    return ["stopPropagation", "preventDefault"]
                 }))
                 .when("RunToCursor", ifNoSuggestion(() => {
                     this.dispatcher.runToActiveCell()
+                    return ["stopPropagation", "preventDefault"]
                 }))
                 .otherwise(() => super.keyAction(key, pos, range, selection)) ?? undefined
         }
