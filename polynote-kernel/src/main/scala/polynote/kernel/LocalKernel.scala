@@ -86,9 +86,6 @@ class LocalKernel private[kernel] (
         inner <- queueTask
         _     <- publishStatus.publish1(CellStatusUpdate(id, Queued))
       } yield inner.onInterrupt(notifyCancelled)
-
-      PublishStatus(CellStatusUpdate(id, Queued)) *>
-        queueTask.map(_.onInterrupt(_ => notifyCancelled))
   }
 
   private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {
