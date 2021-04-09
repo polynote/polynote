@@ -1,4 +1,4 @@
-import {PlotDefinition, PlotSelector} from "./plot_selector";
+import {canPlot, PlotDefinition, PlotSelector} from "./plot_selector";
 import {DataType, StructType} from "../../data/data_type";
 import {div, span, TagElement} from "../tags";
 import {TabNav} from "../layout/tab_nav";
@@ -132,7 +132,7 @@ export class VizSelector extends Disposable {
 
         reprs.forEach(repr => match(repr)
             .whenInstance(StreamingDataRepr, streamRepr => {
-                if (streamRepr.dataType instanceof StructType) {
+                if (streamRepr.dataType instanceof StructType && canPlot(streamRepr.dataType)) {
                     this.plotSelector = new PlotSelector(value, streamRepr.dataType, this.viz.type === 'plot' ? this.viz.plotDefinition : undefined);
                     opts[PlotTitle] = this.plotSelector.el.listener(
                         'TabDisplayed',

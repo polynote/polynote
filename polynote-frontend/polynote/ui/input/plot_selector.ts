@@ -148,6 +148,17 @@ export const PlotDefinition = {
     },
 }
 
+/**
+ * Check to see whether a Plot is supported for this Repr.
+ *
+ * Right now this is using the heuristic that we can't plot anything that doesn't have numeric measures, but perhaps
+ * there's better criteria?
+ */
+export function canPlot(schema: StructType): boolean {
+    const measureFields    = deepMeasureFields(schema.fields);
+    const numericMeasures  = measureFields.filter(field => field.dataType.isNumeric);
+    return numericMeasures.length > 0
+}
 
 /**
  * Validate the given plot definition, throwing a PlotValidationErrors error if it is not valid.
