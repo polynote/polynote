@@ -15,7 +15,8 @@ export function displayContent(contentType: string, content: string | DocumentFr
         if (content instanceof DocumentFragment) {
             node.appendChild(content);
         } else {
-            node.innerHTML = content;
+            const frame = buildContainerFrame(content)
+            node.appendChild(frame)
         }
         result = Promise.resolve(node);
     } else if (mimeType === "text/plain") {
@@ -298,4 +299,48 @@ export function displaySchema(structType: StructType): HTMLElement {
             [span(['object-summary', 'schema-summary'], [span(['summary-content', 'object-field-summary'], [truncate(structType.fields.map(f => f.name).join(", "), 64)])])],
             [tag("ul", ['object-fields'], {}, structType.fields.map(displayField))]).attr('open', 'open')
     ]);
+}
+
+/**
+ * Build an iframe to hold HTML output. Not secured.
+ *
+ * @param content HTML string to place into the iframe.
+ */
+function buildContainerFrame(content: string): HTMLIFrameElement {
+    const doc = document.implementation.createHTMLDocument("Polynote output container");
+    const head = doc.documentElement.appendChild(doc.createElement('head'));
+    [...document.head.getElementsByTagName('link')].forEach((stylesheet: HTMLLinkElement) => {
+        const link = doc.importNode(stylesheet, true);
+        link.href = new URL(link.href, document.location.href).href;
+        head.appendChild(link);
+    });
+    const style = head.appendChild(doc.createElement('style'));
+    style.setAttribute('type', 'text/css');
+    style.innerText = `
+        html, body { margin: 0; padding: 0 }
+    `;
+    const body = doc.documentElement.appendChild(doc.createElement('body'));
+    const container = body.appendChild(doc.createElement('div'));
+    container.classList.add('htmltext');
+    container.id = 'polynote-sandbox-container';
+    container.innerHTML = content;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.border = '0';
+    iframe.style.width = '100%';
+    iframe.onload = evt => {
+        console.log("setting iframe height and width", evt, iframe)
+        const sandboxContainer = iframe.contentDocument?.getElementById('polynote-sandbox-container');
+        if (sandboxContainer) {
+            iframe.style.height = sandboxContainer.scrollHeight + "px";
+            iframe.style.width = sandboxContainer.scrollWidth + "px";
+        } else {
+            console.log("unable to set sandbox container. Falling back to standard sizing");
+            iframe.style.height = "300px";
+            iframe.style.width = "100%";
+        }
+    }
+    iframe.srcdoc = doc.documentElement.outerHTML;
+
+    return iframe;
 }
