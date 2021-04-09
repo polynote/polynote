@@ -34,6 +34,7 @@ export const VegaInterpreter: IClientInterpreter = {
         try {
             ast = acorn.parse(code, {sourceType: 'script', ecmaVersion: 6, ranges: true })
         } catch (err) {
+            console.error(err)
             const pos = err.pos - 1;
             return [new CompileErrors([
                 new KernelReport(new Position(`Cell ${cellContext.id}`, pos, pos, pos), err.message, 2)
@@ -173,6 +174,7 @@ export const VizInterpreter: IClientInterpreter = {
             const result = cellContext.resultValues[viz.value];
             return vizResult(cellContext.id, viz, result, cellContext);
         } catch (err) {
+            console.error(err)
             const pos = err.lineNumber !== undefined && err.columnNumber !== undefined ?
                 positionIn(code, err.lineNumber, err.columnNumber) : 0;
             const message = err.message || "Cell does not contain a valid visualization description";

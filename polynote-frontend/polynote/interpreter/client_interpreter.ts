@@ -145,7 +145,7 @@ export function availableResultValues(symbols: KernelSymbols, cellOrder: number[
 
     return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {
         Object.values(symbols[next] || {})
-            .forEach((result: ResultValue) => acc[result.name] = result);
+            .forEach((result: ResultValue) => acc[sanitizeJSVariable(result.name)] = result);
         return acc;
     }, {});
 }
@@ -169,4 +169,22 @@ function availableClientValues(resultValues: Record<string, ResultValue>, notebo
             }
         )
     )
+}
+
+/**
+ * Sanitize a string as a proper Javascript variable name. Variables in other languages can have characters that are
+ * not allowed in Javascript, such as `-`.
+ *
+ * @param variableName
+ */
+const substitutions = [
+    {
+        from: "-",
+        to: "$dash$"
+    }
+]
+function sanitizeJSVariable(variableName: string): string {
+    return substitutions.reduce((acc, {from, to}) => {
+        return acc.replaceAll(from, to)
+    }, variableName)
 }
