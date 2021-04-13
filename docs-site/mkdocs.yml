@@ -51,6 +51,8 @@ nav:
   - About: about.md
   - Contribute: contribute.md
 extra:
+  version:
+    provider: mike
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/polynote/polynote

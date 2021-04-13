@@ -4,6 +4,7 @@ on:
     branches:
       - master
       - main
+  # TODO: remove this before merge!
   pull_request: 
 
 jobs:
@@ -11,14 +12,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v2
         with:
           python-version: 3.x
       - run: |
-          echo "Docs Site Build"
+          set -x
+          export POLYNOTE_VERSION=$(git describe --tags)
+          echo "Docs Site Build ${POLYNOTE_VERSION}"
+          git config --global user.email "polynote-ci@polynote.org"
+          git config --global user.name "Polynote CI"
           pushd $GITHUB_WORKSPACE/docs-site
             pip install -r requirements.txt
-            mkdocs gh-deploy --force
+            mike deploy --push --update-aliases ${POLYNOTE_VERSION} latest
+            mike set-default --push latest
           popd
 
 
