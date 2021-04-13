@@ -1,0 +1,3 @@
+mkdocs-material
+pygments
+section-index

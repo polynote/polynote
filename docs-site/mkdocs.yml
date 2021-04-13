@@ -1,0 +1,70 @@
+site_name: Polynote
+extra_css:
+  - style/style.css
+plugins:
+  - search
+  - section-index
+markdown_extensions:
+  - toc:
+      permalink: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.tabbed
+  - pymdownx.magiclink
+  - pymdownx.caret
+  - footnotes
+  - attr_list
+repo_url: https://github.com/polynote/polynote
+edit_uri: edit/master/docs
+repo_name: polynote
+nav:
+  - index.md
+  - Docs:
+    - docs/index.md
+    - Installation: docs/installation.md
+    - Basic Usage: docs/basic-usage.md
+    - Mixing Programming Languages: docs/mixing-programming-languages.md
+    - Using Spark with Polynote: docs/spark.md
+    - Tour:
+      - docs/tour.md
+      - Toolbar: docs/toolbar.md
+      - Notebooks List: docs/notebooks-list.md
+      - Kernel Pane: docs/kernel-pane.md
+      - Notebook:
+        - docs/notebook.md
+        - Configuration: docs/notebook-configuration.md
+        - Text Cells: docs/text-cells.md
+        - Code Cells: docs/code-cells.md
+        - Visualization and Viz Cells: docs/visualization-and-viz-cells.md
+      - About Menu: docs/about-menu.md
+    - FAQ: docs/faq.md
+    - Advanced:
+      - docs/advanced.md
+      - Server Configuration: docs/configuration.md
+      - Using Polynote with Python: docs/python.md
+      - Using Polynote with Docker: docs/docker.md
+      - Developing with Polynote: docs/development.md
+  - About: about.md
+  - Contribute: contribute.md
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/polynote/polynote
+    - icon: fontawesome/brands/gitter
+      link: https://gitter.im/polynote/polynote
+theme:
+  name: material
+  logo: images/logo_dark.svg
+  favicon: favicon.ico
+  custom_dir: docs/overrides
+  palette:
+    primary: black
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.expand
+
