@@ -735,19 +735,20 @@ function histogramPlot(plotDef: PlotDefinition, plot: HistogramPlot, schema: Str
 
 }
 
-const plotTypes = {
-    bar: "Bar",
-    line: "Line",
-    area: "Stacked area",
-    xy: "XY Scatter",
-    boxplot: "Box plot",
-    pie: "Pie",
+const anyPlotTypes = {
     histogram: "Histogram"
 }
 
-const noDimensionPlotTypes = {
-    xy: "XY Scatter",
-    histogram: "Histogram"
+const dimensionPlotTypes = {
+    bar: "Bar",
+    line: "Line",
+    area: "Stacked area",
+    boxplot: "Box plot",
+    pie: "Pie"
+}
+
+const numericPlotTypes = {
+    xy: "XY Scatter"
 }
 
 function deepFields(fields: StructField[], predicate: (type: DataType) => boolean, path?: string): StructField[] {
@@ -779,11 +780,15 @@ const Measures = {
     mean: "Mean",
     sum: "Sum",
     count: "Count",
+    count_distinct: "Count distinct",
+    approx_count_distinct: "Approx. count distinct",
     quartiles: "Median & error"
 }
 
 const NonNumericMeasures = {
-    count: "Count"
+    count: "Count",
+    count_distinct: "Count distinct",
+    approx_count_distinct: "Approx. count distinct",
 }
 
 class MeasurePicker {
@@ -1038,10 +1043,10 @@ export class PlotSelector extends Disposable {
         super();
         const dimensionFields = this.dimensionFields = deepDimensionFields(schema.fields);
 
-        const dimensionOptions = Object.fromEntries(dimensionFields.map(field => [field.name, field.name]));
-        const measureFields    = deepMeasureFields(schema.fields);
-        const numericMeasures  = measureFields.filter(field => field.dataType.isNumeric);
-        const measureOptions   = Object.fromEntries(numericMeasures.map(field => [field.name, field.name]));
+        const dimensionOptions    = Object.fromEntries(dimensionFields.map(field => [field.name, field.name]));
+        const measureFields       = deepMeasureFields(schema.fields);
+        const numericFields       = measureFields.filter(field => field.dataType.isNumeric);
+        const numericFieldOptions = Object.fromEntries(numericFields.map(field => [field.name, field.name]));
 
 
         if (dimensionFields.length === 0 && measureFields.length === 0) {
@@ -1049,6 +1054,7 @@ export class PlotSelector extends Disposable {
         }
 
         const hasDimensions       = dimensionFields.length > 0;
+        const hasNumericFields    = numericFields.length > 0;
         const defaultX            = dimensionFields[0]?.name ?? measureFields[0].name;
         const defaultType         = hasDimensions ? "bar" : "xy";
         const state               = initialState ? PlotSelectorState.fromPlotDef(initialState, defaultX)
@@ -1081,12 +1087,18 @@ export class PlotSelector extends Disposable {
             }
         });
 
+        const availablePlotTypes = {
+            ...anyPlotTypes,
+            ...(hasDimensions ? dimensionPlotTypes : {}),
+            ...(hasNumericFields ? numericPlotTypes : {})
+        }
+
         this.el = div(['plot-selector', state.type, ...(state.facet ? ['facet'] : [])], [
             div(['top-tools'], [
                 h3(['table-name'], 'Plot'),
                 div(['type-selector'], [
                     label([], "Type",
-                        this.typeSelector = dropdown(['plot-type'], hasDimensions ? plotTypes : noDimensionPlotTypes, state.type).bind(typeHandler))
+                        this.typeSelector = dropdown(['plot-type'], availablePlotTypes, state.type).bind(typeHandler))
                 ]),
                 div(['title-input'], [
                     label([], "Title",
@@ -1126,9 +1138,9 @@ export class PlotSelector extends Disposable {
                 hasDimensions ? label(['dimension-field'], "Dimension",
                     this.xDimension = dropdown([], dimensionOptions, initialState?.plot?.x.field)
                         .bind(xHandler.lens("field"))) : undefined,
-                label(['x-field'], "Field",
-                    this.xField = dropdown([], measureOptions, initialState?.plot?.x.field)
-                        .bind(xHandler.lens("field")))
+                hasNumericFields ? label(['x-field'], "Field",
+                    this.xField = dropdown([], numericFieldOptions, initialState?.plot?.x.field)
+                        .bind(xHandler.lens("field"))) : undefined
             ]),
             div(['y-axis-config'], [
                 h3([], "Y Axis"),
@@ -1143,9 +1155,9 @@ export class PlotSelector extends Disposable {
                         .disposeWith(this)
                         .bind(multiSeriesHandler)
                 ]),
-                label(['y-field'], "Field",
-                    this.yField = dropdown([], measureOptions, state.singleY || undefined)
-                        .bindPartial(singleSeriesHandler)),
+                hasNumericFields ? label(['y-field'], "Field",
+                    this.yField = dropdown([], numericFieldOptions, state.singleY || undefined)
+                        .bindPartial(singleSeriesHandler)) : undefined,
                 checkbox(['force-zero'], 'Force zero', state.forceZero)
                     .bind(stateHandler.lens("forceZero"))
             ]),
@@ -1161,7 +1173,7 @@ export class PlotSelector extends Disposable {
                         dropdown([], { "": "None", ...dimensionOptions}, state.pointColorChannel || undefined)
                             .bindWithDefault(stateHandler.lens("pointColorChannel"), "")),
                     label(['bubble-size'], "Bubble size",
-                        dropdown([], {"": "None", ...measureOptions}, state.bubbleSizeChannel || undefined)
+                        dropdown([], {"": "None", ...numericFieldOptions}, state.bubbleSizeChannel || undefined)
                             .bindWithDefault(stateHandler.lens("bubbleSizeChannel"), ""))
                 ]),
                 div(['histogram-options'], [

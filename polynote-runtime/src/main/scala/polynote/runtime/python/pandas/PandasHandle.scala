@@ -143,6 +143,8 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
         namedLambda("lambda x: x.max()", s"quartiles($col).max"),
         namedLambda("lambda x: x.mean()", s"quartiles($col).mean")
       )
+      case "count_distinct" => List(namedLambda("lambda x: x.unique().shape[0]", s"count_distinct($col)"))
+      case "approx_count_distinct" => List(namedLambda("lambda x: x.unique().shape[0]", s"approx_count_distinct($col)"))
       case agg => List(namedLambda(s"lambda x: x.$agg()", s"$agg($col)"))
     }
   }

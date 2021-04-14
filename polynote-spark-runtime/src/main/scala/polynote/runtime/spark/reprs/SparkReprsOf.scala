@@ -161,7 +161,7 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
 
 
     def modify(ops: List[TableOp]): Either[Throwable, Int => StreamingDataRepr.Handle] = {
-      import org.apache.spark.sql.functions, functions.{when, col, sum, lit, struct, count, approx_count_distinct, avg}
+      import org.apache.spark.sql.functions, functions.{when, col, sum, lit, struct, count, approx_count_distinct, countDistinct, avg}
       import org.apache.spark.sql.Column
       import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
       import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
@@ -188,6 +188,7 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         case (name, "sum") => List(sum(col(name)) as s"sum($name)") -> None
         case (name, "count") => List(count(col(name).cast("double")) as s"count($name)") -> None
         case (name, "approx_count_distinct") => List(approx_count_distinct(col(name)) as s"approx_count_distinct($name)") -> None
+        case (name, "count_distinct") => List(countDistinct(col(name)) as s"approx_count_distinct($name)") -> None
         case (name, "mean") => List(avg(col(name)) as s"mean($name)") -> None
 
 
