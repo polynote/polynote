@@ -8,19 +8,16 @@ import {ServerMessageReceiver} from "./messaging/receiver";
 import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
 import {SplitView} from "./ui/layout/splitview";
-import {
-    insert,
-    moveArrayValue,
-} from "./state";
+import {InsertValue, moveArrayValue, NoUpdate, removeIndex, RemoveValue, RenameKey, setValue,} from "./state";
 import {Tabs} from "./ui/component/tabs";
 import {KernelPane} from "./ui/component/notebook/kernel";
 import {NotebookList} from "./ui/component/notebooklist";
 import {Home} from "./ui/component/home";
 import {CodeCellModel} from "./ui/component/notebook/cell";
-import {nameFromPath} from "./util/helpers";
+import {collect, nameFromPath} from "./util/helpers";
 import {SocketStateHandler} from "./state/socket_state";
 import {ServerStateHandler} from "./state/server_state";
-import {OpenNotebooksHandler, RecentNotebooksHandler} from "./state/preferences";
+import {OpenNotebooksHandler, RecentNotebooks, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
 
 /**
@@ -82,6 +79,45 @@ export class Main {
             }
         })
 
+        ServerStateHandler.get.observeKey("openNotebooks", (nbs, upd) => {
+            // update open notebooks preference
+            OpenNotebooksHandler.update(() => setValue([...nbs]))
+
+            // add newly opened notebooks to recent notebooks
+            if (upd.addedValues && upd.update instanceof InsertValue) {
+                const addedValues = Object.values(upd.addedValues);
+                RecentNotebooksHandler.update(recents => {
+                    const newNotebooks = collect(addedValues, path => {
+                        if (recents.find(nb => nb.path === path) === undefined) {
+                            return {path, name: nameFromPath(path)}
+                        } else return undefined
+                    })
+
+                    if (newNotebooks.length > 0) {
+                        return recents.concat(newNotebooks)
+                    } else return NoUpdate
+                })
+            }
+        })
+
+        ServerStateHandler.get.observeKey("notebooks", (nbs, upd) => {
+            if (upd.addedValues && upd.removedValues && upd.update instanceof RenameKey) { // check for a rename
+                const oldPath = Object.keys(upd.removedValues)[0];
+                const newPath = Object.keys(upd.addedValues)[0];
+                RecentNotebooksHandler.update(recents => {
+                    return collect(recents as RecentNotebooks, nb => nb.path === oldPath ? {path: newPath, name: nameFromPath(newPath)} : nb)
+                })
+            } else if (upd.removedValues && upd.update instanceof RemoveValue) { // check for removed notebook
+                const removed = Object.keys(upd.removedValues)[0];
+                RecentNotebooksHandler.update(recents => {
+                    const idx = recents.findIndex(nb => nb.path === removed);
+                        if (idx >= 0) {
+                            return removeIndex(recents, idx);
+                        } else return NoUpdate;
+                })
+            }
+        })
+
     }
 
     private static handlePath(path?: string) {
@@ -100,13 +136,11 @@ export class Main {
             }
 
             RecentNotebooksHandler.update(recents => {
+                // update recent notebooks order
                 const currentIndex = recents.findIndex(r => r && r.path === path);
                 if (currentIndex >= 0) {
                     return moveArrayValue(currentIndex, 0);
-                } else {
-                    const name = nameFromPath(path);
-                    return insert({path, name}, 0);
-                }
+                } else return NoUpdate
             })
         } else {
             const title = 'Polynote';

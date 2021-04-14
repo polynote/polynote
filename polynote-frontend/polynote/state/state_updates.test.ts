@@ -1,5 +1,6 @@
-import {append, destroy, setValue, UpdateKey, UpdatePartial, valueToUpdate} from "./state_updates";
+import {append, destroy, ReplaceArrayValue, setValue, UpdateKey, UpdatePartial, valueToUpdate} from "./state_updates";
 import {deepCopy} from "../util/helpers";
+import * as fc from "fast-check"
 
 interface Example {
     hi: string,
@@ -146,5 +147,35 @@ describe("UpdateKey", () => {
         const result = update.applyMutate(original);
 
         expect("removedField" in result.newValue).toEqual(false);
+    })
+})
+
+describe("replaceArrayValue", () => {
+    it("replaces the value at the specific index in an array", () => {
+        const arr = [0, 1, 2, 3, 4, 5]
+
+        const update = new ReplaceArrayValue(100, 0)
+
+        const result = update.applyMutate(arr);
+
+        expect(result.newValue[0]).toEqual(100)
+        expect(Object.values(result.addedValues!)[0]).toEqual(100);
+        expect(Object.values(result.removedValues!)[0]).toEqual(0);
+
+        // is this overkill for just replacing array values? ¯\_(ツ)_/¯
+        // generate an arbitrary array, index, and replacement value
+        const generator = fc.array(fc.nat(), {minLength: 1, maxLength: 100}).chain(arr => fc.tuple(fc.constant(arr), fc.nat(arr.length - 1), fc.nat()))
+
+        fc.assert(
+            fc.property(generator, ([arr, idx, newValue]) => {
+                const update = new ReplaceArrayValue(newValue, idx)
+                const prevValue = arr[idx];
+                const result = update.applyMutate(arr);
+
+                expect(result.newValue[idx]).toEqual(newValue)
+                expect(Object.values(result.addedValues!)[0]).toEqual(newValue);
+                expect(Object.values(result.removedValues!)[0]).toEqual(prevValue);
+            })
+        )
     })
 })
