@@ -1,5 +1,8 @@
 name: docs-site
 on:
+  push:
+    branches:
+      - master
   release:
     types: [ published ]
   # TODO: remove this before merge!
@@ -11,13 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
+          # Needs to be set for `git describe` as well as `mike` versioning.
           fetch-depth: 0
       - uses: actions/setup-python@v2
         with:
           python-version: 3.x
       - run: |
           set -x
-          export POLYNOTE_VERSION=$(git describe --tags)
+          # get just the version number from git. (don't really care about dirty state).
+          export POLYNOTE_VERSION=$(git describe --tags | cut -d "-" -f1)
           echo "Docs Site Build ${POLYNOTE_VERSION}"
           git config --global user.email "polynote-ci@polynote.org"
           git config --global user.name "Polynote CI"
