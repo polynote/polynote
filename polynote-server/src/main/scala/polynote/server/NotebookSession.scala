@@ -40,7 +40,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
       ZIO.unless(ids.isEmpty) {
         ZIO.foreachPar_(ids)(id => subscriber.checkPermission(Permission.ExecuteCell(_, id))) *>
           ZIO.foreach(ids.toList)(id => subscriber.publisher.queueCell(id)).flatMap {
-            tasks => ZIO.collectAll_(tasks).forkDaemon
+            tasks => ZIO.collectAll_(tasks.map(_.run.uninterruptible)).forkDaemon
           }
       }
 
