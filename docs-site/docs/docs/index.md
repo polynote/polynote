@@ -8,4 +8,4 @@ It encourages reproducible notebooks with its immutable data model.
 Get started by [installing Polynote](installation.md), or by taking a [tour](tour.md) of the UI!
 
 When you're ready, check out the [User Guide](basic-usage.md) for more information. Or if you need to customize your 
-installation, head over to the [configuration](configuration.md) section. 
+installation, head over to the [configuration](server-configuration.md) section. 

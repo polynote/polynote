@@ -193,7 +193,7 @@ cd polynote
 ## Configure
 You won't need to change any of the default configuration in order to get Polynote up and running locally. 
 
-Please see the [configuration](configuration.md) documentation for more details on configuring Polynote.
+Please see the [configuration](server-configuration.md) documentation for more details on configuring Polynote.
 
 ## Run
 To start the server, run the included python script:

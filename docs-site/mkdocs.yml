@@ -43,7 +43,7 @@ nav:
     - FAQ: docs/faq.md
     - Advanced:
       - docs/advanced.md
-      - Server Configuration: docs/configuration.md
+      - Server Configuration: docs/server-configuration.md
       - Using Polynote with Spark: docs/spark.md
       - Using Polynote with Python: docs/python.md
       - Using Polynote with Docker: docs/docker.md

@@ -7,7 +7,7 @@ Notebooks are displayed in a directory structure.
 Clicking on a notebook opens it, and clicking on a directory expands or collapses it. 
 
 !!!tip
-    The current workspace can be set in the [Storage Configuration](configuration.md#storage).
+    The current workspace can be set in the [Storage Configuration](server-configuration.md#storage).
 
 ### Creating a new notebook
 

@@ -78,7 +78,7 @@ Changing the cache option affects different types of dependencies differently.
 
 There are two complementary ways to specify Spark properties. 
 
-- `Spark Templates` are sets of related configuration that can be defined in the [Server Configuration](configuration.md#spark)
+- `Spark Templates` are sets of related configuration that can be defined in the [Server Configuration](server-configuration.md#spark)
 - `Spark Properties` are key-value pairs that Polynote will insert into the Spark configuration. 
 
 For more details on using Spark with Polynote, check out the [Spark documentation](spark.md)
