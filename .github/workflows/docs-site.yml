@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - master
-  release:
-    types: [ published ]
   # TODO: remove this before merge!
   pull_request:
 
