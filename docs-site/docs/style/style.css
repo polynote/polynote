@@ -212,8 +212,8 @@ p code {
 }
 
 /* Hide the title since the logo already says 'Polynote' */
-.md-header__title {
-    visibility: hidden;
+.md-header__title .md-ellipsis {
+    display: none;
 }
 
 .num {
