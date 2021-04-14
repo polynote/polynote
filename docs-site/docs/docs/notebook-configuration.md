@@ -58,6 +58,43 @@ You can choose to manually bust the cache by unfolding the Advanced Options pane
 
 ![Dependency Caching](images/notebook-configuration-cache.png)
 
+Changing the cache option affects different types of dependencies differently. 
+
+- **JVM Dependencies**
+    - URL-based dependencies are affected by this setting. If using the cache, Polynote uses the cached file (if 
+      present) instead of downloading it again. Conversely, if the cache is disabled for this dependency then Polynote 
+      will download the jar anew each time.
+    - GAV notation dependencies are unaffected by this change (Coursier caches these dependencies itself and we don't
+      expose any way to change that for now)
+- **Python Dependencies**
+    - Python dependencies are affected by this setting. Since they share a virtual environment for this notebook, 
+      **bypassing the cache for any Python dependency will bust the cache for all Python dependencies**, since this is 
+      implmemented as a simple deletion and recreation of the virtual environment. 
+      
+!!!question "Feedback requested"
+    If these restrictions are inconvenient for you, please let us know and we can look into improving this feature. 
+
 ### Spark
 
+There are two complementary ways to specify Spark properties. 
+
+- `Spark Templates` are sets of related configuration that can be defined in the [Server Configuration](configuration.md#spark)
+- `Spark Properties` are key-value pairs that Polynote will insert into the Spark configuration. 
+
+For more details on using Spark with Polynote, check out the [Spark documentation](spark.md)
+
 ### Kernel
+
+The Kernel configuration contains some miscellaneous configuration that affect the runtime environment of the Kernel. 
+
+First, the **Scala version** can be set (independently of the version running on the server). Currently, only 2.11 and
+2.12 are supported (since those are the versions supported by Spark). 
+
+!!!warning
+    The Scala version you select must match that of your Spark installation. If you're unsure what that is, just leave 
+    it as `Default` and Polynote will take care of it for you!
+
+In the second section, you can also add **Environment Variables** that will be made available to the Kernel process. 
+
+Finally, in the last section you can add any additional **JVM Arguments** that Polynote will set when it launches the 
+Kernel process. 

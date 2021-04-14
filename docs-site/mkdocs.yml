@@ -28,7 +28,6 @@ nav:
     - Installation: docs/installation.md
     - Basic Usage: docs/basic-usage.md
     - Mixing Programming Languages: docs/mixing-programming-languages.md
-    - Using Spark with Polynote: docs/spark.md
     - Tour:
       - docs/tour.md
       - Toolbar: docs/toolbar.md
@@ -45,6 +44,7 @@ nav:
     - Advanced:
       - docs/advanced.md
       - Server Configuration: docs/configuration.md
+      - Using Polynote with Spark: docs/spark.md
       - Using Polynote with Python: docs/python.md
       - Using Polynote with Docker: docs/docker.md
       - Developing with Polynote: docs/development.md
