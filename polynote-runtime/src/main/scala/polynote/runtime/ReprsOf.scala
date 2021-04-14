@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import polynote.runtime
 
-import scala.collection.GenSeq
+import scala.collection.{GenSeq, mutable}
 import scala.concurrent.Future
 
 trait ReprsOf[T] extends Serializable {
@@ -195,6 +195,14 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       val resultName: String = s"count($name)"
     }
 
+    private class CountDistinctAggregator(name: String, approx: Boolean) extends Aggregator[Long] {
+      private val seenValues = new mutable.HashSet[B]()
+      override def accumulate(value: B): Unit = seenValues += value
+      override def summarize(): Long = seenValues.size
+      val encoder: DataEncoder[Long] = DataEncoder.long
+      val resultName: String = if (approx) s"approx_count_distinct($name)" else s"count_distinct($name)"
+    }
+
     private class MeanAggregator(name: String, getter: B => Double) extends Aggregator[Double] {
       private var count = 0
       private var mean = 0.0
@@ -222,10 +230,12 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
       }
 
       aggName match {
-        case "quartiles" => new QuartileAggregator(col, numericEncoder)
-        case "sum"       => new SumAggregator(col, numericEncoder)
-        case "count"     => new CountAggregator(col)
-        case "mean"      => new MeanAggregator(col, numericEncoder)
+        case "quartiles"             => new QuartileAggregator(col, numericEncoder)
+        case "sum"                   => new SumAggregator(col, numericEncoder)
+        case "count"                 => new CountAggregator(col)
+        case "count_distinct"        => new CountDistinctAggregator(col, false)
+        case "approx_count_distinct" => new CountDistinctAggregator(col, true)
+        case "mean"                  => new MeanAggregator(col, numericEncoder)
         case _ => throw new IllegalArgumentException(s"No aggregation $aggName available")
       }
     }
