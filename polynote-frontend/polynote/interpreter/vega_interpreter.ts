@@ -45,7 +45,7 @@ export const VegaInterpreter: IClientInterpreter = {
         if (availableValues.hasOwnProperty('window')) {
             delete availableValues['window'];
         }
-        const names = ['window', ...Object.keys(availableValues)];
+        const names = ['window', ...Object.keys(availableValues).map(sanitizeJSVariable)];
         const fn = new Function(...names, wrappedCode).bind({});
 
         try {
@@ -275,3 +275,21 @@ for (let key of Object.keys(window)) {
 delete windowOverride.console;
 Object.freeze(windowOverride);
 
+
+/**
+ * Sanitize a string as a proper Javascript variable name. Variables in other languages can have characters that are
+ * not allowed in Javascript, such as `-`.
+ *
+ * @param variableName
+ */
+const substitutions = [
+    {
+        from: "-",
+        to: "$dash$"
+    }
+]
+export function sanitizeJSVariable(variableName: string): string {
+    return substitutions.reduce((acc, {from, to}) => {
+        return acc.replaceAll(from, to)
+    }, variableName)
+}

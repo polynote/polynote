@@ -62,11 +62,12 @@ import {StructType} from "../../../data/data_type";
 import {FaviconHandler} from "../../../notification/favicon_handler";
 import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
-import {availableResultValues, cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
+import {cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
 import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import {
+    availableResultValues,
     CellPresenceState,
     CellState,
     CompletionHint,
@@ -86,7 +87,6 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
 import {UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
-import {Main} from "../../../main";
 
 
 export type CodeCellModel = editor.ITextModel & {

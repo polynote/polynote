@@ -34,6 +34,7 @@ import {Pair} from "../../data/codec";
 import {collect, collectDefined, deepCopy, deepEquals, diffArray, isDescendant} from "../../util/helpers";
 import {Disposable, NoUpdate, Observer, setValue, StateHandler} from "../../state";
 import {CompileErrors} from "../../data/result";
+import {sanitizeJSVariable} from "../../interpreter/vega_interpreter";
 
 export interface DimensionAxis {
     title?: string
@@ -327,7 +328,7 @@ export function plotToVegaCode(plotDef: ValidPlotDefinition, schema: StructType)
     const spec = plotToVega(plotDef, schema) as any;
     spec.data.values = '$DATA_STREAM$';
     const ops = tableOps(plotDef);
-    let streamSpec = `${plotDef.value}.useUnsafeLongs()`;
+    let streamSpec = `${sanitizeJSVariable(plotDef.value)}.useUnsafeLongs()`;
     ops.forEach(op => streamSpec = op.streamCode(streamSpec));
     return JSON.stringify(spec, undefined, 2).replace('"$DATA_STREAM$"', streamSpec);
 }
