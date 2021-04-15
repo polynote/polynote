@@ -24,3 +24,5 @@ allowing you to navigate to the website.
 ### LaTeX Editor
 
 You can also input `LaTeX` into your text cells, using the button that looks like a Sigma. 
+
+![LaTeX Editor](images/text-cell-latex.gif)
