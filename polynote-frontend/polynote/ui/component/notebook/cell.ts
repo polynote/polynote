@@ -850,7 +850,7 @@ export class CodeCell extends Cell {
                 this.setExecutionInfo(execInfoEl, metadata.executionInfo)
             }
         }
-        // updateMetadata(this.state.metadata);
+        updateMetadata(this.state.metadata);
         cellState.observeKey("metadata", metadata => updateMetadata(metadata));
 
         cellState.observeKey("content", (content, updateResult, src) => {
