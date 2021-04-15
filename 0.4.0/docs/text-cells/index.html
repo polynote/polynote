@@ -67,6 +67,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#code-and-links" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -462,9 +467,48 @@
       <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          <span class="md-nav__icon md-icon"></span>
+          
+            <a href="./" class="md-nav__link md-nav__link--active"
+              style="margin: initial; padding: initial; pointer-events: initial">
+          
+            Text Cells
+          </a>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         Text Cells
       </a>
+      
+        
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#code-and-links" class="md-nav__link">
+    Code and Links
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latex-editor" class="md-nav__link">
+    LaTeX Editor
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -566,7 +610,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../configuration/" class="md-nav__link">
+      <a href="../server-configuration/" class="md-nav__link">
         Server Configuration
       </a>
     </li>
@@ -670,6 +714,42 @@
               </div>
             
             
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#code-and-links" class="md-nav__link">
+    Code and Links
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latex-editor" class="md-nav__link">
+    LaTeX Editor
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
           
           <div class="md-content" data-md-component="content">
             <article class="md-content__inner md-typeset">
@@ -682,7 +762,25 @@
                 
                   <h1>Text Cells</h1>
                 
-                
+                <p>Text Cells provide a Rich Text Editing experience, allowing you to edit and format text as you type it, like editing a
+document. </p>
+<p>The <a href="../toolbar/#text-cells">Text Toolbar</a> contains standard Rich Text Editing elements: </p>
+<ul>
+<li>Text style (Heading, Paragraph, etc.)</li>
+<li>Emphasis (bold, italic, underline, strikethrough)</li>
+<li>List (unordered, ordered)</li>
+<li>Indentation</li>
+</ul>
+<p><img alt="Text Toolbar" src="../images/toolbar-text-cell.png" /></p>
+<p>It also contains a few non-Standard options.</p>
+<h3 id="code-and-links">Code and Links<a class="headerlink" href="#code-and-links" title="Permanent link">&para;</a></h3>
+<p>The <strong>code</strong> button tags the currently-selected text as <code>code</code>, formatting it as monospaced. </p>
+<p>The <strong>link</strong> button tags the currently-selected text as a link. Clinking on a link will reveal the URL in a tooltip, 
+allowing you to navigate to the website. </p>
+<p><img alt="Code and Link" src="../images/text-cell-code-link.gif" /></p>
+<h3 id="latex-editor">LaTeX Editor<a class="headerlink" href="#latex-editor" title="Permanent link">&para;</a></h3>
+<p>You can also input <code>LaTeX</code> into your text cells, using the button that looks like a Sigma. </p>
+<p><img alt="LaTeX Editor" src="../images/text-cell-latex.gif" /></p>
                 
               
               

@@ -67,6 +67,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#code-editing" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -474,9 +479,48 @@
       <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          <span class="md-nav__icon md-icon"></span>
+          
+            <a href="./" class="md-nav__link md-nav__link--active"
+              style="margin: initial; padding: initial; pointer-events: initial">
+          
+            Code Cells
+          </a>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         Code Cells
       </a>
+      
+        
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#code-editing" class="md-nav__link">
+    Code Editing
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cell-results" class="md-nav__link">
+    Cell Results
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -566,7 +610,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../configuration/" class="md-nav__link">
+      <a href="../server-configuration/" class="md-nav__link">
         Server Configuration
       </a>
     </li>
@@ -670,6 +714,42 @@
               </div>
             
             
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#code-editing" class="md-nav__link">
+    Code Editing
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cell-results" class="md-nav__link">
+    Cell Results
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
           
           <div class="md-content" data-md-component="content">
             <article class="md-content__inner md-typeset">
@@ -682,7 +762,51 @@
                 
                   <h1>Code Cells</h1>
                 
-                
+                <p>Code cells are the basic unit of a notebook interactive coding experience. </p>
+<p>In addition to providing a code editor, code cells show the output and results of executing the code. </p>
+<p><img alt="Code Cell" src="../images/code-cell.png" /></p>
+<p>The top of a code cell has a small toolbar of cell-related functions: a button to run the cell, a drop-down for 
+switching languages, buttons for hiding the code or output and a button to copy output to the clipboard (if present).</p>
+<h3 id="code-editing">Code Editing<a class="headerlink" href="#code-editing" title="Permanent link">&para;</a></h3>
+<p>Polynote provides a modern code editing experience (interactive autocomplete, error highlighting) built with the 
+<a href="https://microsoft.github.io/monaco-editor/">Monaco Editor</a>. </p>
+<h3 id="cell-results">Cell Results<a class="headerlink" href="#cell-results" title="Permanent link">&para;</a></h3>
+<p>The last expression in a cell is treated as its result (just as a Scala function returns the result of the last 
+expression). This result is saved as the <code>Out</code> variable and is displayed in the cell's result section. </p>
+<p>Polynote just shows the value and simple type of simple results. For more complex results, Polynote shows a data view
+that allows more inspection of the data. </p>
+<p>Nested data can be explored directly in a tree-like view.</p>
+<div class="tabbed-set" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><label for="__tabbed_1_1">Exploring Nested Data</label><div class="tabbed-content">
+<p><img alt="Nested Cell Results" src="../images/code-cell-nested.gif" /></p>
+</div>
+<input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><label for="__tabbed_1_2">Source Code</label><div class="tabbed-content">
+<div class="highlight"><pre><span></span><code><span class="k">case</span> <span class="k">class</span> <span class="nc">A</span><span class="o">(</span><span class="n">foo</span><span class="k">:</span> <span class="kt">String</span><span class="o">)</span>
+<span class="k">case</span> <span class="k">class</span> <span class="nc">B</span><span class="o">(</span><span class="n">bar</span><span class="k">:</span> <span class="kt">String</span><span class="o">,</span> <span class="n">a</span><span class="k">:</span> <span class="kt">List</span><span class="o">[</span><span class="kt">A</span><span class="o">])</span>
+<span class="k">case</span> <span class="k">class</span> <span class="nc">C</span><span class="o">(</span><span class="n">quux</span><span class="k">:</span> <span class="kt">String</span><span class="o">,</span> <span class="n">b</span><span class="k">:</span> <span class="kt">List</span><span class="o">[</span><span class="kt">B</span><span class="o">])</span>
+<span class="k">case</span> <span class="k">class</span> <span class="nc">D</span><span class="o">(</span><span class="n">wizzle</span><span class="k">:</span> <span class="kt">String</span><span class="o">,</span> <span class="n">c</span><span class="k">:</span> <span class="kt">List</span><span class="o">[</span><span class="kt">C</span><span class="o">])</span>
+<span class="k">case</span> <span class="k">class</span> <span class="nc">E</span><span class="o">(</span><span class="n">wozzle</span><span class="k">:</span> <span class="kt">String</span><span class="o">,</span> <span class="n">d</span><span class="k">:</span> <span class="kt">List</span><span class="o">[</span><span class="kt">D</span><span class="o">])</span>
+
+<span class="n">E</span><span class="o">(</span>
+    <span class="s">&quot;wozzle&quot;</span><span class="o">,</span>
+    <span class="n">D</span><span class="o">(</span>
+        <span class="s">&quot;wizzle&quot;</span><span class="o">,</span>
+        <span class="n">C</span><span class="o">(</span>
+            <span class="s">&quot;quux&quot;</span><span class="o">,</span>
+            <span class="n">B</span><span class="o">(</span>
+                <span class="s">&quot;bar&quot;</span><span class="o">,</span>
+                <span class="n">A</span><span class="o">(</span><span class="s">&quot;foo&quot;</span><span class="o">)</span> <span class="o">::</span> <span class="n">A</span><span class="o">(</span><span class="s">&quot;floo&quot;</span><span class="o">)</span> <span class="o">::</span> <span class="nc">Nil</span>
+            <span class="o">)</span> <span class="o">::</span> <span class="nc">Nil</span>
+        <span class="o">)</span> <span class="o">::</span> <span class="nc">Nil</span>
+    <span class="o">)</span> <span class="o">::</span> <span class="n">D</span><span class="o">(</span>
+        <span class="s">&quot;weasel&quot;</span><span class="o">,</span>
+        <span class="n">C</span><span class="o">(</span><span class="s">&quot;quacks&quot;</span><span class="o">,</span> <span class="nc">Nil</span><span class="o">)</span> <span class="o">::</span> <span class="nc">Nil</span>
+    <span class="o">)</span> <span class="o">::</span> <span class="nc">Nil</span>
+<span class="o">)</span>
+</code></pre></div>
+</div>
+</div>
+<p>Like the buttons in the <a href="../kernel-pane/#quick-inspector">Quick Inspector</a>, the <code>View Data</code>, <code>View Schema</code>, and 
+<code>Plot Data</code> buttons each create a new <a href="../visualization-and-viz-cells/">Viz Cell</a> underneath the cell. </p>
                 
               
               
