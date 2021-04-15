@@ -162,7 +162,7 @@ class NotebookToolbar extends ToolbarElement {
 
     enable(handler: NotebookStateHandler, dispatcher: NotebookMessageDispatcher) {
         if (this.handler && handler !== this.handler) {
-            // this.handler.dispose();
+            this.handler.dispose();
             this.handler = undefined;
         }
 
@@ -170,7 +170,7 @@ class NotebookToolbar extends ToolbarElement {
             this.handler = handler.fork();
             this.handler.view("kernel").view("tasks").addObserver((tasks, updateResult) => {
                 // only when there are newly added or removed tasks, not on any progress update
-                if (Object.keys(updateResult.addedValues ?? {}).length || Object.keys(updateResult.changedValues ?? {}).length) {
+                if (Object.keys(updateResult.addedValues ?? {}).length || Object.keys(updateResult.removedValues ?? {}).length) {
                     this.cancelButton.disabled = !Object.keys(tasks).find(taskId => taskId.startsWith("Cell"));
                 }
             });

@@ -9,7 +9,7 @@ import polynote.kernel.environment.{CurrentTask, PublishStatus}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.Publish
 import polynote.messages.TinyString
-import zio.{Cause, Exit, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
+import zio.{Cause, Exit, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Supervisor, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.interop.catz._
@@ -36,7 +36,12 @@ package object task {
         * Note that status updates are sent somewhat lazily, and for a series of rapid updates to the task status only the
         * last update might get sent.
         */
-      def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]]
+      def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](
+        id: String,
+        label: String = "",
+        detail: String = "",
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause)
+      )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]]
 
       /**
         * This overload is more useful if the return type needs to be inferred
@@ -128,11 +133,17 @@ package object task {
 
       private def lbl(id: String, label: String) = if (label.isEmpty) id else label
 
-      override def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo)(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] = queueing.withPermit {
+      override def queue[R <: CurrentTask, A, R1 >: R <: Has[_]](
+        id: String, label: String = "",
+        detail: String = "",
+        errorWith: Cause[Throwable] => TaskInfo => TaskInfo
+      )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] = queueing.withPermit {
         for {
           statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Queued))
           remove         = ZIO.effectTotal(tasks.remove(id))
-          fail           = (err: Cause[Throwable]) => statusRef.update(errorWith(err)).ensuring(remove).uninterruptible.orDie
+          myTurn        <- Promise.make[Throwable, Unit]
+          imDone        <- Promise.make[Throwable, Unit]
+          fail           = (err: Cause[Throwable]) => statusRef.update(errorWith(err)).ensuring(remove &> imDone.interrupt).uninterruptible.orDie
           complete       = statusRef.update(_.completed).ensuring(remove).uninterruptible.orDie
           updater       <- statusRef.discrete
             .terminateAfter(_.status.isDone)
@@ -143,12 +154,11 @@ package object task {
               .either
               .tap(_.fold(err => fail(Cause.fail(err)), _ => complete)) <* updater.join
           }
-          myTurn        <- Promise.make[Throwable, Unit]
-          imDone        <- Promise.make[Throwable, Unit]
           _             <- readyQueue.offer(QueuedTask(id, myTurn, imDone))
-          runTask        = (myTurn.await.onInterrupt(imDone.interrupt.unit) *> statusRef.update(_.running) *> taskBody)
-            .ensuring(imDone.succeed(()))
+          wait           = myTurn.await.onInterrupt(imDone.interrupt)
+          runTask        = (wait *> statusRef.update(_.running) *> taskBody)
             .onTermination(fail)
+            .ensuring(imDone.succeed(()))
           taskFiber     <- runTask.ensuring(remove).forkDaemon
           descriptor     = TaskDescriptor(id, statusRef, taskFiber, taskCounter.getAndIncrement(), Some(myTurn))
           _             <- Option(tasks.put(id, descriptor)).map(_.cancel).getOrElse(ZIO.unit)
@@ -245,7 +255,7 @@ package object task {
       queueing <- Semaphore.make(1)
       queue    <- Queue.unbounded[QueuedTask]
       run      <- (ZIO.yieldNow *> ZIO.allowInterrupt *> queue.take).flatMap {
-        case QueuedTask(_, ready, done) => ready.succeed(()) *> done.await
+        case QueuedTask(_, ready, done) => ready.succeed(()) *> done.await.run
       }.forever.forkDaemon
     } yield new Impl(queueing, statusUpdates, queue, run)
 
@@ -260,7 +270,12 @@ package object task {
 
     def of(service: Service): TaskManager = Has(service)
 
-    def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] =
+    def queue[R <: CurrentTask, A, R1 >: R <: TaskManager](
+      id: String,
+      label: String = "",
+      detail: String = "",
+      errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause)
+    )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] =
       access.flatMap(_.queue[R, A, R1](id, label, detail, errorWith)(task))
 
     def run[R <: TaskManager, A](id: String, label: String = "", detail: String = "", errorWith: Cause[Throwable] => TaskInfo => TaskInfo = cause => _.failed(cause))(task: RIO[CurrentTask with R, A]): RIO[R, A] =

@@ -711,6 +711,7 @@ export class CancelTasks extends Message {
 
     constructor(readonly path: string, readonly taskId?: string) {
         super();
+        this.taskId = taskId ?? undefined;
         Object.freeze(this);
     }
 }

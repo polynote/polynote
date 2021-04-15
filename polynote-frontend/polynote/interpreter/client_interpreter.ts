@@ -66,6 +66,7 @@ export class ClientInterpreter {
         const nbState = this.notebookState.state
         const cellIdx = this.notebookState.getCellIndex(id)!
         const cell = nbState.cells[id]!;
+        const taskId = `Cell ${id}`;
 
         // first, queue up the cell, waiting for another cell to queue if necessary
         Promise.resolve().then(() => {
@@ -88,18 +89,23 @@ export class ClientInterpreter {
             }
 
             if (waitCellId !== undefined) {
-                return new Promise<void>(resolve => {
-                    const disposable = this.notebookState.addObserver(state => {
-                        const maybeCellReady = state.cells[waitCellId!];
-                        if (maybeCellReady && !maybeCellReady.running && !maybeCellReady.queued) {
+                let wasRunning = false;
+                return new Promise<void>((resolve, reject) => {
+                    const disposable = this.notebookState.view("cells").view(waitCellId!).addObserver(state => {
+                        if (state?.running) {
+                            wasRunning = true;
+                        }if (!state?.queued) {
                             disposable.dispose();
-                            resolve();
+                            if (!state?.error && wasRunning) {
+                                resolve();
+                            } else {
+                                reject();
+                            }
                         }
                     })
                 })
             } else return Promise.resolve()
         }).then(() => { // finally, interpret the cell
-            const taskId = `Cell ${id}`
             const start = Date.now()
             const updateStatus = (progress: number) => {
                 if (progress < 256) {
@@ -123,6 +129,9 @@ export class ClientInterpreter {
                     this.receiver.inject(new CellResult(id, res))
                 }
             })
+        }).catch(() => {}).finally(() => {
+            this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Complete)))
+            this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Complete, 255)])))
         })
     }
 
