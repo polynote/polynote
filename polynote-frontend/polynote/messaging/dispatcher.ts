@@ -3,18 +3,15 @@ import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "
 import {
     ClientResult,
     Output,
-    ResultValue,
     ServerErrorWithCause
 } from "../data/result";
 import {
-    Destroy,
     Disposable, setProperty,
     setValue,
     StateHandler,
     StateView, UpdateResult
 } from "../state";
 import {About} from "../ui/component/about";
-import {ValueInspector} from "../ui/component/value_inspector";
 import {collect, partition} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
@@ -24,9 +21,6 @@ import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_
 import {ErrorStateHandler} from "../state/error_state";
 import {ClientBackup} from "../state/client_backup";
 import {ServerState, ServerStateHandler} from "../state/server_state";
-import {OpenNotebooksHandler} from "../state/preferences";
-import {ViewType} from "../ui/input/viz_selector";
-import {CellMetadata} from "../data/data";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -288,8 +282,6 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 ErrorStateHandler.addServerError(err.error)
             }
         }).disposeWith(this)
-
-        this.handler.observeKey("openNotebooks", nbs => OpenNotebooksHandler.update(() => setValue([...nbs])))
     }
 
     /*******************************

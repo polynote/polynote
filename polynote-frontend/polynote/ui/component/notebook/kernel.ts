@@ -656,12 +656,14 @@ class KernelSymbolsEl extends Disposable {
         super()
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
-            this.tableEl = table(['kernel-symbols-table'], {
-                header: ['Name', 'Type'],
-                classes: ['name', 'type'],
-                rowHeading: true,
-                addToTop: true
-            })
+            div(['table-scroller'], [
+                this.tableEl = table(['kernel-symbols-table'], {
+                    header: ['Name', 'Type'],
+                    classes: ['name', 'type'],
+                    rowHeading: true,
+                    addToTop: true
+                })
+            ])
         ]);
         this.resultSymbols = (this.tableEl.tBodies[0] as TagElement<"tbody">).addClass('results');
         this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');

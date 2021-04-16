@@ -1,23 +1,24 @@
 import {
-    append, BaseHandler, IDisposable,
+    append,
+    BaseHandler,
+    IDisposable,
     NoUpdate,
     ObjectStateHandler,
-    removeFromArray, removeIndex,
+    removeFromArray,
     removeKey,
-    renameKey, setProperty,
-    setValue, StateHandler,
+    renameKey,
+    replaceArrayValue,
+    StateHandler,
     StateView,
-    UpdateOf, updateProperty
+    updateProperty
 } from ".";
 import {Identity} from "../data/messages";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {NotebookMessageDispatcher,} from "../messaging/dispatcher";
 import {SparkPropertySet} from "../data/data";
-import {nameFromPath} from "../util/helpers";
 import {NotebookStateHandler} from "./notebook_state";
 import {SocketStateHandler} from "./socket_state";
-import {OpenNotebooksHandler, RecentNotebooksHandler} from "./preferences";
 import {Updater} from "./state_handler";
 
 export type NotebookInfo = {
@@ -172,55 +173,40 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
             ServerStateHandler.notebooks[newPath] = nbInfo
             delete ServerStateHandler.notebooks[oldPath]
 
-            // update the server state's notebook dictionary
-            ServerStateHandler.get.updateField("notebooks", () => renameKey(oldPath, newPath))
-
-            // update recent notebooks
-            RecentNotebooksHandler.update(recents => {
-                const prevIdx = recents.findIndex(nb => nb.path === oldPath);
-                return prevIdx >= 0 ? updateProperty(prevIdx, {name: nameFromPath(newPath), path: newPath}) : NoUpdate
-            })
-
-            // update open notebooks
-            OpenNotebooksHandler.update(nbs => {
-                const prevIdx = nbs.indexOf(oldPath);
-                return prevIdx >= 0 ? setProperty(prevIdx, newPath) : NoUpdate
+            ServerStateHandler.updateState(state =>  {
+                const pathIdx = state.openNotebooks.indexOf(oldPath)
+                return {
+                    notebooks: renameKey(oldPath, newPath),
+                    openNotebooks: pathIdx >= 0 ? replaceArrayValue(newPath, pathIdx) : NoUpdate
+                }
             })
         }
     }
 
     static deleteNotebook(path: string) {
-        ServerStateHandler.closeNotebook(path)
-
-        // update our notebooks dictionary
-        delete ServerStateHandler.notebooks[path]
-
-        // update recent notebooks
-        RecentNotebooksHandler.update(state => {
-            const idx = state.findIndex(nb => nb.path === path);
-            if (idx >= 0)
-                return removeIndex(state, idx);
-            return NoUpdate;
-        });
-
-        // update the server state's notebook dictionary
-        ServerStateHandler.get.updateField("notebooks", notebooks => notebooks[path] !== undefined ? removeKey(path) : NoUpdate);
+        ServerStateHandler.closeNotebook(path, /*reinitialize*/ false).then(() => {
+            // update the server state's notebook dictionary
+            ServerStateHandler.get.updateField("notebooks", notebooks => notebooks[path] !== undefined ? removeKey(path) : NoUpdate);
+        })
     }
 
-    static closeNotebook(path: string) {
+    static closeNotebook(path: string, reinitialize: boolean = true): Promise<void> {
         const maybeNb = ServerStateHandler.notebooks[path];
         if (maybeNb) {
-
-            // reset the entry for this notebook.
             delete ServerStateHandler.notebooks[path];
 
-            maybeNb.handler.dispose().then(() => {
+            return maybeNb.handler.dispose().then(() => {
                 ServerStateHandler.updateState(state => ({
                     notebooks: updateProperty(path, false),
                     openNotebooks: removeFromArray(state.openNotebooks, path)
                 }))
+
+                // reinitialize notebook
+                if (reinitialize) {
+                    this.getOrCreateNotebook(path)
+                }
             })
-        }
+        } else return Promise.resolve()
     }
 
     static reconnectNotebooks(onlyIfClosed: boolean) {

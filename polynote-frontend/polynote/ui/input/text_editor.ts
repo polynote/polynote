@@ -40,6 +40,17 @@ export class RichTextEditor {
                     evt.preventDefault();
                     LaTeXEditor.forSelection()?.show();
                 }
+            } else if (evt.key === "Backspace") {
+                let el = document.getSelection()?.anchorNode
+                if (el) {
+                    // find closest Element node.
+                    while (el && el.nodeType !== Node.ELEMENT_NODE) {
+                        el = el.parentElement
+                    }
+                    if (LaTeXEditor.isLatexEl(el as HTMLElement)) {
+                        LaTeXEditor.forSelection()?.delete()
+                    }
+                }
             }
         });
 

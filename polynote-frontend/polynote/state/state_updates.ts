@@ -319,6 +319,38 @@ export class MoveArrayValue<V> extends Update<V[]> {
 
 }
 
+export class ReplaceArrayValue<V> extends Update<V[]> {
+    constructor(readonly value: V, private targetIndex: number) { super(); }
+
+    static unapply<V>(inst: ReplaceArrayValue<V>): ConstructorParameters<typeof ReplaceArrayValue> {
+        return [inst.value, inst.targetIndex]
+    }
+
+    applyMutate(arr: V[]): UpdateResult<V[]> {
+        if (this.targetIndex >= arr.length) {
+            throw new Error("ReplaceArrayValue is no longer valid as array has changed");
+        }
+
+        const removedValue = arr.splice(this.targetIndex, 1, this.value)[0]
+
+        const targetIndex = this.targetIndex;
+        return {
+            update: this,
+            newValue: arr,
+            addedValues: {
+                [targetIndex]: this.value
+            },
+            removedValues: {
+                [targetIndex]: removedValue
+            },
+            fieldUpdates: {
+                [targetIndex]: setTo(this.value, removedValue)
+            }
+        }
+    }
+
+}
+
 export class RenameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S[K0] & S[K1]> extends Update<S> {
     constructor(readonly oldKey: K0, readonly newKey: K1) { super() }
 
@@ -689,6 +721,10 @@ export function clearArray<V>(): StateUpdate<V[]> {
 
 export function moveArrayValue<V>(fromIndex: number, toIndex: number): StateUpdate<V[]> {
     return new MoveArrayValue(fromIndex, toIndex)
+}
+
+export function replaceArrayValue<V>(value: V, index: number): StateUpdate<V[]> {
+    return new ReplaceArrayValue(value, index)
 }
 
 export function editString(edits: ContentEdit[]): StateUpdate<string> {
