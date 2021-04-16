@@ -41,7 +41,8 @@ export interface ServerState {
     sparkTemplates: SparkPropertySet[]
     // ephemeral states
     currentNotebook?: string,
-    openNotebooks: string[]
+    openNotebooks: string[],
+    serverOpenNotebooks: string[]
 }
 
 export class ServerStateHandler extends BaseHandler<ServerState> {
@@ -63,7 +64,8 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 currentNotebook: undefined,
-                openNotebooks: []
+                openNotebooks: [],
+                serverOpenNotebooks: []
             }))
         }
         return ServerStateHandler.inst;
@@ -104,7 +106,8 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 currentNotebook: undefined,
-                openNotebooks: []
+                openNotebooks: [],
+                serverOpenNotebooks: []
             }))
         }
     }
@@ -217,11 +220,12 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         })
     }
 
-    static get openNotebooks(): [string, NotebookInfo][] {
-        return Object.entries(ServerStateHandler.notebooks).reduce<[string, NotebookInfo][]>((acc, [path, info]) => {
-            if (info.loaded) {
+    static get serverOpenNotebooks(): [string, NotebookInfo][] {
+        return ServerStateHandler.state.serverOpenNotebooks.reduce<[string, NotebookInfo][]>((acc, path) => {
+            const info = this.notebooks[path]
+            if (info?.loaded) {
                 return [...acc, [path, info]]
-            } else if (info.handler.state.kernel.status !== "disconnected") {
+            } else if (info?.handler.state.kernel.status !== "disconnected") {
                 return [...acc, [path, info]]
             } else return acc
         }, [])

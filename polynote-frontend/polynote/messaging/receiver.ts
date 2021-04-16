@@ -601,7 +601,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             }
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {
-            const notebooks: UpdateOf<Record<string, boolean>> = {}
+            const notebooks: string[] = []
             kernelStatuses.forEach(kv => {
                 const path = kv.first;
                 const status = kv.second;
@@ -609,9 +609,9 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 nbInfo.handler.updateField("kernel", () => ({
                     status: status.asStatus
                 }))
-                notebooks[path] = setValue(nbInfo.loaded)
+                notebooks.push(path)
             })
-            return { notebooks: notebooks }
+            return { serverOpenNotebooks: notebooks }
         })
     }
 }
