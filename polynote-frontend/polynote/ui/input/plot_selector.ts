@@ -320,6 +320,7 @@ function tableOps(plotDef: PlotDefinition): TableOp[] {
 export function plotToVega(plotDef: ValidPlotDefinition, schema: StructType): TopLevelSpec {
     const spec = plotToSpec(plotDef, schema) as any;
     spec.width = 'container';
+    spec.height = 'container';
     return spec as TopLevelSpec;
 }
 

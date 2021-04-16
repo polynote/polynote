@@ -198,7 +198,7 @@ export class VegaClientResult extends ClientResult {
     constructor(specObj: any) {
         super();
         const spec = {...specObj};
-        this.responsive = spec.width === 'container';
+        this.responsive = spec.width === 'container' || spec.height === 'container';
         this.runResult = this.outputEl.then(targetEl => {
             if (spec?.data?.values instanceof DataStream) {
                 const dataStream: DataStream = spec.data.values;

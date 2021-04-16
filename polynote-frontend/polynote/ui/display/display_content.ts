@@ -39,7 +39,7 @@ export function displayContent(contentType: string, content: string | DocumentFr
         const wrapperEl = div(['vega-result'], [targetEl]);
         const spec = JSON.parse(content);
 
-        if (spec?.width === 'container') {
+        if (spec?.width === 'container' || spec?.height === 'container') {
             // must wait until the element is in the DOM before embedding, in case it's responsive sized.
             const onVisible = () => {
                 embed(targetEl, spec);
