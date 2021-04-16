@@ -518,7 +518,7 @@ class KeyView<S, K extends keyof S> extends Disposable implements StateView<S[K]
     }
 
     preObserveKey<K1 extends keyof S[K]>(key: K1, fn: PreObserver<S[K][K1]>, subPath?: string): IDisposable {
-        return this.parent.preObserveKey(this.key, keyPreObserver(key, fn, this.sourceFilter), `.${key}.` + (subPath ?? '')).disposeWith(this);
+        return this.parent.preObserveKey(this.key, keyPreObserver(key, fn, this.sourceFilter), `${key}.` + (subPath ?? '')).disposeWith(this);
     }
 
     observeMapped<T>(mapper: (value: S[K]) => T, fn: (mapped: T) => void, path?: string): IDisposable {
@@ -748,41 +748,37 @@ export class ProxyStateView<S> extends Disposable implements StateView<S> {
     }
 
     setParent(parent: StateView<S>) {
+        const oldState = deepCopy(this.state);
         this.parent = parent;
 
         const preObs: Observer<S>[] = [];
-        for (let idx = this.preObservers.length - 1; idx >= 0; idx--) {
-            const obs = this.preObservers[idx];
+        safeForEach(this.preObservers, (obs, idx, arr) => {
             const [fn, disposer, parentObs, path] = obs;
+            parentObs.dispose();
             if (disposer.isDisposed) {
-                this.observers.splice(idx, 1);
-                parentObs.dispose();
+                arr.splice(idx, 1);
             } else {
-                parentObs.dispose();
-                obs[2] = parent.addPreObserver(v => fn(v));
-                preObs.push(fn(this.state));
+                obs[2] = parent.addPreObserver(v => fn(v), path);
+                preObs.push(fn(oldState));
             }
-        }
+        })
 
         // need to notify the observers immediately now, since the "state" is changing
-        const oldState = deepCopy(this.state);
         const newState = parent.state;
         const updateResult = setValue<S, S>(newState).applyMutate(oldState);
 
-        preObs.forEach(obs => obs(parent.state, updateResult, this))
+        preObs.forEach(obs => obs(newState, updateResult, this))
 
-        for (let idx = this.observers.length - 1; idx >= 0; idx--) {
-            const obs = this.observers[idx];
+        safeForEach(this.observers, (obs, idx, arr) => {
             const [fn, disposer, parentObs, path] = obs;
+            parentObs.dispose();
             if (disposer.isDisposed) {
-                this.observers.splice(idx, 1);
-                parentObs.dispose();
+                arr.splice(idx, 1);
             } else {
-                parentObs.dispose();
-                obs[2] = parent.addObserver((v, u, s) => fn(v, u, s));
+                obs[2] = parent.addObserver((v, u, s) => fn(v, u, s), path);
                 fn(newState, updateResult, this);
             }
-        }
+        })
 
     }
 

@@ -55,7 +55,6 @@ export class Toolbar extends Disposable {
                     if (cellSelectionListener !== undefined)
                         cellSelectionListener.tryDispose();
                     cellSelectionListener = newListener;
-                    currentNotebookHandler = nbInfo.handler;
                     nb.enable(currentNotebookHandler, nbInfo.info.dispatcher);
                     cell.enable(currentNotebookHandler);
                     code.enable(nbInfo.info.dispatcher, currentNotebookHandler.activeCellView);
@@ -184,7 +183,7 @@ class NotebookToolbar extends ToolbarElement {
 
     disable() {
         this.dispatcher = undefined;
-        // this.handler?.dispose();
+        this.handler?.dispose();
         this.handler = undefined;
         this.setDisabled(true);
     }
@@ -307,11 +306,9 @@ class CodeToolbar extends ToolbarElement {
                     }),
                 this.cancelButton = iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
                     .click(() => {
-                        if (this.activeCellView) {
-                            const activeId = this.activeCellView.state?.id;
-                            if (activeId !== undefined) {
-                                this.dispatcher?.cancelTask(`Cell ${activeId}`);
-                            }
+                        const activeId = this.activeCellView?.state?.id;
+                        if (activeId !== undefined) {
+                            this.dispatcher?.cancelTask(`Cell ${activeId}`);
                         }
                     }),
             ]

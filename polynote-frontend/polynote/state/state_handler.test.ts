@@ -1,42 +1,44 @@
 import {noUpdate, ObjectStateHandler, setProperty, setValue} from ".";
+import {ProxyStateView} from "./state_handler";
+import {deepCopy} from "../util/helpers";
+
+interface TestState {
+    str: string
+    num: number
+    maybeNum?: number
+    obj: {
+        inner: {
+            innerStr: string
+            maybeInnerStr?: string
+            innerNum: number
+        }
+        objStr: string
+        objNum: number
+        maybeObjStr?: string
+    }
+}
+
+const initialState: TestState = {
+    str: "hello",
+    num: 1,
+    maybeNum: 2,
+    obj: {
+        inner: {
+            innerStr: "inner",
+            maybeInnerStr: "present",
+            innerNum: 3
+        },
+        objStr: "yup",
+        objNum: 4
+    }
+}
+
+let handler: ObjectStateHandler<TestState>;
 
 describe("ObjectStateHandler", () => {
 
-    interface TestState {
-        str: string
-        num: number
-        maybeNum?: number
-        obj: {
-            inner: {
-                innerStr: string
-                maybeInnerStr?: string
-                innerNum: number
-            }
-            objStr: string
-            objNum: number
-            maybeObjStr?: string
-        }
-    }
-
-    const initialState: TestState = {
-        str: "hello",
-        num: 1,
-        maybeNum: 2,
-        obj: {
-            inner: {
-                innerStr: "inner",
-                maybeInnerStr: "present",
-                innerNum: 3
-            },
-            objStr: "yup",
-            objNum: 4
-        }
-    }
-
-    let handler: ObjectStateHandler<TestState>;
-
     beforeEach(() => {
-        handler = new ObjectStateHandler<TestState>(initialState);
+        handler = new ObjectStateHandler<TestState>(deepCopy(initialState));
     })
 
     afterEach(() => {
@@ -127,7 +129,7 @@ describe("ObjectStateHandler", () => {
             const oldNum = handler.state.num
             handler.updateField("num", () => setValue(42))
             expect(listener).toHaveBeenCalledTimes(1)
-            expect(listener).toHaveBeenCalledWith(42, {newValue: 42, oldValue: 6, update: setValue(42)}, expect.anything())
+            expect(listener).toHaveBeenCalledWith(42, {newValue: 42, oldValue: initialState.num, update: setValue(42)}, expect.anything())
             view.dispose()
         })
 
@@ -218,12 +220,145 @@ describe("ObjectStateHandler", () => {
             describe("update", () => {
                 it("updates fields", () => {
                     const lens = handler.lens("obj")
+                    const objListener = jest.fn()
+                    const strListener = jest.fn()
+                    handler.observeKey("obj", objListener)
+                    lens.observeKey("objStr", strListener)
+                    lens.updateField("objStr", () => setValue("nope"))
 
+                    expect(objListener).toHaveBeenCalledTimes(1)
+                    expect(strListener).toHaveBeenCalledTimes(1)
+                    expect(strListener).toHaveBeenCalledWith("nope", expect.anything(), expect.anything())
+                    expect(objListener).toHaveBeenCalledWith({...initialState.obj, objStr: "nope"}, expect.anything(), expect.anything())
                 })
             })
         })
     })
 
+
+})
+
+describe("ProxyStateView", () => {
+    const initialState2: TestState = {
+        ...initialState,
+        str: "goodbye",
+        maybeNum: undefined,
+        obj: {
+            ...initialState.obj,
+            inner: {
+                ...initialState.obj.inner,
+                innerNum: 32
+            },
+            objNum: 42
+        }
+    }
+
+    let handler2: ObjectStateHandler<TestState>;
+
+    beforeEach(() => {
+        handler = new ObjectStateHandler<TestState>(deepCopy(initialState))
+        handler2 = new ObjectStateHandler<TestState>(deepCopy(initialState2))
+    })
+
+    afterEach(() => {
+        handler.dispose()
+        handler2.dispose()
+    })
+
+    it ("notifies observers of new values when parent handler is changed", () => {
+        const proxy = new ProxyStateView(handler)
+
+        // verify that observers on the proxy get notified
+        const obsStr = jest.fn()
+        const obsNum = jest.fn()
+        const obsMaybeNum = jest.fn()
+        const obsObjNum = jest.fn()
+        const obsInnerNum = jest.fn()
+
+        proxy.observeKey("str", obsStr)
+        proxy.observeKey("num", obsNum)
+        proxy.observeKey("maybeNum", obsMaybeNum)
+        proxy.view("obj").observeKey("objNum", obsObjNum)
+        proxy.view("obj").view("inner").observeKey("innerNum", obsInnerNum)
+
+        proxy.setParent(handler2)
+
+        // verify that observers on the proxy get notified about changes to the new parent
+        handler2.lens("obj").updateField("objNum", () => 88)
+
+        // verify that observers on the proxy don't get notified about changes on the old parent
+        handler.updateField("str", () => setValue("hello and goodbye"))
+
+        expect(obsStr).toHaveBeenCalledTimes(1)
+        expect(obsStr).toHaveBeenCalledWith(initialState2.str, expect.anything(), expect.anything())
+
+        expect(obsNum).toHaveBeenCalledTimes(0)
+
+        expect(obsMaybeNum).toHaveBeenCalledTimes(1)
+        expect(obsMaybeNum).toHaveBeenCalledWith(initialState2.maybeNum, expect.anything(), expect.anything())
+
+        expect(obsObjNum).toHaveBeenCalledTimes(2)
+        expect(obsObjNum).toHaveBeenCalledWith(initialState2.obj.objNum, expect.anything(), expect.anything())
+        expect(obsObjNum).toHaveBeenCalledWith(88, expect.anything(), expect.anything())
+
+        expect(obsInnerNum).toHaveBeenCalledTimes(1)
+        expect(obsInnerNum).toHaveBeenCalledWith(initialState2.obj.inner.innerNum, expect.anything(), expect.anything())
+    })
+
+    it ("notifies pre-observers of new values when parent handler is changed", () => {
+        const proxy = new ProxyStateView(handler)
+
+        // verify that observers on the proxy get notified
+        const obsStr = jest.fn()
+        const obsNum = jest.fn()
+        const obsMaybeNum = jest.fn()
+        const obsObjNum = jest.fn()
+        const obsInnerNum = jest.fn()
+
+        const preObsStr = jest.fn(() => obsStr)
+        const preObsNum = jest.fn(() => obsNum)
+        const preObsMaybeNum = jest.fn(() => obsMaybeNum)
+        const preObsObjNum = jest.fn(() => obsObjNum)
+        const preObsInnerNum = jest.fn(() => obsInnerNum)
+
+        proxy.preObserveKey("str", preObsStr)
+        proxy.preObserveKey("num", preObsNum)
+        proxy.preObserveKey("maybeNum", preObsMaybeNum)
+        proxy.view("obj").preObserveKey("objNum", preObsObjNum)
+        proxy.view("obj").view("inner").preObserveKey("innerNum", preObsInnerNum)
+
+        proxy.setParent(handler2)
+
+        // verify that observers on the proxy get notified about changes to the new parent
+        handler2.lens("obj").updateField("objNum", () => 88)
+
+        // verify that observers on the proxy don't get notified about changes on the old parent
+        handler.updateField("str", () => setValue("hello and goodbye"))
+
+        expect(preObsStr).toHaveBeenCalledTimes(1)
+        expect(preObsStr).toHaveBeenCalledWith(initialState.str)
+        expect(obsStr).toHaveBeenCalledTimes(1)
+        expect(obsStr).toHaveBeenCalledWith(initialState2.str, expect.anything(), expect.anything())
+
+        expect(obsNum).toHaveBeenCalledTimes(0)
+
+        expect(preObsMaybeNum).toHaveBeenCalledTimes(1)
+        expect(preObsMaybeNum).toHaveBeenCalledWith(initialState.maybeNum)
+        expect(obsMaybeNum).toHaveBeenCalledTimes(1)
+        expect(obsMaybeNum).toHaveBeenCalledWith(initialState2.maybeNum, expect.anything(), expect.anything())
+
+        expect(preObsObjNum).toHaveBeenCalledTimes(2)
+        expect(preObsObjNum).toHaveBeenCalledWith(initialState.obj.objNum)
+        expect(preObsObjNum).toHaveBeenCalledWith(initialState2.obj.objNum)
+        expect(obsObjNum).toHaveBeenCalledTimes(2)
+        expect(obsObjNum).toHaveBeenCalledWith(initialState2.obj.objNum, expect.anything(), expect.anything())
+        expect(obsObjNum).toHaveBeenCalledWith(88, expect.anything(), expect.anything())
+
+        expect(preObsInnerNum).toHaveBeenCalledTimes(1)
+        expect(preObsInnerNum).toHaveBeenCalledWith(initialState.obj.inner.innerNum)
+        expect(obsInnerNum).toHaveBeenCalledTimes(1)
+        expect(obsInnerNum).toHaveBeenCalledWith(initialState2.obj.inner.innerNum, expect.anything(), expect.anything())
+    })
 
 })
 

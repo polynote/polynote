@@ -90,46 +90,48 @@ export class ClientInterpreter {
 
             if (waitCellId !== undefined) {
                 let wasRunning = false;
-                return new Promise<void>((resolve, reject) => {
+                return new Promise<boolean>(resolve => {
                     const disposable = this.notebookState.view("cells").view(waitCellId!).addObserver(state => {
                         if (state?.running) {
                             wasRunning = true;
-                        }if (!state?.queued) {
+                        } else if (!state?.queued) {
                             disposable.dispose();
                             if (!state?.error && wasRunning) {
-                                resolve();
+                                resolve(false);
                             } else {
-                                reject();
+                                resolve(true);
                             }
                         }
                     })
                 })
-            } else return Promise.resolve()
-        }).then(() => { // finally, interpret the cell
-            const start = Date.now()
-            const updateStatus = (progress: number) => {
-                if (progress < 256) {
-                    this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Running)))
-                    this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Running, progress)])))
-                    this.receiver.inject(new CellResult(id, new ExecutionInfo(start)))
-                } else {
-                    this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Complete)))
-                    this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Complete, progress)])))
-                    this.receiver.inject(new CellResult(id, new ExecutionInfo(start, Date.now())))
+            } else return Promise.resolve(false)
+        }).then(cancelled => { // finally, interpret the cell
+            if (!cancelled) {
+                const start = Date.now()
+                const updateStatus = (progress: number) => {
+                    if (progress < 256) {
+                        this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Running)))
+                        this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Running, progress)])))
+                        this.receiver.inject(new CellResult(id, new ExecutionInfo(start)))
+                    } else {
+                        this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Complete)))
+                        this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Complete, progress)])))
+                        this.receiver.inject(new CellResult(id, new ExecutionInfo(start, Date.now())))
+                    }
                 }
-            }
-            updateStatus(1)
+                updateStatus(1)
 
-            const results = ClientInterpreters[cell.language].interpret(cell.content, cellContext(this.notebookState, dispatcher, id));
-            updateStatus(256)
-            results.forEach(res => {
-                if (res instanceof ClientResult) {
-                    dispatcher.setCellOutput(id, res);
-                } else {
-                    this.receiver.inject(new CellResult(id, res))
-                }
-            })
-        }).catch(() => {}).finally(() => {
+                const results = ClientInterpreters[cell.language].interpret(cell.content, cellContext(this.notebookState, dispatcher, id));
+                updateStatus(256)
+                results.forEach(res => {
+                    if (res instanceof ClientResult) {
+                        dispatcher.setCellOutput(id, res);
+                    } else {
+                        this.receiver.inject(new CellResult(id, res))
+                    }
+                })
+            }
+        }).finally(() => {
             this.receiver.inject(new KernelStatus(new CellStatusUpdate(id, TaskStatus.Complete)))
             this.receiver.inject(new KernelStatus(new UpdatedTasks([new TaskInfo(taskId, taskId, '', TaskStatus.Complete, 255)])))
         })
