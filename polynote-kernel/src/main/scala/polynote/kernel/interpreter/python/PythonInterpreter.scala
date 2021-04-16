@@ -281,6 +281,10 @@ class PythonInterpreter private[python] (
       |    from importlib.util import spec_from_loader
       |    from collections import defaultdict, UserDict
       |
+      |    # Set the recursion limit to 1000 on Python 3.7 to avoid https://bugs.python.org/issue38593
+      |    if sys.version_info[:2] == (3,7):
+      |        sys.setrecursionlimit(1000)
+      |
       |    if not hasattr(sys, 'argv') or len(sys.argv) == 0:
       |        sys.argv  = ['']
       |
