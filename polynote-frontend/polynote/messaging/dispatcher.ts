@@ -336,11 +336,11 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 })
             })
         }
-        if (path) {
+        if (path && content) {
             this.socket.send(new messages.CreateNotebook(path, content))
             waitForNotebook(path)
         } else {
-            new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
+            new DialogModal('Create Notebook', (path ?? 'path/to/notebook') + "/", 'Create').show().then(newPath => {
                 this.socket.send(new messages.CreateNotebook(newPath, content))
                 waitForNotebook(newPath)
             })
