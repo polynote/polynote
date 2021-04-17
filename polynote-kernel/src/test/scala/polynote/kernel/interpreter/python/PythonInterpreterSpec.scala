@@ -330,6 +330,34 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       }
     }
 
+    "imports should be available to all cells underneath the importing cell" in {
+      val cell1 = interp("x = 1").run(cellState).runIO()
+      val cell2 = interp("x = 2").run(cell1._1).runIO()
+      val cell3 = interp("print(x)").run(cell2._1).runIO()
+      val cell4Code =
+        """
+          |try:
+          |    res = math.pi
+          |except NameError as e:
+          |    res = e""".stripMargin
+      val cell4 = interp(cell4Code).run(cell3._1).runIO()
+
+      // Oops! cell 4 failed because `math` has not yet been imported
+      val cell4Result = cell4._2.state.values.head
+      cell4Result.typeName should include ("NameError")
+
+      // Ok, let's fix the problem by importing math at the top
+      val rerunCell1 = interp("import math; x = 1").run(cellState).runIO()
+      val newCell3State = cell3._1.insertOrReplace(rerunCell1._1)
+
+      // Now let's try cell 4 again
+      val rerunCell4 = interp(cell4Code).run(newCell3State).runIO()
+
+      // it works!
+      val cell4Result2 = rerunCell4._2.state.values.head
+      cell4Result2.value shouldEqual Math.PI
+    }
+
     "completions" in {
       val completions = interpreter.completionsAt("dela", 4, State.id(1)).runIO()
       completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("o", ""), ("name", "str"))))), "", CompletionType.Method))
