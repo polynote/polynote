@@ -4,14 +4,16 @@ import {
     Disposable,
     EditString,
     IDisposable,
-    ImmediateDisposable, MoveArrayValue,
+    ImmediateDisposable,
+    MoveArrayValue,
     NoUpdate,
     ObjectStateHandler,
     OptionalStateView,
     setValue,
     StateHandler,
     StateView,
-    UpdatePartial, UpdateResult,
+    UpdatePartial,
+    UpdateResult,
 } from ".";
 import {ClientResult, CompileErrors, Output, PosRange, ResultValue, RuntimeError,} from "../data/result";
 
@@ -23,14 +25,14 @@ import {
     ModifyStream,
     NotebookUpdate,
     Signatures,
-    TaskInfo, TaskStatus
+    TaskInfo,
+    TaskStatus
 } from "../data/messages";
 
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepEquals, diffArray, Deferred} from "../util/helpers";
-import {availableResultValues} from "../interpreter/client_interpreter";
+import {deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
 import {ConstView, ProxyStateView} from "./state_handler";
 import {ServerStateHandler} from "./server_state";
@@ -573,4 +575,24 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
     protected compare(s1: any, s2: any): boolean {
         return deepEquals(s1, s2);
     }
+}
+
+/**
+ * Helper function for extracting the result values available to a particular cell from the symbols available in the
+ * kernel
+ */
+export function availableResultValues(symbols: KernelSymbols, cellOrder: number[], id?: number): Record<string, ResultValue> {
+    const availableCells = Object.keys(symbols);
+    const whichCells = availableCells.filter(id => id.startsWith('-'));
+    const cellIdx = id !== undefined ? cellOrder.indexOf(id) : cellOrder.length - 1;
+
+    if (cellIdx >= 0) {
+        whichCells.push(...cellOrder.slice(0, cellIdx).map(id => id.toString()));
+    }
+
+    return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {
+        Object.values(symbols[next] || {})
+            .forEach((result: ResultValue) => acc[result.name] = result);
+        return acc;
+    }, {});
 }

@@ -1,16 +1,8 @@
 "use strict";
 
-import {VizInterpreter, VegaInterpreter} from "./vega_interpreter";
-import {
-    ClientResult,
-    CompileErrors,
-    ExecutionInfo,
-    Result,
-    ResultValue,
-    RuntimeError
-} from "../data/result";
-import {CellState, KernelSymbols, NotebookState, NotebookStateHandler} from "../state/notebook_state";
-import {append, setValue} from "../state";
+import {VegaInterpreter, VizInterpreter} from "./vega_interpreter";
+import {ClientResult, CompileErrors, ExecutionInfo, ResultValue, RuntimeError} from "../data/result";
+import {availableResultValues, NotebookStateHandler} from "../state/notebook_state";
 import {NotebookMessageDispatcher} from "../messaging/dispatcher";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {CellResult, CellStatusUpdate, KernelStatus, TaskInfo, TaskStatus, UpdatedTasks} from "../data/messages";
@@ -145,22 +137,6 @@ export function cellContext(notebookState: NotebookStateHandler, dispatcher: Not
     return {id: cellId, availableValues, resultValues};
 }
 
-export function availableResultValues(symbols: KernelSymbols, cellOrder: number[], id?: number): Record<string, ResultValue> {
-    const availableCells = Object.keys(symbols);
-    const whichCells = availableCells.filter(id => id.startsWith('-'));
-    const cellIdx = id !== undefined ? cellOrder.indexOf(id) : cellOrder.length - 1;
-
-    if (cellIdx >= 0) {
-        whichCells.push(...cellOrder.slice(0, cellIdx).map(id => id.toString()))
-    }
-
-    return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {
-        Object.values(symbols[next] || {})
-            .forEach((result: ResultValue) => acc[result.name] = result);
-        return acc;
-    }, {});
-}
-
 function availableClientValues(resultValues: Record<string, ResultValue>, notebookState: NotebookStateHandler, dispatcher: NotebookMessageDispatcher): Record<string, any> {
     return Object.fromEntries(
         Object.entries(resultValues).map(
@@ -179,5 +155,6 @@ function availableClientValues(resultValues: Record<string, ResultValue>, notebo
                 return [name, bestValue];
             }
         )
-    )
+    );
 }
+

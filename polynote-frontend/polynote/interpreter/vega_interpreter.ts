@@ -34,6 +34,7 @@ export const VegaInterpreter: IClientInterpreter = {
         try {
             ast = acorn.parse(code, {sourceType: 'script', ecmaVersion: 6, ranges: true })
         } catch (err) {
+            console.error(err)
             const pos = err.pos - 1;
             return [new CompileErrors([
                 new KernelReport(new Position(`Cell ${cellContext.id}`, pos, pos, pos), err.message, 2)
@@ -44,7 +45,7 @@ export const VegaInterpreter: IClientInterpreter = {
         if (availableValues.hasOwnProperty('window')) {
             delete availableValues['window'];
         }
-        const names = ['window', ...Object.keys(availableValues)];
+        const names = ['window', ...Object.keys(availableValues).map(sanitizeJSVariable)];
         const fn = new Function(...names, wrappedCode).bind({});
 
         try {
@@ -173,6 +174,7 @@ export const VizInterpreter: IClientInterpreter = {
             const result = cellContext.resultValues[viz.value];
             return vizResult(cellContext.id, viz, result, cellContext);
         } catch (err) {
+            console.error(err)
             const pos = err.lineNumber !== undefined && err.columnNumber !== undefined ?
                 positionIn(code, err.lineNumber, err.columnNumber) : 0;
             const message = err.message || "Cell does not contain a valid visualization description";
@@ -273,3 +275,21 @@ for (let key of Object.keys(window)) {
 delete windowOverride.console;
 Object.freeze(windowOverride);
 
+
+/**
+ * Sanitize a string as a proper Javascript variable name. Variables in other languages can have characters that are
+ * not allowed in Javascript, such as `-`.
+ *
+ * @param variableName
+ */
+const substitutions = [
+    {
+        from: "-",
+        to: "$dash$"
+    }
+]
+export function sanitizeJSVariable(variableName: string): string {
+    return substitutions.reduce((acc, {from, to}) => {
+        return acc.replaceAll(from, to)
+    }, variableName)
+}
