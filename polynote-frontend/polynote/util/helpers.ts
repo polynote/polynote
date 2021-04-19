@@ -269,9 +269,9 @@ export function arrExists<T>(arr: T[], fun: (t: T) => boolean): boolean {
  * Foreach that wont go crazy if the callback for an element causes that element to be removed.
  * It goes backwards.
  */
-export function safeForEach<T>(arr: T[], fun: (t: T) => void): void {
+export function safeForEach<T>(arr: T[], fun: (t: T, index: number, arr: T[]) => void): void {
     for(let idx = arr.length - 1; idx >= 0; idx--) {
-        fun(arr[idx])
+        fun(arr[idx], idx, arr)
     }
 }
 

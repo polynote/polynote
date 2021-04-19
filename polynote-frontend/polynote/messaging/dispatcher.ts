@@ -134,6 +134,10 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         this.socket.send(new messages.CancelTasks(this.state.path))
     }
 
+    cancelTask(id: string) {
+        this.socket.send(new messages.CancelTasks(this.state.path, id));
+    }
+
     /*******************************
      ** Notebook management methods **
      *******************************/

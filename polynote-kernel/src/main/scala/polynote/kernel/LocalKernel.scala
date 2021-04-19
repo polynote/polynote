@@ -36,6 +36,8 @@ class LocalKernel private[kernel] (
 
   override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = PublishStatus.access.flatMap {
     publishStatus =>
+      val notifyCancelled = publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie
+      val notifyErrored   = publishStatus.publish1(CellStatusUpdate(id, ErrorStatus)).orDie
       val queueTask: RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
         currentTime.flatMap {
           startTime =>
@@ -60,28 +62,30 @@ class LocalKernel private[kernel] (
               _             <- updateState(resultState)
               _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
               _             <- publishEndTime
-              _             <- PublishStatus(CellStatusUpdate(id, Complete))
+              _             <- notifyCancelled
               notebook      <- CurrentNotebook.get
               _             <- busyState.update(_.setIdle)
             } yield ()
 
-            run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt { _ =>
+            run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt {
               PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
-              PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
+              notifyErrored *>
               busyState.update(_.setIdle).orDie *>
               publishEndTime.orDie
             }.catchAll {
               err =>
-                PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
-                  PublishResult(ErrorResult(err)) *>
+                PublishResult(ErrorResult(err)) *>
+                  notifyErrored *>
                   busyState.update(_.setIdle) *>
                   publishEndTime.orDie
             }
         }
       }
 
-      PublishStatus(CellStatusUpdate(id, Queued)) *>
-      queueTask.map(_.onInterrupt(_ => publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie))
+      for {
+        inner <- queueTask
+        _     <- publishStatus.publish1(CellStatusUpdate(id, Queued))
+      } yield inner.onInterrupt(notifyCancelled)
   }
 
   private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {

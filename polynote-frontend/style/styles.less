@@ -1497,7 +1497,7 @@ button.inspect.icon-button {
       padding: 8px;
       margin: 4px 0;
       white-space: pre-line;
-
+      position: relative;
       h4 {
         margin-top: 0;
       }
@@ -1526,6 +1526,12 @@ button.inspect.icon-button {
 
       .close-button {
         display: none;
+      }
+
+      &:hover .close-button {
+        display: block;
+        position: absolute;
+        right: 1em;
       }
 
       &.error {

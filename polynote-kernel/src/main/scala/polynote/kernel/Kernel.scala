@@ -16,6 +16,7 @@ trait Kernel {
   def queueCell(id: CellID): TaskC[Task[Unit]]
 
   def cancelAll(): RIO[BaseEnv with TaskManager, Unit] = TaskManager.access.flatMap(_.cancelAll())
+  def cancelTask(taskId: String): RIO[BaseEnv with TaskManager, Unit] = TaskManager.access.flatMap(_.cancelTask(taskId))
   def tasks(): RIO[BaseEnv with TaskManager, List[TaskInfo]] = TaskManager.access.flatMap(_.list)
 
   /**

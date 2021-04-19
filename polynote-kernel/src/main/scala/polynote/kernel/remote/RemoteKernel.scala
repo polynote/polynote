@@ -113,7 +113,11 @@ class RemoteKernel[ServerAddress](
     }
   }
 
-  override def cancelAll(): RIO[BaseEnv with TaskManager, Unit] = super.cancelAll() &> request(CancelAllRequest(nextReq)) {
+  override def cancelAll(): RIO[BaseEnv with TaskManager, Unit] = super.cancelAll() &> request(CancelRequest(nextReq, None)) {
+    case UnitResponse(reqId) => done(reqId, ())
+  }
+
+  override def cancelTask(taskId: String): RIO[BaseEnv with TaskManager, Unit] = super.cancelTask(taskId) &> request(CancelRequest(nextReq, Some(taskId))) {
     case UnitResponse(reqId) => done(reqId, ())
   }
 
@@ -254,7 +258,8 @@ class RemoteKernelClient(
               .forkDaemon
         }.as(UnitResponse(reqId))
         case ListTasksRequest(reqId)                      => kernel.tasks().map(ListTasksResponse(reqId, _))
-        case CancelAllRequest(reqId)                      => kernel.cancelAll().as(UnitResponse(reqId))
+        case CancelRequest(reqId, None)                   => kernel.cancelAll().as(UnitResponse(reqId))
+        case CancelRequest(reqId, Some(taskId))           => kernel.cancelTask(taskId).as(UnitResponse(reqId))
         case CompletionsAtRequest(reqId, cellID, pos)     => kernel.completionsAt(cellID, pos).map(CompletionsAtResponse(reqId, _))
         case ParametersAtRequest(reqId, cellID, pos)      => kernel.parametersAt(cellID, pos).map(ParametersAtResponse(reqId, _))
         case ShutdownRequest(reqId)                       => kernel.shutdown().as(ShutdownResponse(reqId)).uninterruptible

@@ -705,12 +705,13 @@ export class HandleData extends Message {
 
 
 export class CancelTasks extends Message {
-    static codec = combined(shortStr).to(CancelTasks);
+    static codec = combined(shortStr, optional(tinyStr)).to(CancelTasks);
     static get msgTypeId() { return 18; }
-    static unapply(inst: CancelTasks): ConstructorParameters<typeof CancelTasks> { return [inst.path]; }
+    static unapply(inst: CancelTasks): ConstructorParameters<typeof CancelTasks> { return [inst.path, inst.taskId]; }
 
-    constructor(readonly path: string) {
+    constructor(readonly path: string, readonly taskId?: string) {
         super();
+        this.taskId = taskId ?? undefined;
         Object.freeze(this);
     }
 }
