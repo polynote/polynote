@@ -5,6 +5,7 @@ import {
     Disposable,
     EditString,
     editString,
+    IDisposable,
     ImmediateDisposable,
     moveArrayValue,
     removeFromArray,
@@ -878,6 +879,8 @@ export class CodeCell extends Cell {
         updateError(this.state.error)
         cellState.observeKey("error", error => updateError(error));
 
+        let nbStatusObs: IDisposable | undefined = undefined;
+
         const updateRunning = (running: boolean | undefined, previously?: boolean) => {
             if (running) {
                 this.addCellClass("running");
@@ -887,6 +890,14 @@ export class CodeCell extends Cell {
                 // update Execution Status (in case this is an initial load)
                 if (this.state.metadata.executionInfo) this.setExecutionInfo(execInfoEl, this.state.metadata.executionInfo)
 
+                // cancel the running cell counter if the kernel dies
+                nbStatusObs?.dispose()
+                nbStatusObs = this.notebookState.view("kernel").observeKey("status", status => {
+                    if (this.execDurationUpdater && status === "dead") {
+                        cellState.updateField("running", () => setValue(false))
+                        nbStatusObs?.dispose()
+                    }
+                })
             } else {
                 this.removeCellClass("running");
                 if (previously) {
@@ -894,6 +905,9 @@ export class CodeCell extends Cell {
                     NotificationHandler.notify(this.path, `Cell ${this.id} ${status}`).then(() => {
                         this.notebookState.selectCell(this.id)
                     })
+
+                    nbStatusObs?.dispose()
+
                     // clear the execution duration updater if it hasn't been cleared already.
                     if (this.execDurationUpdater) {
                         window.clearInterval(this.execDurationUpdater);
