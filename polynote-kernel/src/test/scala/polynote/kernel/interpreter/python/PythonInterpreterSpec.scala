@@ -343,6 +343,26 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
         ParameterHints("delattr(o, name: str)", Option("Deletes the named attribute from the given object."),
           List(ParameterHint("o", "", None), ParameterHint("name", "str", None)))),0,0))
     }
+
+
+    "should get a RecursionError upon infinite recursion" in {
+      val code =
+        """
+          |def call_myself():
+          |    for r in call_myself():
+          |        pass
+          |
+          |call_myself()
+          |""".stripMargin
+      try {
+        assertOutput(code) { case _ => }
+      } catch {
+        case err: Throwable =>
+          err.getMessage shouldEqual "RecursionError: maximum recursion depth exceeded"
+      }
+    }
+
+
   }
 
   "PythonObject" - {
