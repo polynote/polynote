@@ -329,13 +329,11 @@ function buildContainerFrame(content: string): HTMLIFrameElement {
     iframe.style.border = '0';
     iframe.style.width = '100%';
     iframe.onload = evt => {
-        console.log("setting iframe height and width", evt, iframe)
         const sandboxContainer = iframe.contentDocument?.getElementById('polynote-sandbox-container');
         if (sandboxContainer) {
             iframe.style.height = sandboxContainer.scrollHeight + "px";
             iframe.style.width = sandboxContainer.scrollWidth + "px";
         } else {
-            console.log("unable to set sandbox container. Falling back to standard sizing");
             iframe.style.height = "300px";
             iframe.style.width = "100%";
         }
