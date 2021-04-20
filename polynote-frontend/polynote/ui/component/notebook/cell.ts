@@ -1202,7 +1202,10 @@ export class CodeCell extends Cell {
 
         // the editor width is determined by the container's width.
         // if the width was passed from above, we can avoid measuring the width of the container (which forces a reflow)
-        const width = forceWidth ?? (onlyHeight ? this.previousWidth : this.editorEl.clientWidth);
+        let width = forceWidth ?? (onlyHeight ? this.previousWidth : this.editorEl.clientWidth);
+        if (width === 0) { // if width is 0 we need to measure, unfortunately.
+            width = this.editorEl.clientWidth
+        }
 
         // avoid doing a layout if size hasn't changed
         if (this.previousHeight === height && this.previousWidth === width) {

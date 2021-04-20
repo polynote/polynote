@@ -54,9 +54,7 @@ export class Notebook extends Disposable {
                     cellsEl.scrollTop = maybeScrollLocation
                 }
 
-                if (!notebookState.isLoading) {
-                    layoutCells();
-                }
+                notebookState.loaded.then(() => layoutCells())
             } else {
                 // deselect cells.
                 this.notebookState.selectCell(undefined)
