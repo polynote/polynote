@@ -209,11 +209,11 @@ class CellToolbar extends ToolbarElement {
             ], [
                 iconButton(["insert-cell-above"], "Insert cell above current", "arrow-up", "Insert above")
                     .click(() => {
-                        if(this.nbHandler) this.nbHandler.insertCell('above').then(id => this.nbHandler?.selectCell(id))
+                        if(this.nbHandler) this.nbHandler.insertCell('above').then(id => this.nbHandler?.selectCell(id, {editing: true}))
                     }),
                 iconButton(["insert-cell-below"], "Insert cell below current", "arrow-down", "Insert below")
                     .click(() => {
-                        if (this.nbHandler) this.nbHandler.insertCell('below').then(id => this.nbHandler?.selectCell(id))
+                        if (this.nbHandler) this.nbHandler.insertCell('below').then(id => this.nbHandler?.selectCell(id, {editing: true}))
                     }),
                 iconButton(["delete-cell"], "Delete current cell", "trash-alt", "Delete")
                     .click(() => {

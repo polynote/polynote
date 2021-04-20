@@ -249,7 +249,7 @@ export class Notebook extends Disposable {
     private insertCell(prev: number, language: string, content: string, metadata?: CellMetadata) {
         this.notebookState.insertCell("below", {id: prev, language, content, metadata: metadata ?? new CellMetadata()})
             .then(newCellId => {
-                this.notebookState.selectCell(newCellId)
+                this.notebookState.selectCell(newCellId, {editing: true})
             })
     }
 
