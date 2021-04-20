@@ -661,11 +661,13 @@ class PythonInterpreter private[python] (
 
   protected def populateGlobals(state: State): Task[PyObject] = jep {
     jep =>
-      // grab the nearest Python state (if any) so we can use its globals dict.
-      val maybePrevPyState = state.takeUntil(_.isInstanceOf[PythonState]).reverse
-      val globalsDict = maybePrevPyState match {
-        case PythonState(_, _, _, globalsDict) :: _ => globalsDict.getAttr("copy", classOf[PyCallable]).callAs(classOf[PyObject])
-        case _                                      => jep.getValue("{}", classOf[PyObject])
+      // collect `globals` from previous states, overriding old entries with newer ones.
+      val globalsDict = state.collect {
+        case PythonState(_, _, _, globalsDict) => globalsDict
+      }.foldLeft(jep.getValue("{}", classOf[PyObject])) {
+        (acc: PyObject, next: PyObject) =>
+          acc.getAttr("update", classOf[PyCallable]).call(next)
+          acc
       }
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
