@@ -199,6 +199,7 @@ object StreamingDataRepr {
     }
 
     def release(): Unit = if (releaseFlag == 0) synchronized {
+      handles.remove(this.handle, this)
       if (finalizer != null) {
         finalizer.apply()
         finalizer = null
@@ -244,7 +245,6 @@ object StreamingDataRepr {
     val handleId = nextHandle.getAndIncrement()
     val handle = mkHandle(handleId)
     handles.put(handleId, handle)
-
     StreamingDataRepr(handleId, handle.dataType, handle.knownSize)
   }
 

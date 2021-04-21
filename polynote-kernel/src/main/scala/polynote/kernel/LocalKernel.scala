@@ -21,7 +21,7 @@ import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.interop.catz._
-import zio.{Promise, RIO, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, Task, UIO, URIO, ZIO, ZLayer}
 
 
 class LocalKernel private[kernel] (
@@ -94,11 +94,15 @@ class LocalKernel private[kernel] (
   }
 
   private def updateState(resultState: State) = {
-    interpreterState.updateState {
-      state =>
-        val rs = resultState
-        val updated = state.insertOrReplace(resultState)
-        updated
+    // release any handles from a previous run of this cell
+    val releaseExisting = interpreterState.getState.flatMap {
+      prevState => ZIO.foreach_(prevState.at(resultState.id)) {
+        prevCellState => releaseReprs(prevCellState.values.flatMap(_.reprs))
+      }
+    }
+
+    releaseExisting *> interpreterState.updateState {
+      state => state.insertOrReplace(resultState)
     }
   }
 
@@ -247,7 +251,7 @@ class LocalKernel private[kernel] (
                   .catchAll(_ => ZIO.succeed(Array.empty[ValueRepr])).map(_.toList).map {
                     case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
                     case reprs => reprs :+ stringRepr
-                  }.map {
+                  }.flatMap(filterReprs).map {
                     reprs => value.copy(reprs = reprs)
                   }
 
@@ -260,6 +264,27 @@ class LocalKernel private[kernel] (
         state.updateValuesM(updateValue)
     }
 
+  }
+
+  // remove any invalid reprs from the given list, and release any handles owned by invalid reprs.
+  // returns the filtered (valid) reprs.
+  private def filterReprs(reprs: List[ValueRepr]): URIO[Logging, List[ValueRepr]] = reprs.partition(isValidRepr) match {
+    case (valid, invalid) => releaseReprs(invalid).as(valid)
+  }
+
+  private def releaseReprs(reprs: List[ValueRepr]): URIO[Logging, Unit] = ZIO.foreach_(reprs) {
+    case StreamingDataRepr(handleId, _, _) => ZIO.effect(StreamingDataRepr.releaseHandle(handleId)).catchAll(Logging.error)
+    case UpdatingDataRepr(handleId, _)     => ZIO.effect(UpdatingDataRepr.releaseHandle(handleId)).catchAll(Logging.error)
+    case LazyDataRepr(handleId, _, _)      => ZIO.effect(LazyDataRepr.releaseHandle(handleId)).catchAll(Logging.error)
+    case _ => ZIO.unit
+  }
+
+  private def isValidRepr(repr: ValueRepr): Boolean = repr match {
+    case StreamingDataRepr(_, StructType(Nil), _) => false
+    case UpdatingDataRepr(_, StructType(Nil))     => false
+    case LazyDataRepr(_, StructType(Nil), _)      => false
+    case DataRepr(StructType(Nil), _)             => false
+    case _ => true
   }
 
   override def awaitClosed: Task[Unit] = closed.await
