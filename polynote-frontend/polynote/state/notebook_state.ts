@@ -583,14 +583,15 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
  */
 export function availableResultValues(symbols: KernelSymbols, cellOrder: number[], id?: number): Record<string, ResultValue> {
     const availableCells = Object.keys(symbols);
-    const whichCells = availableCells.filter(id => id.startsWith('-'));
+    // first, make sure to add any predef cells (they don't appear in cellOrder)
+    const cellsInScope = availableCells.filter(id => id.startsWith('-'));
     const cellIdx = id !== undefined ? cellOrder.indexOf(id) : cellOrder.length - 1;
 
     if (cellIdx >= 0) {
-        whichCells.push(...cellOrder.slice(0, cellIdx).map(id => id.toString()));
+        cellsInScope.push(...cellOrder.slice(0, cellIdx).map(id => id.toString()));
     }
 
-    return whichCells.reduce<Record<string, ResultValue>>((acc, next) => {
+    return cellsInScope.reduce<Record<string, ResultValue>>((acc, next) => {
         Object.values(symbols[next] || {})
             .forEach((result: ResultValue) => acc[result.name] = result);
         return acc;

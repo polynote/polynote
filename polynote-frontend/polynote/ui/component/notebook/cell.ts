@@ -2028,6 +2028,9 @@ export class VizCell extends Cell {
     private copyCellOutputBtn: TagElement<"button">;
     private convertToVegaBtn: TagElement<"button">;
 
+    // The index of the source cell of the value we're visualizing.
+    private valueSourceIdxWatermark?: number;
+
     constructor(dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>) {
         super(dispatcher, _notebookState, _cellState);
         const cellState = this.cellState;
@@ -2103,8 +2106,13 @@ export class VizCell extends Cell {
          * Keep watching the available values, so the plot UI can be updated when the value changes.
          */
         const updateValues = (newValues: Record<string, ResultValue>) => {
-            if (newValues && newValues[this.valueName] && newValues[this.valueName].live && newValues[this.valueName] !== this.resultValue) {
-                this.setValue(newValues[this.valueName]);
+            if (newValues && newValues[this.valueName] && newValues[this.valueName].live) {
+                const newValue = newValues[this.valueName];
+                // always set the watermark since cellOrder may have changed.
+                const shouldSetValue = this.checkValueSource(newValue)
+                if (shouldSetValue && newValues[this.valueName] !== this.resultValue) {
+                    this.setValue(newValue);
+                }
                 return true;
             }
             return false;
@@ -2116,9 +2124,12 @@ export class VizCell extends Cell {
                 updateValues
             );
 
-            this.notebookState.observeKey("cellOrder", (order, update) => updateValues(
-                availableResultValues(this.notebookState.state.kernel.symbols, order, this.id)
-            ));
+            this.notebookState.observeKey("cellOrder", (order, update) => {
+                // if a cell has been moved, the value we've been observing may have changed, because the scope
+                // available to this cell is no longer the same. Clear the source cell watermark.
+                this.valueSourceIdxWatermark = undefined;
+                updateValues(availableResultValues(this.notebookState.state.kernel.symbols, order, this.id))
+            });
         }
 
         if (notebookState.isLoading) {
@@ -2185,6 +2196,27 @@ export class VizCell extends Cell {
             const content = maybeOutput.join('')
             copyToClipboard(content, this.notebookState)
         }
+    }
+
+    /**
+     * Check whether the value's `sourceCell` meets or exceeds the valueSourceCellIdx watermark. Updates the watermark
+     * if necessary.
+     *
+     * @return whether the value meets the watermark
+     */
+    private checkValueSource(value: ResultValue): boolean {
+        const sourceCellIdx = this.notebookState.getCellIndex(value.sourceCell);
+        if (this.valueSourceIdxWatermark === undefined) {
+            this.valueSourceIdxWatermark = sourceCellIdx;
+        } else if (sourceCellIdx) {
+            if (this.valueSourceIdxWatermark > sourceCellIdx) {
+                // This is not the right value. Must be a value defined earlier that has the same name. Don't update.
+                return false
+            } else if (this.valueSourceIdxWatermark < sourceCellIdx) {
+                this.valueSourceIdxWatermark = sourceCellIdx;
+            }
+        }
+        return true
     }
 
     private setValue(value: ResultValue): void {
