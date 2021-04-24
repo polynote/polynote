@@ -20,6 +20,8 @@ expression). This result is saved as the `Out` variable and is displayed in the 
 Polynote just shows the value and simple type of simple results. For more complex results, Polynote shows a data view
 that allows more inspection of the data. 
 
+#### Nested Data
+
 Nested data can be explored directly in a tree-like view.
 
 === "Exploring Nested Data"
@@ -53,6 +55,7 @@ Nested data can be explored directly in a tree-like view.
     )
     ```
 
+#### Inspecting Results 
 
 Like the buttons in the [Quick Inspector](kernel-pane.md#quick-inspector), the `View Data`, `View Schema`, and 
 `Plot Data` buttons each create a new [Viz Cell](visualization-and-viz-cells.md) underneath the cell. 

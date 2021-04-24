@@ -18,6 +18,7 @@ markdown_extensions:
   - pymdownx.caret
   - footnotes
   - attr_list
+  - abbr
 repo_url: https://github.com/polynote/polynote
 edit_uri: edit/master/docs
 repo_name: polynote
