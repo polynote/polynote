@@ -1109,10 +1109,9 @@ export class PlotSelector extends Disposable {
                 ]),
                 hasDimensions ? this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
                     if (checked) {
-                        this.el.classList.add('facet');
                         this.stateHandler.updateField("facet", s => s === undefined ? setValue({}) : NoUpdate )
                     } else {
-                        this.el.classList.remove('facet');
+                        this.stateHandler.updateField("facet", s => s !== undefined ? setValue(undefined) : NoUpdate )
                     }
                 }) : undefined,
                 hasDimensions ? div(['facet-options'], [

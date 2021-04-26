@@ -2,9 +2,11 @@
 
 import * as monaco from "monaco-editor";
 import * as katex from "katex";
-import {Content, details, div, span, tag, TagElement} from "../tags";
+import {Content, details, div, h4, span, tag, TagElement} from "../tags";
 import {ArrayType, MapType, OptionalType, StructField, StructType} from "../../data/data_type";
 import embed from "vega-embed";
+import {DataRepr} from "../../data/value_repr";
+import {DataReader} from "../../data/codec";
 
 export function displayContent(contentType: string, content: string | DocumentFragment, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
@@ -206,6 +208,18 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
     }
 }
 
+export function prettyDisplayData(resultName: string, typeName: string, dataRepr: DataRepr): Promise<[string, TagElement<"div">]> {
+    return monaco.editor.colorize(typeName, "scala", {}).then(typeHTML => {
+        const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+        resultType.innerHTML = typeHTML;
+        const el = div([], [
+            h4(['result-name-and-type'], [span(['result-name'], [resultName]), ': ', resultType]),
+            displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
+        ]);
+        return ["text/html", el];
+    })
+}
+
 export function prettyDuration(milliseconds: number) {
     function quotRem(dividend: number, divisor: number) {
         const quotient = Math.floor(dividend / divisor);
@@ -319,6 +333,11 @@ function buildContainerFrame(content: string): HTMLIFrameElement {
     style.innerText = `
         html, body { margin: 0; padding: 0 }
     `;
+    // apparently Monaco adds a bazillion style elements to the page...
+    [...document.head.getElementsByTagName("style")].forEach(style => {
+        const s = doc.importNode(style, true)
+        head.appendChild(s)
+    })
     const body = doc.documentElement.appendChild(doc.createElement('body'));
     const container = body.appendChild(doc.createElement('div'));
     container.classList.add('htmltext');

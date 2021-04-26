@@ -19,7 +19,7 @@ import {collectFirstMatch, deepCopy, Deferred, findInstance, positionIn} from ".
 import {div} from "../ui/tags";
 import {parseViz, Viz} from "../ui/input/viz_selector";
 import {DataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../data/value_repr";
-import {displayData, displaySchema} from "../ui/display/display_content";
+import {displayData, displaySchema, prettyDisplayData} from "../ui/display/display_content";
 import {TableView} from "../ui/layout/table_view";
 import {StructType} from "../data/data_type";
 
@@ -121,8 +121,10 @@ export function vizResult(id: number, viz: Viz, result: ResultValue, cellContext
             if (!dataRepr) {
                 return err(`Value ${viz.value} has no data representation`);
             }
-            const dataEl = displayData(dataRepr.decode(), result.name, 1);
-            return [new MIMEClientResult(new MIMERepr("text/html", dataEl.outerHTML))];
+            const mimeRepr = prettyDisplayData(result.name, result.typeName, dataRepr).then(([mimeType, resultFragment]) => {
+                return new MIMERepr(mimeType, resultFragment.outerHTML)
+            })
+            return [new MIMEClientResult(mimeRepr)];
 
         case "table":
             // TODO: should do this better in so many ways
