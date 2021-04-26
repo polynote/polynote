@@ -208,12 +208,31 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
     }
 }
 
-export function prettyDisplayData(resultName: string, typeName: string, dataRepr: DataRepr): Promise<[string, TagElement<"div">]> {
-    return monaco.editor.colorize(typeName, "scala", {}).then(typeHTML => {
-        const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
+function colorizeResultType(typeName: string, language: string = "scala"): Promise<TagElement<"span">> {
+    return monaco.editor.colorize(typeName, language, {}).then(typeHTML => {
+        const resultType = span(['result-type'], []).attr("data-lang" as any, language);
         resultType.innerHTML = typeHTML;
+
+        // why do they put <br> elements in there?
+        [...resultType.getElementsByTagName('br')].forEach(br => br.parentNode?.removeChild(br));
+        return resultType
+    })
+}
+
+export function prettyDisplayString(resultName: string, typeName: string, valueText: string): Promise<[string, TagElement<"div">]> {
+    return colorizeResultType(typeName, "scala").then(resultType => {
+        const el = div(['string-content'], [
+            span(['result-name-and-type'], [span(['result-name'], [resultName]), ': ', resultType, ' = ']),
+            valueText
+        ]);
+        return ["text/html", el];
+    })
+}
+
+export function prettyDisplayData(resultName: string, typeName: string, dataRepr: DataRepr): Promise<[string, TagElement<"div">]> {
+    return colorizeResultType(typeName, "scala").then(resultType => {
         const el = div([], [
-            h4(['result-name-and-type'], [span(['result-name'], [resultName]), ': ', resultType]),
+            span(['result-name-and-type'], [span(['result-name'], [resultName]), ': ', resultType, ' = ']),
             displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
         ]);
         return ["text/html", el];
