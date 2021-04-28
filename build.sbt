@@ -89,9 +89,7 @@ val commonSettings = Seq(
     destFiles
   },
   scalacOptions += "-deprecation",
-  test in assembly := {},
-  resolvers += Resolver.mavenLocal,
-  resolvers += ("Bodar" at "http://repo.bodar.com").withAllowInsecureProtocol(true)
+  test in assembly := {}
 )
 
 lazy val `polynote-macros` = project.settings(
@@ -161,8 +159,7 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-generic-extras" % "0.11.1",
     "io.circe" %% "circe-parser" % "0.11.1",
     "net.sf.py4j" % "py4j" % "0.10.7",
-    "org.scalamock" %% "scalamock" % "4.4.0" % "test",
-    "com.googlecode.totallylazy" % "totallylazy" % "2.249"
+    "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
   distFiles := Seq(assembly.value) ++ (dependencyClasspath in Compile).value.collect {
     case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") => jar.data
