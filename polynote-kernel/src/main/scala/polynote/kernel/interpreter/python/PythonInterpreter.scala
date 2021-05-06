@@ -882,7 +882,19 @@ object PythonInterpreter {
       }
 
       val interp = new SharedInterpreter()
-      venv.foreach(path => interp.exec(s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"})"""))
+      venv.foreach { path =>
+        // activate virtualenv
+        interp.exec(s"""exec(open("$path/bin/activate_this.py").read(), {'__file__': "$path/bin/activate_this.py"})""")
+        // update pkg_resources with the new venv path entries. I don't understand why virtualenv doesn't do this
+        // automatically...
+        interp.exec(
+          """
+            |import sys, pkg_resources
+            |diff = set(sys.path).difference(pkg_resources.working_set.entries)
+            |for entry in diff:
+            |    pkg_resources.working_set.add_entry(entry)
+            |""".stripMargin)
+      }
       interp
     }
   }
