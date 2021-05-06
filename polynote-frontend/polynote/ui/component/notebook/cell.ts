@@ -51,7 +51,7 @@ import {
     displaySchema,
     mimeEl,
     MIMEElement,
-    parseContentType,
+    parseContentType, prettyDisplayData,
     prettyDuration
 } from "../../display/display_content";
 import match, {matchS, purematch} from "../../../util/match";
@@ -1629,17 +1629,12 @@ class CodeCellOutput extends Disposable {
         // First, check to see if there's a special DataRepr or StreamingDataRepr
         index = result.reprs.findIndex(repr => repr instanceof DataRepr);
         if (index >= 0) {
-            return monaco.editor.colorize(result.typeName, "scala", {}).then(typeHTML => {
-                const dataRepr = result.reprs[index] as DataRepr;
+            const dataRepr = result.reprs[index] as DataRepr;
+            return prettyDisplayData(result.name, result.typeName, dataRepr).then(([mime, el]) => {
                 const frag = document.createDocumentFragment();
-                const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-                resultType.innerHTML = typeHTML;
-                frag.appendChild(div([], [
-                    h4(['result-name-and-type'], [span(['result-name'], [result.name]), ': ', resultType]),
-                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
-                ]));
-                return ["text/html", frag];
-            })
+                frag.appendChild(el)
+                return [mime, frag]
+            });
         }
 
         index = result.reprs.findIndex(repr => repr instanceof StreamingDataRepr);

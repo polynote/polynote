@@ -30,7 +30,7 @@ import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 import {changedKeys, findInstance} from "../../../util/helpers";
 import {remove} from "vega-lite/build/src/compositemark";
 import * as monaco from "monaco-editor";
-import {displayData} from "../../display/display_content";
+import {displayData, prettyDisplayData, prettyDisplayString} from "../../display/display_content";
 import {DataReader} from "../../../data/codec";
 import {DataRepr, StreamingDataRepr} from "../../../data/value_repr";
 import {ValueInspector} from "../value_inspector";
@@ -487,25 +487,14 @@ class KernelSymbolViewWidget {
     }
 
     private static contentFor(value: ResultValue) {
-        return monaco.editor.colorize(value.typeName, "scala", {}).then(typeHTML => {
-            const dataRepr = findInstance(value.reprs, DataRepr);
-            const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-            resultType.innerHTML = typeHTML;
-            // why do they put <br> elements in there?
-            [...resultType.getElementsByTagName('br')].forEach(br => br.parentNode?.removeChild(br));
-
-            if (dataRepr) {
-                return div(['data-content'], [
-                    span(['result-name-and-type'], [span(['result-name'], [value.name]), ': ', resultType, ' = ']),
-                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
-                ]);
-            }
-
-            return div(['string-content'], [
-                span(['result-name-and-type'], [span(['result-name'], [value.name]), ': ', resultType, ' = ']),
-                value.valueText
-            ]);
-        })
+        const dataRepr = findInstance(value.reprs, DataRepr);
+        if (dataRepr) {
+            return prettyDisplayData(value.name, value.typeName, dataRepr)
+                .then(([_, el]) => el)
+        } else {
+            return prettyDisplayString(value.name, value.typeName, value.valueText)
+                .then(([_, el]) => el)
+        }
     }
 
     showFor(row: HTMLElement, value: ResultValue, handler: NotebookStateHandler) {
