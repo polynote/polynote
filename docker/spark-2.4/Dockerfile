@@ -2,6 +2,8 @@ ARG POLYNOTE_VERSION
 ARG SCALA_VERSION="2.11"
 FROM polynote/polynote:${POLYNOTE_VERSION}-${SCALA_VERSION}
 
+ARG SCALA_VERSION="2.11" //Arguments after `FROM` are reset
+
 WORKDIR /opt
 
 USER root
