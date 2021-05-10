@@ -1,5 +1,31 @@
 # Unreleased
 
+# 0.4.1 (April 20, 2021)
+Features:
+* Can now cancel (and unqueue) tasks #1129
+* Path is now prepopulated when creating notebook after clicking on a directory #1150
+* HTML output from cells is now isolated in an iframe. #1140
+  * Note that this does not make things more secure; it's merely useful to scope CSS rules so they don't affect the 
+    entire page. 
+
+Bugfixes:
+* Fix for a double-typing bug causing odd behavior #1130
+* Fix layout of the kernel pane when the symbol table is too large #1128
+* Fix a couple issues handling renamed notebooks #1138
+* Fix for LaTeX editor positioning #1149, including a performance fix for the text editor #1147
+* Cell buttons now more obvious when pressed #1135
+* Fix a bug preventing execution times from being displayed when a notebook was first loaded #1146
+* Fix broken plotting when JS-invalid variable names are present in a cell's context #1139
+* Fix broken viz cells handling non-numeric data #1148
+* Cell execution timer now stops if the kernel dies #1143
+* Set Python recursion limit in 3.7 to mitigate weird wontfix Python bug #1144
+* Better state propagation for Python cells #764
+* Focus editor after creating cell #1158
+* Fix Open Kernels in About view #1155
+* Fix issue preventing `POLYNOTE_INHERIT_CLASSPATH` environment variable from working in IntelliJ #1106
+* Fix path entries for `pkg_resources` lib to account for new entries after activating the venv. #1169
+* Fix Docker build issue (thanks @ghoto !) #1170
+
 # 0.4.0 (Mar 31, 2021)
 * **Frontend Rewrite** The frontend has been rewritten from the ground up. This change should be mostly transparent to 
   users, but puts us on a much better footing for future improvements. The rewrite did resolve a few longstanding issues 
