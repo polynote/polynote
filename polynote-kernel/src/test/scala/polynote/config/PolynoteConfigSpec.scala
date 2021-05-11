@@ -115,6 +115,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |    foo:   bar
         |  spark_submit_args: these are the args
         |  dist_classpath_filter: .jar$
+        |  jars_as_urls: false
         |  property_sets:
         |    - name: Test
         |      properties:
@@ -131,6 +132,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     val parsed = PolynoteConfig.parse(yaml).right.get.spark.get
     parsed.properties shouldEqual Map("flurg" -> "blurg", "foo" -> "bar")
     parsed.sparkSubmitArgs shouldEqual Some("these are the args")
+    parsed.jarsAsUrls shouldEqual Some(false)
     parsed.distClasspathFilter.get.pattern() shouldEqual ".jar$"
     parsed.propertySets.get shouldEqual List(
       SparkPropertySet(name = "Test", properties = Map("something" -> "thing", "another" -> "one"), sparkSubmitArgs = Some("some more args"), None),

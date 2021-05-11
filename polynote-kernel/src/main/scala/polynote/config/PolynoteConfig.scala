@@ -181,13 +181,15 @@ final case class SparkConfig(
   sparkSubmitArgs: Option[String] = None,
   distClasspathFilter: Option[Pattern] = None,
   propertySets: Option[List[SparkPropertySet]] = None,
-  defaultPropertySet: Option[String] = None
+  defaultPropertySet: Option[String] = None,
+  jarsAsUrls: Option[Boolean] = None
 )
 
 object SparkConfig {
   def fromMap(properties: Map[String, String]): SparkConfig = SparkConfig(
     properties - "sparkSubmitArgs",
     properties.get("sparkSubmitArgs"),
+    None,
     None,
     None,
     None
@@ -199,7 +201,7 @@ object SparkConfig {
   private val legacyDecoder: Decoder[SparkConfig] = mapStringStringDecoder.map(fromMap)
   private val newDecoder: Decoder[SparkConfig] = deriveConfigDecoder
   implicit val decoder: Decoder[SparkConfig] = Decoder.decodeJsonObject.flatMap {
-    case obj if obj.contains("properties") || obj.contains("spark_submit_args") || obj.contains("dist_classpath_filter") || obj.contains("property_sets") => newDecoder
+    case obj if obj.contains("properties") || obj.contains("spark_submit_args") || obj.contains("dist_classpath_filter") || obj.contains("property_sets") || obj.contains("jars_as_urls") => newDecoder
     case _ => legacyDecoder
   }
   implicit val encoder: Encoder[SparkConfig] = deriveEncoder
