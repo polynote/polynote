@@ -2,11 +2,12 @@ package polynote.runtime.test
 
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
+import scala.collection.JavaConverters._
 
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.runtime.{DataEncoder, GroupAgg, ReprsOf, StreamingDataRepr}
 
-class  CollectionReprsSpec extends FreeSpec with Matchers {
+class CollectionReprsSpec extends FreeSpec with Matchers {
 
   "Streaming repr of structs" - {
     case class Example(label: String, i: Int, d: Double)
@@ -37,6 +38,16 @@ class  CollectionReprsSpec extends FreeSpec with Matchers {
         )
       }
 
+    }
+
+    "String representation truncates to 10 elements" in {
+      val de = implicitly[DataEncoder[Example]]
+      val all = (0 until 100).map(i => Example(i.toString, i, i.toDouble)).toVector
+      val expectedFirstTen = all.take(10).map {
+        example => de.encodeDisplayString(example).linesWithSeparators.map(str => s"  $str").mkString
+      }
+      implicitly[DataEncoder[Seq[Example]]].encodeDisplayString(all) shouldEqual
+        "Vector(\n" + expectedFirstTen.mkString(",\n") + ",\n  …(90 more elements)\n)"
     }
   }
 
