@@ -2,14 +2,14 @@ The toolbar is one of the primary ways you'll be interacting with Polynote.
 
 It is divided into sections, which we will go over now. 
 
-![Toolbar Sections](images/toolbar-sections.png)
+![Toolbar Sections](images/toolbar-sections.svg)
 
 The toolbar is divided into three sections: [Notebook](#notebook-section){: style="color: red" }, 
 [Cell](#cell-section){: style="color: blue" } and [About](#about-section){: style="color: purple" }. 
 
 ### Notebook section
 
-![Notebook Section](images/toolbar-notebook-section.png)
+![Notebook Section](images/toolbar-notebook-section.svg)
 
 This section contains buttons that interact with the currently active notebook. The three relevant buttons are:
 

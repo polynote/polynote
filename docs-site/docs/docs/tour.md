@@ -4,7 +4,7 @@ Polynote takes its inspiration from IDE-like tools, bringing a rich UI into the 
 
 ### The Polynote UI
 
-Here, we'll go overthe various parts of the UI briefly, and then drill down on each later in the tour. 
+Here, we'll go over the various parts of the UI briefly, and then drill down on each later in the tour. 
 
 ![The Polynote UI with sections labelled](images/polynote-ui-labelled.png)
 
