@@ -14,7 +14,7 @@
     
     
       
-        <title>Docs - Polynote</title>
+        <title>Using Polynote with Python - Polynote</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#getting-started" class="md-skip">
+        <a href="#python-dependencies" class="md-skip">
           Skip to content
         </a>
       
@@ -99,7 +99,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Docs
+              Using Polynote with Python
             
           </span>
         </div>
@@ -290,7 +290,7 @@
       <label class="md-nav__link" for="__nav_2">
         <span class="md-nav__icon md-icon"></span>
         
-          <a href="index.html" class="md-nav__link md-nav__link--active"
+          <a href="index.html" class="md-nav__link"
             style="margin: initial; padding: initial; pointer-events: initial">
         
           Docs
@@ -300,7 +300,7 @@
         <label class="md-nav__title" for="__nav_2">
           <span class="md-nav__icon md-icon"></span>
           
-            <a href="index.html" class="md-nav__link md-nav__link--active"
+            <a href="index.html" class="md-nav__link"
               style="margin: initial; padding: initial; pointer-events: initial">
           
             Docs
@@ -529,12 +529,14 @@
             
   
   
+    
+  
   
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6" data-md-state="indeterminate" type="checkbox" id="__nav_2_6" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" checked>
       
       <label class="md-nav__link" for="__nav_2_6">
         <span class="md-nav__icon md-icon"></span>
@@ -584,11 +586,59 @@
             
   
   
+    
   
-    <li class="md-nav__item">
-      <a href="python.html" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          <span class="md-nav__icon md-icon"></span>
+          
+            <a href="python.html" class="md-nav__link md-nav__link--active"
+              style="margin: initial; padding: initial; pointer-events: initial">
+          
+            Using Polynote with Python
+          </a>
+        </label>
+      
+      <a href="python.html" class="md-nav__link md-nav__link--active">
         Using Polynote with Python
       </a>
+      
+        
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#python-dependencies" class="md-nav__link">
+    Python dependencies
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharing-between-python-and-scala" class="md-nav__link">
+    Sharing between Python and Scala
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -675,8 +725,28 @@
   
   
   
-    
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#python-dependencies" class="md-nav__link">
+    Python dependencies
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharing-between-python-and-scala" class="md-nav__link">
+    Sharing between Python and Scala
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -688,18 +758,68 @@
             <article class="md-content__inner md-typeset">
               
                 
-                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/index.md" title="Edit this page" class="md-content__button md-icon">
+                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/python.md" title="Edit this page" class="md-content__button md-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
                   </a>
                 
                 
-                <h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h1>
-<p>Welcome to Polynote! Polynote is a different kind of notebook. </p>
-<p>It supports mixing multiple languages in one notebook, and sharing data between them seamlessly. 
-It encourages reproducible notebooks with its immutable data model.</p>
-<p>Get started by <a href="installation.html">installing Polynote</a>, or by taking a <a href="tour.html">tour</a> of the UI!</p>
-<p>When you're ready, check out the <a href="basic-usage.html">User Guide</a> for more information. Or if you need to customize your 
-installation, head over to the <a href="server-configuration.html">configuration</a> section. </p>
+                  <h1>Using Polynote with Python</h1>
+                
+                <p>For now, Python is the major non-JVM-based language you'll be using with Polynote. Polynote uses
+<a href="https://github.com/ninia/jep">Jep</a> to execute Python code within the JVM. Jep does most of the heavy-lifting when it 
+comes to Python interop. </p>
+<p>Most Python code should work out of the box on Polynote, without needing anything special. Please let us know if you
+run into any problems with Python code that works well in Jupyter or the Python REPL. </p>
+<h3 id="python-dependencies">Python dependencies<a class="headerlink" href="#python-dependencies" title="Permanent link">&para;</a></h3>
+<p>When you specify a Python dependency in the <a href="notebook-configuration.html#python-dependencies">configuration</a>, Polynote 
+creates a <a href="https://virtualenv.pypa.io/en/latest/">virtual environment</a> scoped to your notebook. </p>
+<p>This virtual environment is reused on subsequent runs of the notebook, unless your dependencies change or you explicitly
+<a href="notebook-configuration.html#dependency-caching">bust the cache</a>. </p>
+<p>Additionally, the virtual environments are isolated from each
+other but not from the system, since Polynote specifies the 
+<a href="https://virtualenv.pypa.io/en/latest/cli_interface.html#system-site-packages"><code>--system-site-packages</code></a> flag when
+creating the environment. </p>
+<div class="admonition info">
+<p class="admonition-title">Experimental: PySpark And Dependencies</p>
+<p>Polynote attempts to add the dependencies you specify to Spark by downloading their zip files and adding them to the 
+Spark context if it exists. </p>
+<p>This means that your Python dependencies <em>should</em> be shipped to your executors (and available) to your code that 
+runs there! </p>
+</div>
+<h3 id="sharing-between-python-and-scala">Sharing between Python and Scala<a class="headerlink" href="#sharing-between-python-and-scala" title="Permanent link">&para;</a></h3>
+<p>Our goals right now are to support a few, key use-cases with a focus on sharing from Scala to Python,
+such as plotting data generated in Scala with <code>matplotlib</code>, or using Scala-generated data with <code>tensorflow</code> and
+<code>scikit-learn</code>. We've found that the interop between Python and Scala can be very powerful even if it is limited to these
+simple cases.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>If you're going to be moving back and forth between Python and Scala a lot, we highly recommend reading 
+<a href="https://github.com/ninia/jep/wiki/How-Jep-Works">how Jep works</a>.</p>
+</div>
+<p>Here are a few important points to keep in mind when sharing between Python and Scala:</p>
+<ul>
+<li>Jep handles the conversion from Scala -&gt; Python.<ul>
+<li>It converts primitives and strings into brand-new Python primitives and strings.</li>
+<li>An object of any other type is wrapped as a <code>PyJObject</code>, which is an interface allowing Python to directly access
+  that objects attributes. Note that in this case, nothing is copied - <code>PyJObject</code> holds a reference to the underlying
+  JVM object.</li>
+<li>Note that Jep is based on Java, not Scala. This means that when it wraps a Scala object as a <code>PyJObject</code>, you won't
+  get Scala sugar - things like multiple parameter lists, implicits, etc. - when you work with it in Python.
+  This can limit your ability to use a lot of super-scala-stuff with Python.</li>
+</ul>
+</li>
+<li>Jep handles conversion from Python -&gt; Scala and Polynote adds a little bit of sugar on top.<ul>
+<li>Similar to the other way round, Jep automatically converts primitives and strings into brand-new JVM primitives and strings.</li>
+<li>Additionally, Jep supports some other conversions such as Python <code>dict</code> to <code>java.util.HashMap</code></li>
+<li>Polynote will retrieve an object of any other type as a <code>PyObject</code>. Similar to <code>PyJObject</code>, a <code>PyObject</code> wraps a pointer
+  to a Python object. Polynote has some support for handling certain types of Python objects, typically for visualization
+  purposes.</li>
+</ul>
+</li>
+</ul>
+<p>Note that these implementation details may change and while we'll work hard to update this information we can't guarantee
+that it won't get out-of-date. Of course, feel free to <a href="https://gitter.im/polynote/polynote">drop us a line</a> if you
+think that's the case!</p>
                 
               
               
@@ -719,7 +839,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../index.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Home" rel="prev">
+        <a href="spark.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Using Polynote with Spark" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -728,20 +848,20 @@ installation, head over to the <a href="server-configuration.html">configuration
               <span class="md-footer__direction">
                 Previous
               </span>
-              Home
+              Using Polynote with Spark
             </div>
           </div>
         </a>
       
       
         
-        <a href="installation.html" class="md-footer__link md-footer__link--next" aria-label="Next: Installation" rel="next">
+        <a href="docker.html" class="md-footer__link md-footer__link--next" aria-label="Next: Using Polynote with Docker" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              Installation
+              Using Polynote with Docker
             </div>
           </div>
           <div class="md-footer__button md-icon">
@@ -797,7 +917,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     
     <script type="text/javascript">
         function runFreezeframe() {
-            console.log("loaded! Docs ")
+            console.log("loaded! Using Polynote with Python ")
             if (window.ff) window.ff.destroy()
             window.ff = new Freezeframe('img[src$=".gif"]:not(img[src="images/hero-animation.gif"])',  // super-hacky way to ignore the front-page animation
                 {

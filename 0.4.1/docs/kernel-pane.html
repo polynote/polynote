@@ -14,7 +14,7 @@
     
     
       
-        <title>Docs - Polynote</title>
+        <title>Kernel Pane - Polynote</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#getting-started" class="md-skip">
+        <a href="#header" class="md-skip">
           Skip to content
         </a>
       
@@ -99,7 +99,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Docs
+              Kernel Pane
             
           </span>
         </div>
@@ -290,7 +290,7 @@
       <label class="md-nav__link" for="__nav_2">
         <span class="md-nav__icon md-icon"></span>
         
-          <a href="index.html" class="md-nav__link md-nav__link--active"
+          <a href="index.html" class="md-nav__link"
             style="margin: initial; padding: initial; pointer-events: initial">
         
           Docs
@@ -300,7 +300,7 @@
         <label class="md-nav__title" for="__nav_2">
           <span class="md-nav__icon md-icon"></span>
           
-            <a href="index.html" class="md-nav__link md-nav__link--active"
+            <a href="index.html" class="md-nav__link"
               style="margin: initial; padding: initial; pointer-events: initial">
           
             Docs
@@ -347,12 +347,14 @@
             
   
   
+    
+  
   
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
       <label class="md-nav__link" for="__nav_2_4">
         <span class="md-nav__icon md-icon"></span>
@@ -402,11 +404,106 @@
             
   
   
+    
   
-    <li class="md-nav__item">
-      <a href="kernel-pane.html" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          <span class="md-nav__icon md-icon"></span>
+          
+            <a href="kernel-pane.html" class="md-nav__link md-nav__link--active"
+              style="margin: initial; padding: initial; pointer-events: initial">
+          
+            Kernel Pane
+          </a>
+        </label>
+      
+      <a href="kernel-pane.html" class="md-nav__link md-nav__link--active">
         Kernel Pane
       </a>
+      
+        
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#header" class="md-nav__link">
+    Header
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#info" class="md-nav__link">
+    Info
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#symbol-table" class="md-nav__link">
+    Symbol Table
+  </a>
+  
+    <nav class="md-nav" aria-label="Symbol Table">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#quick-inspector" class="md-nav__link">
+    Quick Inspector
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tasks" class="md-nav__link">
+    Tasks
+  </a>
+  
+    <nav class="md-nav" aria-label="Tasks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#currently-running-tasks" class="md-nav__link">
+    Currently Running Tasks
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kernel-or-server-level-errors" class="md-nav__link">
+    Kernel or Server-level Errors
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -675,8 +772,75 @@
   
   
   
-    
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#header" class="md-nav__link">
+    Header
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#info" class="md-nav__link">
+    Info
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#symbol-table" class="md-nav__link">
+    Symbol Table
+  </a>
+  
+    <nav class="md-nav" aria-label="Symbol Table">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#quick-inspector" class="md-nav__link">
+    Quick Inspector
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tasks" class="md-nav__link">
+    Tasks
+  </a>
+  
+    <nav class="md-nav" aria-label="Tasks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#currently-running-tasks" class="md-nav__link">
+    Currently Running Tasks
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#kernel-or-server-level-errors" class="md-nav__link">
+    Kernel or Server-level Errors
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -688,18 +852,137 @@
             <article class="md-content__inner md-typeset">
               
                 
-                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/index.md" title="Edit this page" class="md-content__button md-icon">
+                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/kernel-pane.md" title="Edit this page" class="md-content__button md-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
                   </a>
                 
                 
-                <h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h1>
-<p>Welcome to Polynote! Polynote is a different kind of notebook. </p>
-<p>It supports mixing multiple languages in one notebook, and sharing data between them seamlessly. 
-It encourages reproducible notebooks with its immutable data model.</p>
-<p>Get started by <a href="installation.html">installing Polynote</a>, or by taking a <a href="tour.html">tour</a> of the UI!</p>
-<p>When you're ready, check out the <a href="basic-usage.html">User Guide</a> for more information. Or if you need to customize your 
-installation, head over to the <a href="server-configuration.html">configuration</a> section. </p>
+                  <h1>Kernel Pane</h1>
+                
+                <p>The Kernel Pane displays information about the running state of the active notebook's kernel. </p>
+<p><img alt="Kernel Pane" src="images/kernel-pane.png" /></p>
+<ul>
+<li>The <a href="#header" style="color:green">Header</a>, which shows the current status of the kernel and controls for starting 
+  and stopping it. </li>
+<li>The <a href="#info" style="color:blue">Info</a> section, which shows information about the current kernel.</li>
+<li>The <a href="#symbol-table" style="color:darkorange">Symbol Table</a>, which shows the state of the kernel for the 
+  currently-selected cell.</li>
+<li>The <a href="#tasks" style="color:purple">Tasks</a> section, which shows what the kernel is currently doing. </li>
+</ul>
+<h3 id="header">Header<a class="headerlink" href="#header" title="Permanent link">&para;</a></h3>
+<p>The colored circle to the left of the header shows the status of the Kernel. Possible statuses are: </p>
+<table>
+<thead>
+<tr>
+<th>Color</th>
+<th>Meaning</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong style="color: gray">Gray</strong></td>
+<td>The client is <code>disconnected</code> from Polynote<sup>1</sup></td>
+<td><img alt="Disc" src="images/kernel-disconnected.png" /></td>
+</tr>
+<tr>
+<td><strong style="color: red">Red</strong></td>
+<td>The kernel is <code>stopped</code>: connected but not running</td>
+<td><img alt="Stop" src="images/kernel-stopped.png" /></td>
+</tr>
+<tr>
+<td><strong style="color: gold">Yellow</strong></td>
+<td>The kernel is <code>busy</code> executing something</td>
+<td><img alt="Busy" src="images/kernel-busy.png" /></td>
+</tr>
+<tr>
+<td><strong style="color: green">Green</strong></td>
+<td>The kernel is running and <code>idle</code></td>
+<td><img alt="Idle" src="images/kernel-idle.png" /></td>
+</tr>
+</tbody>
+</table>
+<ol>
+<li>This means that the browser is unable to talk to the Polynote server. The server might be down, or there might be a
+   connection issue between the browser and Polynote. </li>
+</ol>
+<p>You might have also noticed that the symbol on the right side of the header changes depending on the kernel's status. </p>
+<p>This symbol is a button that allows you to interact with the kernel:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>State Available</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Power" src="images/kernel-pane-power.png" /></td>
+<td><code>stopped</code></td>
+<td>Launch the kernel</td>
+</tr>
+<tr>
+<td><img alt="Skull" src="images/kernel-pane-skull.png" /></td>
+<td><code>busy</code>, <code>idle</code></td>
+<td>Kill the kernel</td>
+</tr>
+<tr>
+<td><img alt="Plug" src="images/kernel-pane-plug.png" /></td>
+<td><code>disconnected</code></td>
+<td>Attempt to reconnect to the server</td>
+</tr>
+</tbody>
+</table>
+<h3 id="info">Info<a class="headerlink" href="#info" title="Permanent link">&para;</a></h3>
+<p>The Info section contains information about a currently running Kernel. </p>
+<p>Currently, standard kernels simply display the current Polynote version, as well as the build commit. </p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Use the version and commit information when <a href="https://www.github.com/polynote/polynote/issues/new">reporting issues</a> 
+to the Polynote team!</p>
+</div>
+<p>In addition to the above, Spark kernels show a link to the current Spark UI. </p>
+<p><img alt="Spark UI" src="images/kernel-info-spark.png" /></p>
+<h3 id="symbol-table">Symbol Table<a class="headerlink" href="#symbol-table" title="Permanent link">&para;</a></h3>
+<p>The Symbol Table reveals the current state of the notebook, showing the input and output symbols of the currently
+selected cell (provided that the cell has been run). </p>
+<p>See the <a href="basic-usage.html#the-symbol-table-and-input-scope">Basic Usage</a> section for a simple example of the symbol table. </p>
+<p>The symbol table displayes the names and types of the available symbols. In order to see the value of the symbols and to
+inspect them further, you can hover over them to reveal the Quick Inspector.</p>
+<h4 id="quick-inspector">Quick Inspector<a class="headerlink" href="#quick-inspector" title="Permanent link">&para;</a></h4>
+<p><img alt="Quick Inspector" src="images/quick-inspector.gif" /></p>
+<p>In the above example, the selected cell has been run, so the symbols defined within are visible in the symbol table. 
+Hovering over each symbol reveals the Quick Inspector. </p>
+<p>For the <code>data</code> variable, a simple <code class="highlight"><span class="nc">Seq</span><span class="p">[(</span><span class="nc">String</span><span class="p">,</span> <span class="nc">String</span><span class="p">)]</span></code>, the Quick Inspector shows the entire <code>toString()</code> 
+value. However, as <code>Out</code> is a <code class="highlight"><span class="nc">DataFrame</span></code>, only the schema is shown as Polynote evaluates it lazily to prevent
+collecting huge data unnecessarily.</p>
+<p>Let's take a closer look at the Quick Inspector. </p>
+<p><img alt="Quick Inspector Labeled" src="images/quick-inspector-labeled.png" /></p>
+<p>The first three buttons - <code>View Data</code>, <code>View Schema</code>, and <code>Plot Data</code>, each create a new 
+<a href="visualization-and-viz-cells.html">Viz Cell</a> underneath the cell that defined the symbol, with the appropriate tab selected. </p>
+<p>The last button, the magnifying glass, creates a modal that shows the available representations of the output.</p>
+<h3 id="tasks">Tasks<a class="headerlink" href="#tasks" title="Permanent link">&para;</a></h3>
+<p>The Tasks section exposes information about what the kernel is doing: current and queued executions, as well as errors 
+that might come up that are not associated with a particular cell.</p>
+<h4 id="currently-running-tasks">Currently Running Tasks<a class="headerlink" href="#currently-running-tasks" title="Permanent link">&para;</a></h4>
+<p><img alt="Cell with a running Spark task" src="images/spark-task-and-cell.png" /></p>
+<p>In the above example, a cell that contains Spark code is being executed, while the cell below it is queued up. </p>
+<p>On the Tasks section, the current state of the execution is shown: the top task is labeled with the currently-running 
+cell's ID, as well as a label reflecting the statement being executed currently - in this case, the <code>sparkComputation</code> 
+variable being computed; in other cases a line number might be shown.  </p>
+<p>Since the execution is a Spark job, an additional task is shown, showing details of the Spark execution: the job number 
+and a label for the currently-executing stage (in this case, the call to <code>collect()</code>). </p>
+<p>Finally, task is generated for the queued cell that will be executed after this one is finished. The tasks list
+always shows the order in which cells will be executed. </p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Note the Stop button on the top-right corner, which can be used to stop the currently-running task. It behaves
+like the other stop buttons in the UI; for more details, please see the <a href="advanced.html#stopping">advanced documentation</a>. </p>
+</div>
+<h4 id="kernel-or-server-level-errors">Kernel or Server-level Errors<a class="headerlink" href="#kernel-or-server-level-errors" title="Permanent link">&para;</a></h4>
+<p>The Tasks section also provides a location to display error messages that don't belong to a specific cell. For example, 
+you might see errors encountered during dependency resolution, or kernel crashes, or connection issues. </p>
                 
               
               
@@ -719,7 +1002,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../index.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Home" rel="prev">
+        <a href="notebooks-list.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Notebooks List" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -728,20 +1011,20 @@ installation, head over to the <a href="server-configuration.html">configuration
               <span class="md-footer__direction">
                 Previous
               </span>
-              Home
+              Notebooks List
             </div>
           </div>
         </a>
       
       
         
-        <a href="installation.html" class="md-footer__link md-footer__link--next" aria-label="Next: Installation" rel="next">
+        <a href="notebook.html" class="md-footer__link md-footer__link--next" aria-label="Next: Notebook" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              Installation
+              Notebook
             </div>
           </div>
           <div class="md-footer__button md-icon">
@@ -797,7 +1080,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     
     <script type="text/javascript">
         function runFreezeframe() {
-            console.log("loaded! Docs ")
+            console.log("loaded! Kernel Pane ")
             if (window.ff) window.ff.destroy()
             window.ff = new Freezeframe('img[src$=".gif"]:not(img[src="images/hero-animation.gif"])',  // super-hacky way to ignore the front-page animation
                 {

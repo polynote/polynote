@@ -14,7 +14,7 @@
     
     
       
-        <title>Docs - Polynote</title>
+        <title>FAQ - Polynote</title>
       
     
     
@@ -69,11 +69,6 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
-        
-        <a href="#getting-started" class="md-skip">
-          Skip to content
-        </a>
-      
     </div>
     <div data-md-component="announce">
       
@@ -99,7 +94,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Docs
+              FAQ
             
           </span>
         </div>
@@ -290,7 +285,7 @@
       <label class="md-nav__link" for="__nav_2">
         <span class="md-nav__icon md-icon"></span>
         
-          <a href="index.html" class="md-nav__link md-nav__link--active"
+          <a href="index.html" class="md-nav__link"
             style="margin: initial; padding: initial; pointer-events: initial">
         
           Docs
@@ -300,7 +295,7 @@
         <label class="md-nav__title" for="__nav_2">
           <span class="md-nav__icon md-icon"></span>
           
-            <a href="index.html" class="md-nav__link md-nav__link--active"
+            <a href="index.html" class="md-nav__link"
               style="margin: initial; padding: initial; pointer-events: initial">
           
             Docs
@@ -517,11 +512,19 @@
             
   
   
+    
   
-    <li class="md-nav__item">
-      <a href="faq.html" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+      
+      <a href="faq.html" class="md-nav__link md-nav__link--active">
         FAQ
       </a>
+      
     </li>
   
 
@@ -666,40 +669,19 @@
               </div>
             
             
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-</nav>
-                  </div>
-                </div>
-              </div>
-            
           
           <div class="md-content" data-md-component="content">
             <article class="md-content__inner md-typeset">
               
                 
-                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/index.md" title="Edit this page" class="md-content__button md-icon">
+                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/faq.md" title="Edit this page" class="md-content__button md-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
                   </a>
                 
                 
-                <h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h1>
-<p>Welcome to Polynote! Polynote is a different kind of notebook. </p>
-<p>It supports mixing multiple languages in one notebook, and sharing data between them seamlessly. 
-It encourages reproducible notebooks with its immutable data model.</p>
-<p>Get started by <a href="installation.html">installing Polynote</a>, or by taking a <a href="tour.html">tour</a> of the UI!</p>
-<p>When you're ready, check out the <a href="basic-usage.html">User Guide</a> for more information. Or if you need to customize your 
-installation, head over to the <a href="server-configuration.html">configuration</a> section. </p>
+                  <h1>FAQ</h1>
+                
+                
                 
               
               
@@ -719,7 +701,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../index.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Home" rel="prev">
+        <a href="about-menu.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: About Menu" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -728,20 +710,20 @@ installation, head over to the <a href="server-configuration.html">configuration
               <span class="md-footer__direction">
                 Previous
               </span>
-              Home
+              About Menu
             </div>
           </div>
         </a>
       
       
         
-        <a href="installation.html" class="md-footer__link md-footer__link--next" aria-label="Next: Installation" rel="next">
+        <a href="advanced.html" class="md-footer__link md-footer__link--next" aria-label="Next: Advanced" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              Installation
+              Advanced
             </div>
           </div>
           <div class="md-footer__button md-icon">
@@ -797,7 +779,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     
     <script type="text/javascript">
         function runFreezeframe() {
-            console.log("loaded! Docs ")
+            console.log("loaded! FAQ ")
             if (window.ff) window.ff.destroy()
             window.ff = new Freezeframe('img[src$=".gif"]:not(img[src="images/hero-animation.gif"])',  // super-hacky way to ignore the front-page animation
                 {

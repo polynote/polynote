@@ -14,7 +14,7 @@
     
     
       
-        <title>Docs - Polynote</title>
+        <title>Toolbar - Polynote</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#getting-started" class="md-skip">
+        <a href="#notebook-section" class="md-skip">
           Skip to content
         </a>
       
@@ -99,7 +99,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Docs
+              Toolbar
             
           </span>
         </div>
@@ -290,7 +290,7 @@
       <label class="md-nav__link" for="__nav_2">
         <span class="md-nav__icon md-icon"></span>
         
-          <a href="index.html" class="md-nav__link md-nav__link--active"
+          <a href="index.html" class="md-nav__link"
             style="margin: initial; padding: initial; pointer-events: initial">
         
           Docs
@@ -300,7 +300,7 @@
         <label class="md-nav__title" for="__nav_2">
           <span class="md-nav__icon md-icon"></span>
           
-            <a href="index.html" class="md-nav__link md-nav__link--active"
+            <a href="index.html" class="md-nav__link"
               style="margin: initial; padding: initial; pointer-events: initial">
           
             Docs
@@ -347,12 +347,14 @@
             
   
   
+    
+  
   
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
       <label class="md-nav__link" for="__nav_2_4">
         <span class="md-nav__icon md-icon"></span>
@@ -378,11 +380,86 @@
             
   
   
+    
   
-    <li class="md-nav__item">
-      <a href="toolbar.html" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          <span class="md-nav__icon md-icon"></span>
+          
+            <a href="toolbar.html" class="md-nav__link md-nav__link--active"
+              style="margin: initial; padding: initial; pointer-events: initial">
+          
+            Toolbar
+          </a>
+        </label>
+      
+      <a href="toolbar.html" class="md-nav__link md-nav__link--active">
         Toolbar
       </a>
+      
+        
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#notebook-section" class="md-nav__link">
+    Notebook section
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cell-section" class="md-nav__link">
+    Cell section
+  </a>
+  
+    <nav class="md-nav" aria-label="Cell section">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#code-cells" class="md-nav__link">
+    Code Cells
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#text-cells" class="md-nav__link">
+    Text Cells
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#about-section" class="md-nav__link">
+    About section
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -675,8 +752,55 @@
   
   
   
-    
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#notebook-section" class="md-nav__link">
+    Notebook section
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cell-section" class="md-nav__link">
+    Cell section
+  </a>
+  
+    <nav class="md-nav" aria-label="Cell section">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#code-cells" class="md-nav__link">
+    Code Cells
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#text-cells" class="md-nav__link">
+    Text Cells
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#about-section" class="md-nav__link">
+    About section
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -688,18 +812,62 @@
             <article class="md-content__inner md-typeset">
               
                 
-                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/index.md" title="Edit this page" class="md-content__button md-icon">
+                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/toolbar.md" title="Edit this page" class="md-content__button md-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
                   </a>
                 
                 
-                <h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h1>
-<p>Welcome to Polynote! Polynote is a different kind of notebook. </p>
-<p>It supports mixing multiple languages in one notebook, and sharing data between them seamlessly. 
-It encourages reproducible notebooks with its immutable data model.</p>
-<p>Get started by <a href="installation.html">installing Polynote</a>, or by taking a <a href="tour.html">tour</a> of the UI!</p>
-<p>When you're ready, check out the <a href="basic-usage.html">User Guide</a> for more information. Or if you need to customize your 
-installation, head over to the <a href="server-configuration.html">configuration</a> section. </p>
+                  <h1>Toolbar</h1>
+                
+                <p>The toolbar is one of the primary ways you'll be interacting with Polynote. </p>
+<p>It is divided into sections, which we will go over now. </p>
+<p><img alt="Toolbar Sections" src="images/toolbar-sections.svg" /></p>
+<p>The toolbar is divided into three sections: <a href="#notebook-section" style="color: red">Notebook</a>, 
+<a href="#cell-section" style="color: blue">Cell</a> and <a href="#about-section" style="color: purple">About</a>. </p>
+<h3 id="notebook-section">Notebook section<a class="headerlink" href="#notebook-section" title="Permanent link">&para;</a></h3>
+<p><img alt="Notebook Section" src="images/toolbar-notebook-section.svg" /></p>
+<p>This section contains buttons that interact with the currently active notebook. The three relevant buttons are:</p>
+<ul>
+<li>The Run All button <img alt="Run All Cells" class="inline-image" src="images/run-all-cells.png" /> which queues up all cells of the current notebook
+to run in order.</li>
+<li>The Download button <img alt="Download Notebook" class="inline-image" src="images/download-current-notebook.png" /> which downloads the current notebook as 
+an ipynb file. </li>
+<li>The Clear Output button <img alt="Clear Output" class="inline-image" src="images/clear-output.png" /> which clears the output of all notebook cells. </li>
+</ul>
+<p>The other two buttons are placeholders for future functionality that are currently not in use. </p>
+<h3 id="cell-section">Cell section<a class="headerlink" href="#cell-section" title="Permanent link">&para;</a></h3>
+<p>This section contains elements for interacting with the currently active cell. </p>
+<p>This section has two subsections. On the left is the Cell section, which holds elements for interacting with the 
+current cell regardless of its type. On the right is the a cell detail section, which changes depending on whether the
+currently active cell is a Code or Text cell. </p>
+<p>We'll start with the invariant Cell section first. </p>
+<p><img alt="Toolbar Cell Section" src="images/toolbar-cell-section.png" /></p>
+<ul>
+<li>The Cell Type dropdown is used to change the type of the cell. This is equivalent to the dropdown found on 
+  <a href="code-cells.html">Code cells</a> but it can also convert a cell from <code>Code</code> to <code>Text</code> and vice-versa.</li>
+<li>The Insert Cell Above <img alt="Insert Above" class="inline-image" src="images/toolbar-cell-insert-above.png" /> and Below 
+  <img alt="Insert Below" class="inline-image" src="images/toolbar-cell-insert-below.png" /> buttons, which insert a new cell above or
+  below the currently selected cell.</li>
+<li>The Delete Cell button <img alt="Delete Cell" class="inline-image" src="images/toolbar-cell-delete.png" /> which deletes the currently
+  selected cell.</li>
+</ul>
+<h4 id="code-cells">Code Cells<a class="headerlink" href="#code-cells" title="Permanent link">&para;</a></h4>
+<p><img alt="Toolbar Code Cell" src="images/toolbar-code-cell.png" /></p>
+<ul>
+<li>The run cell button <img alt="Run Cell" class="inline-image" src="images/toolbar-code-run.png" /> runs the currently selected cell. </li>
+<li>The next button <img alt="Run Cell Until Selected" class="inline-image" src="images/toolbar-code-run-until-selected.png" /> runs all 
+  cells above the currently selected cell until (and including) the currently selected cell.</li>
+<li>The stop button <img alt="Stop Execution" class="inline-image" src="images/toolbar-code-stop.png" /> cancels any currently-running 
+  execution (not limited to the current cell). See the <a href="advanced.html#stopping">advanced section</a> to learn more about how
+  stopping works.</li>
+</ul>
+<h4 id="text-cells">Text Cells<a class="headerlink" href="#text-cells" title="Permanent link">&para;</a></h4>
+<p><img alt="Toolbar Text Cell" src="images/toolbar-text-cell.png" /></p>
+<p>The Text cell subsection contains the typical rich text editor interaction elements, along with a few special ones.</p>
+<p>For more details, see the <a href="text-cells.html">Text Cell</a> documentation. </p>
+<h3 id="about-section">About section<a class="headerlink" href="#about-section" title="Permanent link">&para;</a></h3>
+<p><img alt="Toolbar About" class="centered-image" src="images/toolbar-about.png" /></p>
+<p>Finally, the About section at the top-right corner contains buttons to access the <a href="about-menu.html">About menu</a>.</p>
                 
               
               
@@ -719,7 +887,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../index.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Home" rel="prev">
+        <a href="tour.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Tour" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -728,20 +896,20 @@ installation, head over to the <a href="server-configuration.html">configuration
               <span class="md-footer__direction">
                 Previous
               </span>
-              Home
+              Tour
             </div>
           </div>
         </a>
       
       
         
-        <a href="installation.html" class="md-footer__link md-footer__link--next" aria-label="Next: Installation" rel="next">
+        <a href="notebooks-list.html" class="md-footer__link md-footer__link--next" aria-label="Next: Notebooks List" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              Installation
+              Notebooks List
             </div>
           </div>
           <div class="md-footer__button md-icon">
@@ -797,7 +965,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     
     <script type="text/javascript">
         function runFreezeframe() {
-            console.log("loaded! Docs ")
+            console.log("loaded! Toolbar ")
             if (window.ff) window.ff.destroy()
             window.ff = new Freezeframe('img[src$=".gif"]:not(img[src="images/hero-animation.gif"])',  // super-hacky way to ignore the front-page animation
                 {

@@ -14,7 +14,7 @@
     
     
       
-        <title>Docs - Polynote</title>
+        <title>Notebooks List - Polynote</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#getting-started" class="md-skip">
+        <a href="#creating-a-new-notebook" class="md-skip">
           Skip to content
         </a>
       
@@ -99,7 +99,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Docs
+              Notebooks List
             
           </span>
         </div>
@@ -290,7 +290,7 @@
       <label class="md-nav__link" for="__nav_2">
         <span class="md-nav__icon md-icon"></span>
         
-          <a href="index.html" class="md-nav__link md-nav__link--active"
+          <a href="index.html" class="md-nav__link"
             style="margin: initial; padding: initial; pointer-events: initial">
         
           Docs
@@ -300,7 +300,7 @@
         <label class="md-nav__title" for="__nav_2">
           <span class="md-nav__icon md-icon"></span>
           
-            <a href="index.html" class="md-nav__link md-nav__link--active"
+            <a href="index.html" class="md-nav__link"
               style="margin: initial; padding: initial; pointer-events: initial">
           
             Docs
@@ -347,12 +347,14 @@
             
   
   
+    
+  
   
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
       <label class="md-nav__link" for="__nav_2_4">
         <span class="md-nav__icon md-icon"></span>
@@ -390,11 +392,66 @@
             
   
   
+    
   
-    <li class="md-nav__item">
-      <a href="notebooks-list.html" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          <span class="md-nav__icon md-icon"></span>
+          
+            <a href="notebooks-list.html" class="md-nav__link md-nav__link--active"
+              style="margin: initial; padding: initial; pointer-events: initial">
+          
+            Notebooks List
+          </a>
+        </label>
+      
+      <a href="notebooks-list.html" class="md-nav__link md-nav__link--active">
         Notebooks List
       </a>
+      
+        
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#creating-a-new-notebook" class="md-nav__link">
+    Creating a new notebook
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#importing-a-notebook" class="md-nav__link">
+    Importing a notebook
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rename-copy-delete" class="md-nav__link">
+    Rename, Copy, Delete
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -675,8 +732,35 @@
   
   
   
-    
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#creating-a-new-notebook" class="md-nav__link">
+    Creating a new notebook
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#importing-a-notebook" class="md-nav__link">
+    Importing a notebook
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rename-copy-delete" class="md-nav__link">
+    Rename, Copy, Delete
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -688,18 +772,50 @@
             <article class="md-content__inner md-typeset">
               
                 
-                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/index.md" title="Edit this page" class="md-content__button md-icon">
+                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/notebooks-list.md" title="Edit this page" class="md-content__button md-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
                   </a>
                 
                 
-                <h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h1>
-<p>Welcome to Polynote! Polynote is a different kind of notebook. </p>
-<p>It supports mixing multiple languages in one notebook, and sharing data between them seamlessly. 
-It encourages reproducible notebooks with its immutable data model.</p>
-<p>Get started by <a href="installation.html">installing Polynote</a>, or by taking a <a href="tour.html">tour</a> of the UI!</p>
-<p>When you're ready, check out the <a href="basic-usage.html">User Guide</a> for more information. Or if you need to customize your 
-installation, head over to the <a href="server-configuration.html">configuration</a> section. </p>
+                  <h1>Notebooks List</h1>
+                
+                <p>The Notebooks List displays a listing of all the notebooks in your current workspace. </p>
+<p><img alt="Notebooks List" class="centered-image" src="images/notebooks-list.png" /></p>
+<p>Notebooks are displayed in a directory structure. </p>
+<p>Clicking on a notebook opens it, and clicking on a directory expands or collapses it. </p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>The current workspace can be set in the <a href="server-configuration.html#storage">Storage Configuration</a>.</p>
+</div>
+<h3 id="creating-a-new-notebook">Creating a new notebook<a class="headerlink" href="#creating-a-new-notebook" title="Permanent link">&para;</a></h3>
+<p>You can create a new notebook by clicking on the green plus sign
+<img alt="green plus sign" class="inline-image" src="images/green-plus.png" /> in the corner.</p>
+<p>This will bring up the Create Notebook Dialog, where you can enter the notebook name. If a notebook with that name 
+already exists, a number will be appended at the end of the filename. </p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Any slashes in the notebook name will place your new notebook in a directory (creating them if they don't already 
+exist). </p>
+<p>Addiitonally, Polynote will add an extension if you don't specify one. </p>
+<p>For example, typing in <code>foo/bar/My Notebook</code> will create a <code>My Notebook.ipynb</code> file and put it into a directory 
+named <code>bar</code>, within a directory named <code>foo</code>. </p>
+</div>
+<h3 id="importing-a-notebook">Importing a notebook<a class="headerlink" href="#importing-a-notebook" title="Permanent link">&para;</a></h3>
+<p>Importing a notebook into Polynote is as simple as dragging and dropping the file onto the Notebooks List!</p>
+<p><img alt="Dragging and Dropping a Notebook" src="images/drag-drop-notebook.gif" /></p>
+<div class="admonition info">
+<p class="admonition-title">Supported import formats</p>
+<p>Polynote supports importing your existing Jupyter <code>.ipynb</code> files and Zeppelin <code>.json</code> files. Zeppelin files will be 
+automatically converted into <code>.ipynb</code> files upon import. </p>
+<p>Note that Polynote doesn't do any translation of the notebook contents, so any platform-specific features, such as 
+Jupyter "magics" (like Toree's <code>%AddJar</code>) or Zeppelin's <code>z.load</code> syntax will need to be manually converted. </p>
+</div>
+<h3 id="rename-copy-delete">Rename, Copy, Delete<a class="headerlink" href="#rename-copy-delete" title="Permanent link">&para;</a></h3>
+<p>You can Rename, Copy, and Delete notebooks using the Context Menu, which you can bring up by right-clicking on a 
+notebook. </p>
+<p>Here's a demonstration of Renaming a notebook using the Context Menu. The Copy and Delete functions work rather 
+similarly.</p>
+<p><img alt="Renaming notebook using Context Menu" src="images/context-menu-rename.gif" /></p>
                 
               
               
@@ -719,7 +835,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../index.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Home" rel="prev">
+        <a href="toolbar.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Toolbar" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -728,20 +844,20 @@ installation, head over to the <a href="server-configuration.html">configuration
               <span class="md-footer__direction">
                 Previous
               </span>
-              Home
+              Toolbar
             </div>
           </div>
         </a>
       
       
         
-        <a href="installation.html" class="md-footer__link md-footer__link--next" aria-label="Next: Installation" rel="next">
+        <a href="kernel-pane.html" class="md-footer__link md-footer__link--next" aria-label="Next: Kernel Pane" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              Installation
+              Kernel Pane
             </div>
           </div>
           <div class="md-footer__button md-icon">
@@ -797,7 +913,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     
     <script type="text/javascript">
         function runFreezeframe() {
-            console.log("loaded! Docs ")
+            console.log("loaded! Notebooks List ")
             if (window.ff) window.ff.destroy()
             window.ff = new Freezeframe('img[src$=".gif"]:not(img[src="images/hero-animation.gif"])',  // super-hacky way to ignore the front-page animation
                 {

@@ -14,7 +14,7 @@
     
     
       
-        <title>Docs - Polynote</title>
+        <title>Tour - Polynote</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#getting-started" class="md-skip">
+        <a href="#the-polynote-ui" class="md-skip">
           Skip to content
         </a>
       
@@ -99,7 +99,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Docs
+              Tour
             
           </span>
         </div>
@@ -290,7 +290,7 @@
       <label class="md-nav__link" for="__nav_2">
         <span class="md-nav__icon md-icon"></span>
         
-          <a href="index.html" class="md-nav__link md-nav__link--active"
+          <a href="index.html" class="md-nav__link"
             style="margin: initial; padding: initial; pointer-events: initial">
         
           Docs
@@ -300,7 +300,7 @@
         <label class="md-nav__title" for="__nav_2">
           <span class="md-nav__icon md-icon"></span>
           
-            <a href="index.html" class="md-nav__link md-nav__link--active"
+            <a href="index.html" class="md-nav__link"
               style="margin: initial; padding: initial; pointer-events: initial">
           
             Docs
@@ -347,17 +347,19 @@
             
   
   
+    
+  
   
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
       <label class="md-nav__link" for="__nav_2_4">
         <span class="md-nav__icon md-icon"></span>
         
-          <a href="tour.html" class="md-nav__link"
+          <a href="tour.html" class="md-nav__link md-nav__link--active"
             style="margin: initial; padding: initial; pointer-events: initial">
         
           Tour
@@ -367,7 +369,7 @@
         <label class="md-nav__title" for="__nav_2_4">
           <span class="md-nav__icon md-icon"></span>
           
-            <a href="tour.html" class="md-nav__link"
+            <a href="tour.html" class="md-nav__link md-nav__link--active"
               style="margin: initial; padding: initial; pointer-events: initial">
           
             Tour
@@ -675,8 +677,48 @@
   
   
   
-    
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-polynote-ui" class="md-nav__link">
+    The Polynote UI
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#panes-in-polynote" class="md-nav__link">
+    Panes in Polynote
+  </a>
+  
+    <nav class="md-nav" aria-label="Panes in Polynote">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#panes-can-be-collapsed" class="md-nav__link">
+    Panes can be collapsed
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#panes-can-be-resized" class="md-nav__link">
+    Panes can be resized
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -688,18 +730,45 @@
             <article class="md-content__inner md-typeset">
               
                 
-                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/index.md" title="Edit this page" class="md-content__button md-icon">
+                  <a href="https://github.com/polynote/polynote/edit/master/docs/docs/tour.md" title="Edit this page" class="md-content__button md-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>
                   </a>
                 
                 
-                <h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h1>
-<p>Welcome to Polynote! Polynote is a different kind of notebook. </p>
-<p>It supports mixing multiple languages in one notebook, and sharing data between them seamlessly. 
-It encourages reproducible notebooks with its immutable data model.</p>
-<p>Get started by <a href="installation.html">installing Polynote</a>, or by taking a <a href="tour.html">tour</a> of the UI!</p>
-<p>When you're ready, check out the <a href="basic-usage.html">User Guide</a> for more information. Or if you need to customize your 
-installation, head over to the <a href="server-configuration.html">configuration</a> section. </p>
+                  <h1>Tour</h1>
+                
+                <p>Welcome to the tour of Polynote's UI! </p>
+<p>Polynote takes its inspiration from IDE-like tools, bringing a rich UI into the notebook experience. </p>
+<h3 id="the-polynote-ui">The Polynote UI<a class="headerlink" href="#the-polynote-ui" title="Permanent link">&para;</a></h3>
+<p>Here, we'll go over the various parts of the UI briefly, and then drill down on each later in the tour. </p>
+<p><img alt="The Polynote UI with sections labelled" src="images/polynote-ui-labelled.png" /></p>
+<p>This screenshot divides the UI into four sections: </p>
+<ul>
+<li>The <a href="toolbar.html" style="color:green">Toolbar</a> at the top, which collects buttons for interaction with the notebook</li>
+<li>The <a href="notebooks-list.html" style="color:darkorange">Notebooks List</a> pane on the left, a file-like browser showing the 
+  notebooks in Polynote's workspace</li>
+<li>The <a href="kernel-pane.html" style="color:purple">Kernel Pane</a> on the right, which shows the current state of the notebook. </li>
+<li>The <a href="notebook.html" style="color:red">Notebook</a> section itself in the middle, which displays the actual notebook. </li>
+</ul>
+<p>The above sections provide details about the specific functionality of each part of the UI. </p>
+<h3 id="panes-in-polynote">Panes in Polynote<a class="headerlink" href="#panes-in-polynote" title="Permanent link">&para;</a></h3>
+<p>Before you go learn more about the specifics, let's just talk about how the two panes work.</p>
+<h4 id="panes-can-be-collapsed">Panes can be collapsed<a class="headerlink" href="#panes-can-be-collapsed" title="Permanent link">&para;</a></h4>
+<p>If you'd like more horizontal space to see the <a href="notebook.html">Notebook</a> section, you can collapse one or both of the
+panes. </p>
+<p>Simply click on any empty space on the header, and the pane will collapse to the side. Click the title of the header
+(for example, <code>Kernel</code> if you have collapsed the <a href="kernel-pane.html">Kernel Pane</a>) in order to expand the pane again. </p>
+<p><img alt="Collapsing and Expanding a Pane" src="images/collapse-pane.gif" width="50%" /></p>
+<h4 id="panes-can-be-resized">Panes can be resized<a class="headerlink" href="#panes-can-be-resized" title="Permanent link">&para;</a></h4>
+<p>If you want more room for the <a href="notebook.html">Notebook</a> but don't want to hide a pane entirely, you can resize a pane by
+dragging it.</p>
+<p><img alt="Resizing a Pane" src="images/resize-pane.gif" /></p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Polynote remembers your pane collapse and size preferences in your browser's local storage. </p>
+<p>As long as you're using Polynote with the same browser, your customizations should be persisted!</p>
+</div>
+<p>Next up, learn about the <a href="toolbar.html">Toolbar</a>.</p>
                 
               
               
@@ -719,7 +788,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     <nav class="md-footer__inner md-grid" aria-label="Footer">
       
         
-        <a href="../index.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Home" rel="prev">
+        <a href="mixing-programming-languages.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Mixing Programming Languages" rel="prev">
           <div class="md-footer__button md-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z"/></svg>
           </div>
@@ -728,20 +797,20 @@ installation, head over to the <a href="server-configuration.html">configuration
               <span class="md-footer__direction">
                 Previous
               </span>
-              Home
+              Mixing Programming Languages
             </div>
           </div>
         </a>
       
       
         
-        <a href="installation.html" class="md-footer__link md-footer__link--next" aria-label="Next: Installation" rel="next">
+        <a href="toolbar.html" class="md-footer__link md-footer__link--next" aria-label="Next: Toolbar" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              Installation
+              Toolbar
             </div>
           </div>
           <div class="md-footer__button md-icon">
@@ -797,7 +866,7 @@ installation, head over to the <a href="server-configuration.html">configuration
     
     <script type="text/javascript">
         function runFreezeframe() {
-            console.log("loaded! Docs ")
+            console.log("loaded! Tour ")
             if (window.ff) window.ff.destroy()
             window.ff = new Freezeframe('img[src$=".gif"]:not(img[src="images/hero-animation.gif"])',  // super-hacky way to ignore the front-page animation
                 {
