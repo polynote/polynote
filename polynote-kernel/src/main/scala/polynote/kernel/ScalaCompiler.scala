@@ -121,7 +121,7 @@ class ScalaCompiler private (
   ): Task[CellCode] = for {
     sourceFile  <- ZIO(newSourceFile(code, name))
     compileUnit <- ZIO(new global.RichCompilationUnit(sourceFile))
-    parsed      <- parse(compileUnit, strictParse, code.trim().startsWith("package"))
+    parsed      <- parse(compileUnit, strictParse, code.trim().startsWith("package "))
   } yield {
     val definedTerms = parsed.collect {
       case tree: DefTree if tree.name.isTermName => tree.name.decoded
