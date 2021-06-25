@@ -176,12 +176,23 @@ object SparkPropertySet {
   implicit val codec: Codec[SparkPropertySet] = cachedImplicit[Codec[SparkPropertySet]]
 }
 
+final case class PySparkConfig(
+  distributeDependencies: Option[Boolean] = None,
+  distributionExcludes: List[String] = Nil
+)
+
+object PySparkConfig {
+  implicit val encoder: ObjectEncoder[PySparkConfig] = deriveEncoder
+  implicit val decoder: Decoder[PySparkConfig] = deriveDecoder
+}
+
 final case class SparkConfig(
   properties: Map[String, String],
   sparkSubmitArgs: Option[String] = None,
   distClasspathFilter: Option[Pattern] = None,
   propertySets: Option[List[SparkPropertySet]] = None,
-  defaultPropertySet: Option[String] = None
+  defaultPropertySet: Option[String] = None,
+  pyspark: Option[PySparkConfig] = None
 )
 
 object SparkConfig {
