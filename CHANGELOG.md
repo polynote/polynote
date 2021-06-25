@@ -1,5 +1,16 @@
 # Unreleased
 
+# 0.4.2 (June 25, 2021)
+* PySpark dependencies now configurable. #1175
+  
+  There are two new configuration parameters in the spark config, under the `pyspark` key: 
+    - `distribute_dependencies` (boolean), which toggles PySpark dependency distribution.
+    - `distribution_excludes` (list), a list of packages to exclude from PySpark dependency distribution. 
+  
+  Additionally, `boto` and `h5py` are now excluded from distribution by default. 
+      
+* Fix bug where starting cell with "package" could erroneously trigger package-cell detection. #1174
+
 # 0.4.1 (April 20, 2021)
 Features:
 * Can now cancel (and unqueue) tasks #1129
