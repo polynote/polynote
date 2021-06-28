@@ -51,7 +51,6 @@ trait DataEncoder[@specialized T] extends Serializable {
 }
 
 object DataEncoder extends DataEncoder0 {
-scala.collection.immutable.HashMap().toString()
   def truncateString(str: String): String = if (str.length > 255) str.substring(0, 254) + "…" else str
   def formatCollection[T](coll: GenTraversable[T], formatItem: T => String, prefix: Option[String]): String = {
     val innerStrs = if (coll.size > 10) {
