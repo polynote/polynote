@@ -102,13 +102,12 @@ docker build -t polynote-local:latest --build-arg POLYNOTE_VERSION=$POLYNOTE_VER
 
 ## Dev image
 
-First we run `sbt dist` from the root of this repository to create `target/scala-2.11/` and the `.tar` file inside.
+First we run `sbt dist` from the root of this repository to create `target/` and the `.tar.gz` file inside.
 We then go to this new directory and build from within there:
 
 ```sh
 sbt dist
-cd target/scala-2.11/
-docker build -t polynote-local:dev -f ../../docker/dev/Dockerfile .
+docker build -t polynote-local:dev -f docker/dev/Dockerfile .
 ```
 
 
