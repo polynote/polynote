@@ -88,13 +88,13 @@ class StructDataEncoderMacros(val c: whitebox.Context) {
             val structFieldsList = c.Expr[List[StructField]](q"List(..$structFields)")
             val structType = reify(StructType(structFieldsList.splice))
 
-            val (encodeFields, sizeFields) = fields.zip(encoderVariables).map {
+            val (encodeFields, sizeFields, stringifyFields) = fields.zip(encoderVariables).map {
               case ((name, typ), encoderVariable) =>
                 val encode = q"${encoderVariable.name}.encode(output, value.$name)"
                 val size = q"${encoderVariable.name}.sizeOf(value.$name)"
-
-                (encode, size)
-            }.unzip
+                val stringifier = q"""${encoderVariable.name}.encodeDisplayString(value.$name).replace("\n", "\n  ")"""
+                (encode, size, stringifier)
+            }.unzip3
 
             val sizeOf = sizeFields.reduceRight {
               (nextSize, totalSize) => q"polynote.runtime.DataEncoder.combineSize($nextSize, $totalSize)"
@@ -105,17 +105,45 @@ class StructDataEncoderMacros(val c: whitebox.Context) {
                 cq"${name.decodedName.toString} => Some((((value: $A) => value.$name), ${encoderVariable.name}))"
             } :+ cq"_ => None"
 
+            val displayPrefix = A.typeSymbol.name.decodedName.toString
+            def displayField(name: TermName, stringifier: Tree, last: Boolean): Tree = q"""
+                  sb.append("  ")
+                  sb.append(${name.decodedName.toString})
+                  sb.append(" = ")
+                  sb.append($stringifier)
+                  sb.append(${if (last) "\n" else ",\n"})
+                """
+
+            val displayFields = fields.zip(stringifyFields).reverse match {
+              case Nil => Nil
+              case ((lastName, _), lastString) :: rest => rest.reverse.map {
+                case ((name, _), stringifier) => displayField(name, stringifier, last = false)
+              } :+ displayField(lastName, lastString, last = true)
+            }
+
             val result = q"""
               ..$encoderVariables
               new _root_.polynote.runtime.DataEncoder.StructDataEncoder[$A]($structType) {
                 def encode(output: java.io.DataOutput, value: $A): Unit = { ..$encodeFields }
                 def sizeOf(value: $A): _root_.scala.Int = $sizeOf
                 def field(name: String): Option[($A => Any, _root_.polynote.runtime.DataEncoder[_])] = name match { case ..$matchFields }
+                override def encodeDisplayString(value: $A): String = {
+                  val sb = new java.lang.StringBuilder()
+                  sb.append($displayPrefix)
+                  sb.append("(\n")
+                  ..$displayFields
+                  sb.append(")")
+                  sb.toString()
+                }
               }
             """
 
-
-            c.Expr[StructDataEncoder[A]](result)
+            try c.Expr[StructDataEncoder[A]](c.typecheck(result)) catch {
+              case err: Throwable =>
+                val e = err
+                c.warning(c.enclosingPosition, s"Unable to derive StructDataEncoder for ${A.toString}: ${e.getMessage}")
+                c.abort(c.enclosingPosition, e.getMessage)
+            }
         }
     }
 

@@ -11,10 +11,10 @@ class StructDataEncoderSpec extends FreeSpec with Matchers {
 
   case class NestedMap(a: Map[String, Double], b: TestAllEncodable, c: Map[String, TestAllEncodable])
 
-  val e1 = implicitly[DataEncoder[NestedMap]]
+  private val inst = TestAllEncodable(22, 2.2, true, "hello")
 
   "can encode a case class" in {
-    val e1 = DataEncoder.StructDataEncoder
+    val e1 = DataEncoder.StructDataEncoder.caseClassMacro[TestAllEncodable]
     val encoder = implicitly[DataEncoder[TestAllEncodable]].asInstanceOf[DataEncoder.StructDataEncoder[TestAllEncodable]]
 
     encoder.dataType shouldEqual StructType(List(
@@ -24,12 +24,31 @@ class StructDataEncoderSpec extends FreeSpec with Matchers {
       StructField("fourth", StringType)
     ))
 
-    val inst = TestAllEncodable(22, 2.2, true, "hello")
 
     val Some((firstGetter, firstEncoder)) = encoder.field("first")
     firstGetter(inst) shouldEqual 22
     firstEncoder.dataType shouldEqual IntType
 
+    encoder.encodeDisplayString(inst) shouldEqual
+      s"""TestAllEncodable(
+        |  first = ${inst.first},
+        |  second = ${inst.second},
+        |  third = ${inst.third},
+        |  fourth = ${inst.fourth}
+        |)""".stripMargin
+
+  }
+
+  "formats nested things properly" in {
+    implicitly[DataEncoder[Nested]].encodeDisplayString(Nested(inst)) shouldEqual
+      s"""Nested(
+        |  a = TestAllEncodable(
+        |    first = ${inst.first},
+        |    second = ${inst.second},
+        |    third = ${inst.third},
+        |    fourth = ${inst.fourth}
+        |  )
+        |)""".stripMargin
   }
 
 }

@@ -242,23 +242,28 @@ class LocalKernel private[kernel] (
         }.toMap
 
         def updateValue(value: ResultValue): RIO[Blocking with Logging, ResultValue] = {
-          def stringRepr = StringRepr(TinyString.truncatePretty(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
+          val makeStringRepr: UIO[StringRepr] =
+            ZIO(StringRepr(TinyString.truncatePretty(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null"))))
+              .catchAll {
+                err => ZIO.succeed(StringRepr(s"Error while representing ${value.name} as a String: ${err.getClass.getName}. Try executing ${value.name}.toString() to see the stack trace."))
+              }
+
+          val onlyStringRepr = makeStringRepr.map(stringRepr => value.copy(reprs = List(stringRepr)))
           if (value.value != null) {
             ZIO.effectTotal(instanceMap.get(value.name)).flatMap {
               case Some(instance) =>
                 effectBlocking(instance.apply(value.value))
                   .onError(err => Logging.error("Error creating result reprs", err))
-                  .catchAll(_ => ZIO.succeed(Array.empty[ValueRepr])).map(_.toList).map {
-                    case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
-                    case reprs => reprs :+ stringRepr
+                  .catchAll(_ => ZIO.succeed(Array.empty[ValueRepr])).map(_.toList).flatMap {
+                    case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => ZIO.succeed(reprs)
+                    case reprs => makeStringRepr.map(stringRepr => reprs :+ stringRepr)
                   }.flatMap(filterReprs).map {
                     reprs => value.copy(reprs = reprs)
                   }
 
-              case None =>
-                ZIO.succeed(value.copy(reprs = List(stringRepr)))
+              case None => onlyStringRepr
             }
-          } else ZIO.succeed(value.copy(reprs = List(stringRepr)))
+          } else onlyStringRepr
         }
 
         state.updateValuesM(updateValue)
