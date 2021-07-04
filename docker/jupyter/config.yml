@@ -1,0 +1,8 @@
+listen:
+  host: 0.0.0.0
+  port: 8888
+storage:
+  dir: /home/jovyan
+#  mounts:
+#    examples:
+#      dir: examples
