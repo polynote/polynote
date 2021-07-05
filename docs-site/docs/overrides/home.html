@@ -1,0 +1,131 @@
+{% extends "./main.html" %}
+{% block tabs %}
+{{ super() }}
+
+<section class="home">
+    <div id="Home">
+        <div id="Splash">
+            <h1>The <em>polyglot</em> notebook<br />with <strong>first-class <span class="scala">Scala</span></strong> support.</h1>
+            <h2>
+                Learn to
+                <span class="heart">
+							<svg style="vertical-align: middle" aria-hidden="true" focusable="false" data-prefix="fas" data-icon="heart" class="svg-inline--fa fa-heart fa-w-16" role="img" width="1em" height="1em" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+								<!-- Icon from FontAwesome: https://fontawesome.com/license -->
+								love
+								<path fill="pink"
+                                      d="M462.3 62.6C407.5 15.9 326 24.3 275.7 76.2L256 96.5l-19.7-20.3C186.1 24.3 104.5 15.9 49.7 62.6c-62.8 53.6-66.1 149.8-9.9 207.9l193.5 199.8c12.5 12.9 32.8 12.9 45.3 0l193.5-199.8c56.3-58.1 53-154.3-9.8-207.9z"></path>
+							</svg>
+						</span>
+                your notebooks again.
+            </h2>
+            <h3><a href="docs/installation/">Try it!</a></h3>
+            <img class="screenshot" src="images/hero-animation.gif" alt="" />
+        </div>
+    </div>
+</section>
+<section id="Features" class="home">
+    <h1>Features</h1>
+    <p>
+        Polynote is a different kind of notebook. It supports <strong>mixing multiple languages</strong> in one notebook, and sharing
+        data between them seamlessly. It encourages <strong>reproducible notebooks</strong> with its immutable data model. <a href="docs/">(Learn more)</a>
+    </p>
+    <p>
+        Here are some of its <em>unique</em> features:
+    </p>
+
+    <section>
+        <h2>Editing</h2>
+        <div class="feature-grid">
+            <div class="feature-row">
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/autocomplete.png" alt="" /></div>
+                    <div class="feature-desc"><p><strong>Interactive auto-complete</strong> helps you find what you're looking for without switching to the documentation.</p></div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/compile-errors.png" alt="" /></div>
+                    <div class="feature-desc"><p><strong>Highlighting your errors</strong> helps you quickly figure out what's gone wrong.</p></div>
+                </div>
+            </div>
+            <div class="feature-row">
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/rich-text.png" alt="" /></div>
+                    <div class="feature-desc"><p><strong>Rich text editing</strong> lets you see your formatted text cells as you write them, and edit them like a document.</p></div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/equations.png" alt="" /></div>
+                    <div class="feature-desc"><p>Easily insert <strong>LaTeX equations</strong> into your text cells.</p></div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section>
+        <h2>Executing</h2>
+        <div class="feature-grid">
+            <div class="feature-row">
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/tasks.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p>Always know what the kernel is doing with <strong>individual task tracking.</strong></p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/symbol-table.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p>The <strong>symbol table</strong> keeps track of what you've defined, and what's available in the current cell. <strong>Inspect any value</strong> for detailed information and rich visualizations.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="feature-row">
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/highlight-running.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p>See exactly what code is executing right now, as Polynote <strong>highlights the running statement in real-time.</strong></p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/ordered.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p><strong>Ordered cell semantics</strong> ensures your notebook can be reproducibly executed.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section>
+        <h2>Data and visualization</h2>
+        <div class="feature-grid">
+            <div class="feature-row">
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/spark.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p>First-class integration with <strong>Apache Spark&trade;</strong> for exploring, analyzing, and visualizing big data.</p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/data-table.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p>Browse <strong>table-structured data</strong>, including collections of data structures and Spark data sets.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="feature-row">
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/rich-data.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p>See <strong>rich representations</strong> of your data, automatically derived <em>or</em> supplied by a typeclass.</p>
+                    </div>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-image"><img src="images/plots.png" alt="" /></div>
+                    <div class="feature-desc">
+                        <p>Easily create visualizations with the built-in <strong>plot editor</strong>, or define your own with the <a href="https://vega.github.io/vega/" target="_blank">Vega visualization language</a>.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block content %}{% endblock %}
+{% block footer %}{% endblock %}
