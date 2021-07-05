@@ -6,7 +6,7 @@ import java.time.{Instant, LocalDate, OffsetDateTime, ZoneId, ZoneOffset}
 import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
 import polynote.app.MainArgs
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelStatusUpdate}
-import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishResult, PublishStatus}
+import polynote.kernel.environment.{CurrentNotebook, PublishResult, PublishStatus}
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
 import polynote.messages.{CellID, Notebook, NotebookCell}
@@ -28,7 +28,7 @@ import scala.annotation.tailrec
 object NotebookRunner {
 
   type CellBaseEnv = BaseEnv with GlobalEnv with CurrentNotebook with TaskManager with PublishStatus with InterpreterState
-  type KernelFactoryEnv = CellBaseEnv with NotebookUpdates
+  type KernelFactoryEnv = CellBaseEnv
 
   def main: ZIO[AppEnv, String, Int] = for {
     mainArgs      <- MainArgs.access
@@ -65,7 +65,7 @@ object NotebookRunner {
 
   def runNotebook(notebook: Notebook): RIO[AppEnv with PublishStatus, Notebook] =
     runWithEnv.provideSomeLayer[AppEnv with PublishStatus] {
-      CurrentNotebook.const(notebook) ++ TaskManager.layer ++ NotebookUpdates.empty ++ InterpreterState.emptyLayer
+      CurrentNotebook.const(notebook) ++ TaskManager.layer ++ InterpreterState.emptyLayer
     }
 
   def runWithEnv: ZIO[AppEnv with KernelFactoryEnv, Throwable, Notebook] =
@@ -87,7 +87,7 @@ object NotebookRunner {
       PublishResult.layer(Publish.fn(result => nbRef.update(_.updateCell(id)(result.toCellUpdate))))
     }
 
-  def startKernel: ZIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Throwable, Kernel] = for {
+  def startKernel: ZIO[BaseEnv with GlobalEnv with CellEnv, Throwable, Kernel] = for {
     kernel <- Kernel.Factory.newKernel
     _      <- kernel.init()
   } yield kernel

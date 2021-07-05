@@ -39,26 +39,31 @@ class VersionBuffer[T] {
     val results = new ListBuffer[(Int, T)]
     var finished = false
 
+    if (!iter.hasNext)
+      return Nil
+
+    var current = iter.next()
+    while (current._1 < startVersion && iter.hasNext)
+      current = iter.next()
+
+    if (current._1 < startVersion)
+      return Nil
+
+    results += current
+
+    // wrapped around
     if (startVersion > endVersion) {
-      // there's a wraparound between start and end
-      var lastVersion = 0
-      while (!finished && iter.hasNext) {
-        val (version, value) = iter.next()
-        if (version < lastVersion)
-          finished = true
-        results += (version -> value)
+      while (current._1 >= startVersion && iter.hasNext) {
+        current = iter.next()
+        results += current
       }
-      finished = false
     }
 
-    while (!finished && iter.hasNext) {
-      val (version, value) = iter.next()
-      if (version > endVersion) {
-        finished = true
-      } else {
-        results += (version -> value)
-      }
+    while (current._1 < endVersion && iter.hasNext) {
+      current = iter.next()
+      results += current
     }
+
     results.toList
   }
 

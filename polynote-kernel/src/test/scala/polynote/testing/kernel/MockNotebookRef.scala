@@ -2,17 +2,19 @@ package polynote.testing.kernel
 
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages.{CellID, Notebook, NotebookCell, NotebookUpdate, ShortList}
-import zio.{IO, Promise, RIO, Ref, Task, UIO, ZIO}
+import zio.stream.ZStream
+import zio.{IO, Promise, Queue, RIO, Ref, Task, UIO, ZIO}
 
 // a notebook ref that's only in-memory
 class MockNotebookRef private(
   val current: Ref[(Int, Notebook)],
   closed: Promise[Throwable, Unit],
-  saveTo: ((Int, Notebook)) => UIO[Unit]
+  saveTo: ((Int, Notebook)) => UIO[Unit],
+  updatesQueue: Queue[NotebookUpdate]
 ) extends NotebookRef {
   def set(versioned: (Int, Notebook)): UIO[Unit] = current.set(versioned)
   override def getVersioned: UIO[(Int, Notebook)] = current.get
-  override def update(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, Unit] = updateAndGet(update).unit
+  override def update(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, Unit] = updateAndGet(update).unit <* updatesQueue.offer(update)
 
   private def updateAndGetCurrent(update: ((Int, Notebook)) => (Int, Notebook)) =
     current.updateAndGet(update).tap(saveTo)
@@ -53,11 +55,14 @@ class MockNotebookRef private(
   override def isOpen: UIO[Boolean] = closed.isDone.map(!_)
 
   override def awaitClosed: Task[Unit] = closed.await
+
+  override val updates: ZStream[Any, Nothing, NotebookUpdate] = ZStream.fromQueue(updatesQueue)
 }
 
 object MockNotebookRef {
   def apply(notebook: Notebook, saveTo: ((Int, Notebook)) => UIO[Unit] = _ => ZIO.unit, version: Int = 0): UIO[MockNotebookRef] = for {
     current <- Ref.make(version -> notebook)
     closed  <- Promise.make[Throwable, Unit]
-  } yield new MockNotebookRef(current, closed, saveTo)
+    updates <- Queue.unbounded[NotebookUpdate]
+  } yield new MockNotebookRef(current, closed, saveTo, updates)
 }

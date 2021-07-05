@@ -6,6 +6,7 @@ import polynote.kernel.logging.Logging
 import polynote.messages.{CellID, Notebook, NotebookUpdate}
 import zio.{IO, RIO, Ref, Task, UIO, URIO, ZIO}
 import zio.interop.catz._
+import zio.stream.ZStream
 
 /**
   * A NotebookRef implementation used on the remote client. Because its updates come only from the server, it doesn't
@@ -56,6 +57,9 @@ class RemoteNotebookRef private (
         .evalMap(update)
         .compile.drain.forkDaemon.unit
   }
+
+  // The remote doesn't need to do anything with the updates.
+  override def updates: ZStream[Any, Nothing, NotebookUpdate] = ZStream.empty
 
 }
 

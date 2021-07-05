@@ -10,7 +10,7 @@ import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 import polynote.config.{KernelConfig, PolynoteConfig}
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.RuntimeError.RecoveredException
-import polynote.kernel.environment.{NotebookUpdates, PublishResult, PublishStatus}
+import polynote.kernel.environment.{PublishResult, PublishStatus}
 import polynote.kernel.{BaseEnv, CellEnv, Completion, CompletionType, GlobalEnv, Kernel, KernelBusyState, KernelInfo, Output, ParameterHint, ParameterHints, ResultValue, Signatures, TaskInfo, UpdatedTasks}
 import polynote.kernel.logging.Logging
 import polynote.messages._
@@ -135,7 +135,7 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
             whenever(updates.nonEmpty) {
               val finalVersion = updates.last.globalVersion
               updates.foreach {
-                update => unsafeRun(env.updateTopic.publish1(Some(update)))
+                update => unsafeRun(env.currentNotebook.update(update))
               }
 
               val remoteNotebook = unsafeRun {

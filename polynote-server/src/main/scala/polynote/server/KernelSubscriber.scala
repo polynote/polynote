@@ -1,7 +1,6 @@
 package polynote.server
 
 import java.util.concurrent.atomic.AtomicInteger
-
 import fs2.concurrent.{SignallingRef, Topic}
 import fs2.Stream
 import polynote.kernel.environment.{Config, PublishMessage}
@@ -11,6 +10,7 @@ import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.logging.Logging
 import polynote.runtime.CellRange
 import polynote.server.auth.{Identity, IdentityProvider, Permission, UserIdentity}
+import polynote.util.VersionBuffer
 import zio.{Fiber, Promise, RIO, Task, UIO, URIO, ZIO}
 import zio.interop.catz._
 
@@ -35,9 +35,7 @@ class KernelSubscriber private[server] (
 
   def close(): UIO[Unit] = closed.succeed(()).unit *> process.interrupt.unit
 
-  def update(update: NotebookUpdate): Task[Unit] =
-    ZIO.effectTotal(lastLocalVersion.set(update.localVersion)) *>
-      ZIO.effectTotal(lastGlobalVersion.get()).flatMap(gv => publisher.update(id, update.withVersions(gv, update.localVersion)))
+  def update(update: NotebookUpdate): Task[Unit] = publisher.update(id, update)
 
   def notebook: Task[Notebook] = publisher.latestVersion.map(_._2)
   def currentPath: Task[String] = notebook.map(_.path)
@@ -50,6 +48,15 @@ class KernelSubscriber private[server] (
   def getSelection: UIO[Option[PresenceSelection]] = currentSelection.get
 
   def selections: Stream[UIO, PresenceSelection] = currentSelection.discrete.unNone.interruptAndIgnoreWhen(closed)
+
+  private[server] val getLastLocalVersion = ZIO.effectTotal(lastLocalVersion.get())
+  private[server] def setLastLocalVersion(version: Int) = ZIO.effectTotal(lastLocalVersion.set(version))
+  private[server] val getLastGlobalVersion = ZIO.effectTotal(lastGlobalVersion.get())
+  private[server] def setLastGlobalVersion(version: GlobalVersion) = ZIO.effectTotal(lastGlobalVersion.set(version))
+  private[server] def setVersions(globalVersion: GlobalVersion, localVersion: Int) = ZIO.effectTotal {
+    lastGlobalVersion.set(globalVersion)
+    lastLocalVersion.set(localVersion)
+  }
 }
 
 object KernelSubscriber {
@@ -59,25 +66,16 @@ object KernelSubscriber {
     publisher: KernelPublisher
   ): RIO[PublishMessage with UserIdentity, KernelSubscriber] = {
 
-    def rebaseUpdate(update: NotebookUpdate, globalVersion: GlobalVersion, localVersion: Int) =
-      publisher.versionBuffer.getRange(update.globalVersion, globalVersion)
-        .foldLeft(update)(_ rebase _)
-        .withVersions(globalVersion, localVersion)
-
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
-      publisher.broadcastUpdates.subscribe(128).unNone.evalMap {
-        case (`id`, update) if update.echoOriginatingSubscriber =>
-          ZIO.effectTotal(global.set(update.globalVersion)).as(Some(update))
-        case (`id`, update) =>
-          ZIO.effectTotal(global.set(update.globalVersion)).as(None)
-        case (_, update)    => ZIO.effectTotal(global.get()).map {
-          case knownGlobalVersion if update.globalVersion < knownGlobalVersion =>
-            Some(rebaseUpdate(update, knownGlobalVersion, local.get()))
-          case knownGlobalVersion if update.globalVersion > knownGlobalVersion =>
-            Some(update.withVersions(update.globalVersion, local.get()))
-          case _ => None
+      publisher.broadcastUpdates.subscribe(128).unNone
+        .evalTap {
+          case (`id`, update) => ZIO.effectTotal { local.set(update.localVersion) }
+          case _              => ZIO.unit
+        }.filter {
+          case (subscriberId, update) => subscriberId != id || update.echoOriginatingSubscriber
+        }.map {
+          case (_, update) => update.withVersions(update.globalVersion, local.get())
         }
-      }.unNone.evalTap(_ => ZIO(local.incrementAndGet()).unit)
 
     for {
       closed           <- Promise.make[Throwable, Unit]

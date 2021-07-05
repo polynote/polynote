@@ -1,7 +1,7 @@
 package polynote.kernel
 
 import polynote.buildinfo.BuildInfo
-import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates}
+import polynote.kernel.environment.CurrentNotebook
 import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, CellID, HandleType}
 import polynote.runtime.{StreamingDataRepr, TableOp}
@@ -91,7 +91,7 @@ object Kernel {
 
   object Factory {
     trait Service {
-      def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel]
+      def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel]
     }
 
     trait LocalService extends Service {
@@ -99,15 +99,15 @@ object Kernel {
     }
 
     def choose(choose: RIO[BaseEnv with GlobalEnv with CellEnv, Service]): Service = new Service {
-      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = choose.flatMap(_.apply())
+      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = choose.flatMap(_.apply())
     }
 
     def const(inst: Kernel): Service = new Service {
-      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = ZIO.succeed(inst)
+      override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = ZIO.succeed(inst)
     }
 
     def access: URIO[Kernel.Factory, Service] = ZIO.access[Kernel.Factory](_.get)
-    def newKernel: RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = access.flatMap(_.apply())
+    def newKernel: RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = access.flatMap(_.apply())
   }
 
   case object InterpreterNotStarted extends Throwable
