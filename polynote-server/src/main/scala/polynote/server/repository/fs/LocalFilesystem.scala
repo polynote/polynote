@@ -7,7 +7,7 @@ import java.nio.file.{AtomicMoveNotSupportedException, FileAlreadyExistsExceptio
 import java.util.concurrent.atomic.AtomicBoolean
 
 import fs2.Chunk
-import polynote.kernel.BaseEnv
+import polynote.kernel.{BaseEnv, GlobalEnv}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.interop.catz._
 import zio.{RIO, Semaphore, Task, ZIO}
@@ -143,4 +143,12 @@ object LocalFilesystem {
     } yield new FileChannelWALWriter(channel, lock)
   }
 
+}
+
+final class LocalFilesystemFactory extends NotebookFilesystemFactory {
+  override def name: String = "local"
+
+  override def scheme: String = "file"
+
+  override def create(props: Map[String, String]): RIO[BaseEnv with GlobalEnv, NotebookFilesystem] = ZIO.succeed(new LocalFilesystem())
 }
