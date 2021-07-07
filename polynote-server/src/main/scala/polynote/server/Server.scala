@@ -101,6 +101,7 @@ class Server {
       wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
       _            <- Logging.warn(securityWarning)
       _            <- Logging.info(banner)
+      _            <- Logging.info(s"Static path ${defaultStaticPath} & static watch path ${staticWatchPath}")
       _            <- Logging.info(s"Polynote version ${BuildInfo.version}")
       _            <- serve(wsKey).orDie
     } yield 0
@@ -118,8 +119,9 @@ class Server {
     wsKey: String
   ): ZManaged[BaseEnv with MainEnv with MainArgs, Throwable, uzhttp.server.Server] = Config.access.toManaged_.flatMap { config =>
     // If this starts with the base_url prefix drop the base_url prefix
+    val userPrefix = config.ui.baseUri.stripSuffix("/")
     def normalizePath(path: String): String = {
-      path.stripPrefix(config.ui.baseUri)
+      path.stripPrefix(userPrefix)
     }
 
     def downloadFile(path: String, req: Request): ZIO[RequestEnv, HTTPError, Response] = {
@@ -163,7 +165,7 @@ class Server {
       val serveStatic: PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]] = {
         case req if normalizePath(req.uri.getPath) == "/favicon.ico" => serveFile("/static/favicon.ico", req)
         case req if normalizePath(req.uri.getPath) == "/favicon.svg" => serveFile("/static/favicon.svg", req)
-        case req if normalizePath(req.uri.getPath) startsWith "/static/" => serveFile(req.uri.getPath, req)
+        case req if normalizePath(req.uri.getPath) startsWith "/static/" => serveFile(normalizePath(req.uri.getPath), req)
       }
 
       val staticFiles: ZManaged[RequestEnv, Nothing, PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]]] =
@@ -190,7 +192,7 @@ class Server {
         getIndex      <- indexFileContent(wsKey).toManaged_
         server        <- uzhttp.server.Server.builder(address).handleSome {
           case req@Request.WebsocketRequest(_, uri, _, _, inputFrames) =>
-            val path = uri.getPath
+            val path = normalizePath(uri.getPath)
             val query = uri.getQuery
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
