@@ -3,6 +3,3 @@ listen:
   port: 8888
 storage:
   dir: /home/jovyan
-#  mounts:
-#    examples:
-#      dir: examples
