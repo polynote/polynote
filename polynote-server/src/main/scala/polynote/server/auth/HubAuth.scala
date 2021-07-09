@@ -21,24 +21,36 @@ case class HubIdentityProvider(
 ) extends IdentityProvider.Service {
   
   def validateCookie(cookie: String): Option[String] = {
-    val url = s"${JUPYTERHUB_API_URL}/user"
-    val conn = new URL(url).openConnection().asInstanceOf[HttpURLConnection]
-    conn.setConnectTimeout(500)
-    conn.connect()
-    val responseCode = conn.getResponseCode
-    responseCode match {
-      case 200 | 201 =>
-	val responseStreamReader = new BufferedReader(new InputStreamReader(conn.getInputStream()))
-        Option(responseStreamReader.readLine())
+    try {
+      val url = s"${JUPYTERHUB_API_URL}/user"
+      val conn = new URL(url).openConnection().asInstanceOf[HttpURLConnection]
+      conn.setConnectTimeout(500)
+      conn.connect()
+      val responseCode = conn.getResponseCode
+      responseCode match {
+	case 200 | 201 =>
+	  val responseStreamReader = new BufferedReader(new InputStreamReader(conn.getInputStream()))
+          Option(responseStreamReader.readLine())
+	case _ => None
+      }
+    } catch {
       case _ => None
     }
   }
     
   override def authRoutes: Option[Routes] = None
+
+  def parseCookies(req: Request) = {
+    try {
+      java.net.HttpCookie.parse(req.headers.getOrElse("cookies", "")).asScala
+    } catch {
+      case _ => Seq()
+    }
+  }
   
   override def checkAuth(req: Request): ZIO[BaseEnv, Response, Option[Identity]] = {
-    val cookies = java.net.HttpCookie.parse(req.headers.getOrElse("cookies", ""))
-    val jupyterCookie = cookies.asScala.filter(_.getName() == "jupyterhub-hub-login").map(_.getValue()).headOption
+    val cookies = parseCookies(req)
+    val jupyterCookie = cookies.filter(_.getName() == "jupyterhub-hub-login").map(_.getValue()).headOption
     val username: Option[String] = jupyterCookie.flatMap(validateCookie)
     username match {
       case Some(name) => ZIO.succeed(Some(BasicIdentity(name)))
@@ -66,7 +78,7 @@ object HubIdentityProvider {
 
   class Loader extends ProviderLoader {
     override val providerKey: String = "hub"
-    override def provider(config: JsonObject): RIO[BaseEnv with environment.Config, HeaderIdentityProvider] =
-      ZIO.fromEither(Json.fromJsonObject(config).as[HeaderIdentityProvider])
+    override def provider(config: JsonObject): RIO[BaseEnv with environment.Config, HubIdentityProvider] =
+      ZIO.fromEither(Json.fromJsonObject(config).as[HubIdentityProvider])
   }
 }
