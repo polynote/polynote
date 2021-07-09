@@ -61,11 +61,11 @@ case class HubIdentityProvider(
 }
 
 object HubIdentityProvider {
-  implicit val encoder: ObjectEncoder[HeaderIdentityProvider] = deriveEncoder
-  implicit val decoder: Decoder[HeaderIdentityProvider] = deriveDecoder
+  implicit val encoder: ObjectEncoder[HubIdentityProvider] = deriveEncoder
+  implicit val decoder: Decoder[HubIdentityProvider] = deriveDecoder
 
   class Loader extends ProviderLoader {
-    override val providerKey: String = "header"
+    override val providerKey: String = "hub"
     override def provider(config: JsonObject): RIO[BaseEnv with environment.Config, HeaderIdentityProvider] =
       ZIO.fromEither(Json.fromJsonObject(config).as[HeaderIdentityProvider])
   }

@@ -1,1 +1,2 @@
 polynote.server.auth.HeaderIdentityProvider$Loader
+polynote.server.auth.HubIdentityProvider$Loader
