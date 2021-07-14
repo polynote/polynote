@@ -121,6 +121,7 @@ class Server {
     // If this starts with the base_url prefix drop the base_url prefix
     val userPrefix = config.ui.baseUri.stripSuffix("/")
     def normalizePath(path: String): String = {
+      Logging.error("Normalized path ${normalizePath}")
       path.stripPrefix(userPrefix)
     }
 
@@ -201,7 +202,9 @@ class Server {
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {
-          case req if normalizePath(req.uri.getPath) == "/" || normalizePath(req.uri.getPath) == "" => getIndex.map(Response.html(_))
+          case req if normalizePath(req.uri.getPath) == "/" || normalizePath(req.uri.getPath) == "" =>
+            // Do authorization at a point we can trigger a user RDR
+            authorize(req, getIndex.map(Response.html(_)))
           case req if normalizePath(req.uri.getPath) startsWith "/notebook/" =>
             req.uri.getQuery match {
               case "download=true" => downloadFile(normalizePath(req.uri.getPath).stripPrefix("/notebook/"), req)

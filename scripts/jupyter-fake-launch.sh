@@ -10,8 +10,10 @@ security:
   auth:
     provider: hub
     config:
-      JUPYTERHUB_API_URL: ${JUPYTERHUB_API_URL}
-      JPY_API_TOKEN: ${JPY_API_TOKEN}
+      jupyterhub_api_url: \"${JUPYTERHUB_API_URL}\"
+      jpy_api_token: ${JPY_API_TOKEN}
+      jupyterhub_client_id: ${JUPYTERHUB_CLIENT_ID}
+      rdr_url: ${JUPYTERHUB_SERVICE_PREFIX}oauth_callback # Jupyter won't let us do cool names :(
       permissions:
         ${JUPYTERHUB_USER}: all
 " >> /config.yml
