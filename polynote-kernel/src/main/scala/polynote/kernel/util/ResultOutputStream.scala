@@ -44,14 +44,14 @@ class ResultOutputStream(publishSync: Result => Unit, bufSize: Int = 65536) exte
 
 }
 
-class ResultPrintStream(publishSync: Result => Unit, bufSize: Int = 65536) extends PrintStream(new ResultOutputStream(publishSync, bufSize), true, "UTF-8") {
+class ResultPrintStream(publishSync: Result => Unit, bufSize: Int = 65536)(private val outputStream: OutputStream = new ResultOutputStream(publishSync, bufSize)) extends PrintStream(outputStream, true, "UTF-8") {
   override def println(value: String): Unit = {
-    out.flush()
+    outputStream.flush()
     publishSync(Output("text/plain; rel=stdout", value + "\n"))
   }
 
   override def print(s: String): Unit = {
-    out.flush()
+    outputStream.flush()
     publishSync(Output("text/plain; rel=stdout", s))
   }
 

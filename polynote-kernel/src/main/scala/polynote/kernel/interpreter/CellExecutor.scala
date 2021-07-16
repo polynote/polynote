@@ -25,7 +25,7 @@ class CellExecutor(publishSync: Result => Unit, classLoader: ClassLoader, blocki
     blockingExecutor.submit {
       new Runnable {
         def run(): Unit = {
-          val console = new ResultPrintStream(publishSync)
+          val console = new ResultPrintStream(publishSync)()
           withContextClassLoader(classLoader) {
             try {
               Console.withOut(console) {
