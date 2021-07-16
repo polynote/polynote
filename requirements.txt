@@ -2,6 +2,6 @@ virtualenv
 ipython
 nbconvert
 numpy
-pandas
+pandas==1.2.5
 jedi==0.18.*
 jep==3.9.*

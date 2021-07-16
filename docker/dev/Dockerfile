@@ -1,3 +1,4 @@
+# Set this to match your JDK version compiled with.
 FROM openjdk:8-slim-buster
 
 WORKDIR /opt
@@ -11,16 +12,23 @@ ENV SPARK_HOME="/opt/spark"
 ENV HADOOP_HOME="/opt/hadoop-2.7.7"
 ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 
-# First, create the distribution with `sbt dist`
+# Copy over the requirements early so that we can cache this layer seperate from polynote-dist
+COPY requirements.txt /tmp/
+RUN pip3 install -r /tmp/requirements.txt
+
+
+# Before starting, double check your JVM version
+# and make sure it matches the version in the FROM line.
+# Once you've got that sorted out, compile the website with npm
+# Package everything together by making the distribution with `sbt dist`
 # Then build this from the project root using `-f docker/dev/Dockerfile` to select this file.
 # for example (don't forget the dot at the end!):
+#   cd polynote-static; npm install; npm run dist; cd..
 #   sbt dist
 #   docker build -t polynote:dev -f docker/dev/Dockerfile .
 COPY target/polynote-dist.tar.gz .
 RUN tar xfzp polynote-dist.tar.gz && \
     rm polynote-dist.tar.gz
-
-RUN pip3 install -r ./polynote/requirements.txt
 
 # to wrap up, we create (safe)user
 ENV UID 1000
