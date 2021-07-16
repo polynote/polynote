@@ -2,9 +2,8 @@ package polynote.kernel.interpreter
 
 import java.io.{OutputStream, PrintStream}
 import java.lang.reflect.InvocationHandler
-
 import polynote.kernel.environment.{CurrentRuntime, CurrentTask, PublishResult, PublishStatus}
-import polynote.kernel.util.ResultOutputStream
+import polynote.kernel.util.{ResultOutputStream, ResultPrintStream}
 import polynote.kernel.{BaseEnv, ExecutionStatus, InterpreterEnv, Output, Result, ScalaCompiler, withContextClassLoader}
 import polynote.messages.CellID
 import polynote.runtime.KernelRuntime
@@ -26,7 +25,7 @@ class CellExecutor(publishSync: Result => Unit, classLoader: ClassLoader, blocki
     blockingExecutor.submit {
       new Runnable {
         def run(): Unit = {
-          val console = new PrintStream(new ResultOutputStream(publishSync), true)
+          val console = new ResultPrintStream(publishSync)
           withContextClassLoader(classLoader) {
             try {
               Console.withOut(console) {
