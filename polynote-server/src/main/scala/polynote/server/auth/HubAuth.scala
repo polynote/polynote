@@ -181,8 +181,7 @@ case class HubIdentityProvider(
     if (resolvedPermissions contains permission.permissionType)
       ZIO.unit
     else
-      println(s"$matchedUser does not have ${permission.permissionType.encoded} access they have ${resolvedPermissions}")
-      ZIO.fail(Permission.PermissionDenied(permission, s"$matchedUser does not have ${permission.permissionType.encoded} access"))
+      ZIO.fail(Permission.PermissionDenied(permission, s"$matchedUser does not have ${permission.permissionType.encoded} access they have ${resolvedPermissions}"))
   }
 }
 
