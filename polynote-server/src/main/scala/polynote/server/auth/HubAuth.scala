@@ -21,6 +21,7 @@ case class HubIdentityProvider(
   JPY_API_TOKEN: String,
   JUPYTERHUB_CLIENT_ID: String,
   rdr_url: String,
+  base_uri: String,
   permissions: Map[String, Set[PermissionType]] = Map("*" -> PermissionType.All),
   allowAnonymous: Boolean = false
 ) extends IdentityProvider.Service {
@@ -116,7 +117,9 @@ case class HubIdentityProvider(
           users.put(jupyterOAuthCookie.get.getValue(), u)
         }
       }
-      ZIO.succeed(Response.plain(info))
+      ZIO.succeed(Response.plain(
+          "Hi user! I like reading books, I hope you do too. Maybe check out Charlie Jane Anders books",
+          Status.Found, List(("Location", base_uri))))
   }
 
   override def authRoutes: Option[Routes] =
@@ -178,7 +181,7 @@ case class HubIdentityProvider(
     if (resolvedPermissions contains permission.permissionType)
       ZIO.unit
     else
-      println(s"$matchedUser does not have ${permission.permissionType.encoded} access")
+      println(s"$matchedUser does not have ${permission.permissionType.encoded} access they have ${resolvedPermissions}")
       ZIO.fail(Permission.PermissionDenied(permission, s"$matchedUser does not have ${permission.permissionType.encoded} access"))
   }
 }

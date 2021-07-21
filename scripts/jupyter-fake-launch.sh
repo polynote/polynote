@@ -13,8 +13,10 @@ security:
       jupyterhub_api_url: \"${JUPYTERHUB_API_URL}\"
       jpy_api_token: ${JPY_API_TOKEN}
       jupyterhub_client_id: ${JUPYTERHUB_CLIENT_ID}
+      base_uri: $JUPYTERHUB_SERVICE_PREFIX
       rdr_url: ${JUPYTERHUB_SERVICE_PREFIX}oauth_callback # Jupyter won't let us do cool names :(
       permissions:
-        ${JUPYTERHUB_USER}: all
+        ${JUPYTERHUB_USER}:
+          - all
 " >> /config.yml
 ./polynote/polynote.py --config /config.yml
