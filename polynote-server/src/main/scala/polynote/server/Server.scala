@@ -121,7 +121,6 @@ class Server {
     // If this starts with the base_url prefix drop the base_url prefix
     val userPrefix = config.ui.baseUri.stripSuffix("/")
     def normalizePath(path: String): String = {
-      Logging.error("Normalized path ${normalizePath}")
       path.stripPrefix(userPrefix)
     }
 
@@ -212,6 +211,7 @@ class Server {
             }
         } .handleSome(staticHandler)
           .handleSome(authRoutes)
+          .logRequests(ServerLogger.noLogRequests)
           .logErrors((msg, err) => Logging.error(msg, err))
           .logInfo(msg => Logging.info(msg))
           .serve

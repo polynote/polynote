@@ -34,7 +34,6 @@ case class HubIdentityProvider(
       val name = cookie.getName()
       val value = cookie.getValue()
       val url = s"${JUPYTERHUB_API_URL}/authorizations/cookie/${name}/${value}"
-      println(s"Making request to ${url} to validate cookie ${name} with value ${value}")
       val request = HttpRequest.newBuilder()
          .uri(URI.create(url))
          .header("Authorization", s"token $JPY_API_TOKEN")
@@ -46,7 +45,6 @@ case class HubIdentityProvider(
       }
     } catch {
       case _ =>
-        println("Shit went bom. idk")
         None
     }
   }
@@ -60,10 +58,7 @@ case class HubIdentityProvider(
       } else {
         ""
       }
-      val info = s"Got req ${req} with query ${query} and token ${code}"
-      println(info)
       val tokenFetchURL = s"${JUPYTERHUB_API_URL}/oauth2/token"
-      println(s"Making request to ${tokenFetchURL} to validate code ${code}")
       val data = HttpRequest.BodyPublishers.ofString(
         s"client_id=${JUPYTERHUB_CLIENT_ID}&client_secret=${JPY_API_TOKEN}&" +
         s"grant_type=authorization_code&code=${code}&redirect_uri=${rdr_url}"
@@ -84,18 +79,15 @@ case class HubIdentityProvider(
       }
 
       val url = s"${JUPYTERHUB_API_URL}/authorizations/token/${token}"
-      println(s"Making request to ${url} to validate token ${token}")
       val request = HttpRequest.newBuilder()
          .uri(URI.create(url))
          .header("Authorization", s"token $JPY_API_TOKEN")
          .build()
       val response = client.send(request, HttpResponse.BodyHandlers.ofString())
-      println(s"token validation response is ${response}")
       val userData = response.statusCode() match {
         case 200 | 201 => Option(response.body())
         case _ => None
       }
-      println(s"User data ${userData}")
       val cookies = parseCookies(req)
       val jupyterOAuthCookie = cookies.filter(_.getName() == "jupyterhub-session-id").headOption
 
@@ -103,17 +95,13 @@ case class HubIdentityProvider(
       implicit val userInfoDecoder: Decoder[UserInfo] = deriveDecoder[UserInfo]
 
       userData.foreach { data =>
-        println(s"parsing ${data}")
         val user = decode[UserInfo](data) match {
           case Right(o) =>
-            println(s"parsed :) ${o}")
             Some(o.name)
           case e =>
-            println(s"nope :( ${e}")
             None
         }
         user.foreach { u =>
-          println(s"Setting user ${u}")
           users.put(jupyterOAuthCookie.get.getValue(), u)
         }
       }
@@ -128,7 +116,6 @@ case class HubIdentityProvider(
   def parseCookies(req: Request) = {
     try {
       val rawCookies = req.headers.getOrElse("cookie", "")
-      println(s"rawCookies ${rawCookies}")
       java.net.HttpCookie.parse(rawCookies).asScala.toList
     } catch {
       case _ => Seq()
@@ -139,15 +126,10 @@ case class HubIdentityProvider(
 
   override def checkAuth(req: Request): ZIO[BaseEnv, Response, Option[Identity]] = {
     // Start with trying to validate the JupyterHub 1.3 auth method
-    println(s"Parsing cookies from ${req} with headers ${req.headers}")
     val cookies = parseCookies(req)
-    println(s"parsed cookies are ${cookies}")
     val cookieNames = cookies.map(_.getName())
-    println(s"cookie names are ${cookieNames}")
     val jupyterCookie = cookies.filter(_.getName() == "jupyterhub-hub-login").headOption
-    println(s"jupyter cookie is ${jupyterCookie}")
     val username: Option[String] = jupyterCookie.flatMap(validateLegacyCookie)
-    println(s"Username is ${username}")
     username match {
       case Some(name) => ZIO.succeed(Some(BasicIdentity(name)))
       case None =>
@@ -162,10 +144,8 @@ case class HubIdentityProvider(
           jupyterOAuthCookie.flatMap(cookie => users.get(cookie.getValue()))
         user match {
           case Some(u) =>
-            println(s"Found valid session cookie!")
             ZIO.succeed(Some(BasicIdentity(u)))
           case None =>
-            println("Doing rdr")
             ZIO.fail(oAuthRDR)
         }
     }
