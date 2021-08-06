@@ -8,25 +8,31 @@ val prepDistFiles: TaskKey[Seq[File]] = taskKey[Seq[File]]("Prepare distribution
 val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
 val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
 val sparkVersion: SettingKey[String] = settingKey("Spark version")
+val sparkDistVersion: SettingKey[String] = settingKey("Distribution version to use for tests")
+val circeVersion: SettingKey[String] = settingKey("circe version")
+val circeYamlVersion: SettingKey[String] = settingKey("circe-yaml version")
+val sparkInstallLocation: SettingKey[String] = settingKey("Location of Spark installation(s)")
+
 
 val versions = new {
-  val fs2        = "1.0.5"
+  val fs2        = "2.0.0"
   val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC5-6"
   val zio        = "1.0.5"
   val zioInterop = "2.0.0.0-RC12"
 }
 
+
 def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
-val scalaVersions = Seq("2.11.12", "2.12.12")
+val scalaVersions = Seq("2.11.12", "2.12.12", "2.13.6")
 lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
 
 val commonSettings = Seq(
-  scalaVersion := "2.11.12",
+  scalaVersion := "2.13.6",
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
@@ -45,11 +51,10 @@ val commonSettings = Seq(
     Developer(id = "jonathanindig", name = "Jonathan Indig", email = "", url = url("https://github.com/jonathanindig"))
   ),
   scalacOptions ++= Seq(
-    "-Ypartial-unification",
     "-language:higherKinds",
     "-unchecked",
     "-target:jvm-1.8"
-  ),
+  ) ++ (if (scalaBinaryVersion.value.startsWith("2.13")) Nil else Seq("-Ypartial-unification")),
   fork in Test := true,
   javaOptions in Test += s"-Djava.library.path=$nativeLibraryPath",
   libraryDependencies ++= Seq(
@@ -88,7 +93,19 @@ val commonSettings = Seq(
     destFiles
   },
   scalacOptions += "-deprecation",
-  test in assembly := {}
+  test in assembly := {},
+  circeVersion := {
+    scalaBinaryVersion.value match {
+      case "2.13" | "2.12" => "0.12.2"
+      case "2.11"          => "0.12.0-M3"
+    }
+  },
+  circeYamlVersion := {
+    scalaBinaryVersion.value match {
+      case "2.13" | "2.12" => "0.12.0"
+      case "2.11"          => "0.11.0-M1"
+    }
+  }
 )
 
 lazy val `polynote-macros` = project.settings(
@@ -147,16 +164,16 @@ val `polynote-kernel` = project.settings(
     //"dev.zio" %% "zio-interop-cats" % versions.zioInterop,
     "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.11.4",
-    "org.scodec" %% "scodec-stream" % "1.2.0",
+    "org.scodec" %% "scodec-stream" % "2.0.0",
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.github.classgraph" % "classgraph" % "4.8.47",
     "org.scala-lang.modules" %% "scala-collection-compat" % "2.1.1",
     "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-    "io.circe" %% "circe-yaml" % "0.10.0",
-    "io.circe" %% "circe-generic" % "0.11.1",
-    "io.circe" %% "circe-generic-extras" % "0.11.1",
-    "io.circe" %% "circe-parser" % "0.11.1",
+    "io.circe" %% "circe-yaml" % circeYamlVersion.value,
+    "io.circe" %% "circe-generic" % circeVersion.value,
+    "io.circe" %% "circe-generic-extras" % circeVersion.value,
+    "io.circe" %% "circe-parser" % circeVersion.value,
     "net.sf.py4j" % "py4j" % "0.10.7",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
@@ -184,10 +201,20 @@ val `polynote-server` = project.settings(
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
 val sparkSettings = Seq(
+  resolvers ++= {
+    Seq(MavenRepository(name = "Apache Snapshots", root = "https://repository.apache.org/content/repositories/snapshots"))
+  },
   sparkVersion := {
-    scalaVersion.value match {
-      case ver if ver startsWith "2.11" => "2.1.1"
-      case ver                          => "2.4.7"  // Spark 2.4 is first version to publish for scala 2.12
+    scalaBinaryVersion.value match {
+      case "2.11" => "2.1.1"
+      case "2.12" => "3.1.2"
+      case "2.13" => "3.2.0-SNAPSHOT" // No stable release yet, 3.2.0-SNAPSHOT is earliest available for 2.13
+    }
+  },
+  sparkDistVersion := {
+    sparkVersion.value match {
+      case two if two startsWith "2" => "2.1.1"
+      case three                     => "3.1.2"
     }
   },
   libraryDependencies ++= Seq(
@@ -195,6 +222,34 @@ val sparkSettings = Seq(
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
     "org.apache.spark" %% "spark-sql" % sparkVersion.value % "test",
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "test"
+  ),
+  sparkInstallLocation := {
+    sys.env.get("SPARK_INSTALL_LOCATION")
+      //.orElse(sys.env.get("SPARK_HOME").map(file).map(_.getParent))
+      .getOrElse((file(".").getAbsoluteFile / "target" / "spark").toString)
+  },
+  Test / testOptions += Tests.Setup { () =>
+    import sys.process._
+    val baseDir = file(sparkInstallLocation.value)
+    val distVersion = sparkDistVersion.value
+    val pkgName = s"spark-$distVersion-bin-hadoop2.7"
+    val filename = s"$pkgName.tgz"
+    val distUrl = url(s"https://archive.apache.org/dist/spark/spark-$distVersion/$filename")
+    val destDir = baseDir / pkgName
+    if (!destDir.exists()) {
+      baseDir.mkdirs()
+      val pkgFile = baseDir / filename
+      if (!pkgFile.exists()) {
+        pkgFile.createNewFile()
+        println(s"Downloading $distUrl to $pkgFile...")
+        (distUrl #> (baseDir / filename)).!
+      }
+      println(s"Extracting $pkgFile to $baseDir")
+      Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
+    }
+  },
+  Test / envVars ++= Map(
+    "SPARK_HOME" -> (file(sparkInstallLocation.value) / s"spark-${sparkDistVersion.value}-bin-hadoop2.7").toString
   )
 )
 

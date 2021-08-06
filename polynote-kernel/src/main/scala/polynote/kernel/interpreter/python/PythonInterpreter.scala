@@ -48,7 +48,7 @@ class PythonInterpreter private[python] (
 ) extends Interpreter {
   import pyApi._
 
-  private val runner: PythonObject.Runner = new PythonObject.Runner {
+  protected val runner: PythonObject.Runner = new PythonObject.Runner {
     def run[T](task: => T): T = if (Thread.currentThread() eq jepThread.get()) {
       task
     } else {
@@ -551,8 +551,11 @@ class PythonInterpreter private[python] (
       |                # Lifted from IPython.core.ultratb
       |                def get_chained_exception(exception_value):
       |                    cause = getattr(exception_value, '__cause__', None)
+      |                    if cause == None:
+      |                        cause = getattr(exception_value, 'cause', None)
       |                    if cause:
       |                        return cause
+
       |                    if getattr(exception_value, '__suppress_context__', False):
       |                        return None
       |                    return getattr(exception_value, '__context__', None)
@@ -672,7 +675,7 @@ class PythonInterpreter private[python] (
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
-      val convert = convertToPython(jep) orElse PartialFunction(defaultConvertToPython)
+      val convert = convertToPython(jep).orElse[(String, Any), AnyRef] { case x@(_, _) => defaultConvertToPython(x) }
 
       state.scope.reverse.map(v => v.name -> v.value).foreach {
         case nv@(name, value) => addGlobal.call(name, convert(nv))

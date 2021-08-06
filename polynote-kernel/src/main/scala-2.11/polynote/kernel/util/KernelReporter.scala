@@ -25,9 +25,10 @@ case class KernelReporter(settings: Settings) extends AbstractReporter {
 
   def reports: List[KernelReport] = _reports.synchronized(_reports.toList)
 
-  private def captureState = State(_reports, INFO.count, WARNING.count, ERROR.count)
+  private def captureState = State(reports, INFO.count, WARNING.count, ERROR.count)
   private def restoreState(state: State): Unit = {
-    _reports = state.reports
+    _reports.clear()
+    _reports ++= state.reports
     INFO.count = state.infos
     WARNING.count = state.warns
     ERROR.count = state.warns
@@ -72,5 +73,5 @@ case class KernelReporter(settings: Settings) extends AbstractReporter {
     }
   }
 
-  private case class State(reports: ListBuffer[KernelReport], infos: Int, warns: Int, errs: Int)
+  private case class State(reports: List[KernelReport], infos: Int, warns: Int, errs: Int)
 }

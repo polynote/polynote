@@ -5,10 +5,9 @@ import java.net.URI
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
-
 import cats.Traverse
 import cats.data.{Validated, ValidatedNel}
-import cats.effect.LiftIO
+import cats.effect.{Blocker, LiftIO}
 import cats.effect.concurrent.Ref
 import cats.instances.either._
 import cats.instances.list._
@@ -34,7 +33,6 @@ import zio.interop.catz._
 import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
 
 import scala.concurrent.ExecutionContext
-import scala.tools.nsc.interpreter.InputStream
 
 object CoursierFetcher {
   type ArtifactTask[A] = RIO[CurrentTask, A]
@@ -206,8 +204,9 @@ object CoursierFetcher {
       _           <- ZIO(Files.createDirectories(cacheFile.toPath.getParent))
       _           <- ZManaged.fromAutoCloseable(effectBlocking(new FileOutputStream(cacheFile))).use {
         os =>
-          val fs2IS = fs2.io.readInputStream[Task](effectBlocking(file.openStream.unsafeRunSync()).provide(blockingEnv), chunkSize, ec)
-          val fs2OS = fs2.io.writeOutputStream[Task](ZIO.succeed(os), ec)
+          val blocker = Blocker.liftExecutionContext(ec)
+          val fs2IS = fs2.io.readInputStream[Task](effectBlocking(file.openStream.unsafeRunSync()).provide(blockingEnv), chunkSize, blocker)
+          val fs2OS = fs2.io.writeOutputStream[Task](ZIO.succeed(os), blocker)
           fs2IS.chunks
             .mapAccumulate(0)((n, c) => (n + c.size, c))
             .evalMap {

@@ -26,10 +26,10 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
   private def mkStubKernel = {
     val stubKernel = stub[Kernel]
-    stubKernel.shutdown _ when () returns ZIO.unit
-    stubKernel.awaitClosed _ when () returns ZIO.unit
-    stubKernel.init _ when () returns ZIO.unit
-    stubKernel.info _ when () returns ZIO.succeed(KernelInfo())
+    (stubKernel.shutdown _).when().returns(ZIO.unit)
+    (() => stubKernel.awaitClosed).when().returns(ZIO.unit)
+    (stubKernel.init _).when().returns(ZIO.unit)
+    (stubKernel.info _).when().returns(ZIO.succeed(KernelInfo()))
     stubKernel
   }
 
@@ -103,7 +103,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val failingKernelFactory: Factory.Service = new Factory.Service {
         private var attempted = 0
         override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] =
-          ZIO(attempted).bracket(n => ZIO.effectTotal(attempted = n + 1)) {
+          ZIO(attempted).bracket(n => ZIO.effectTotal { attempted = n + 1 }) {
             case 0 => ZIO.fail(FailedToStart())
             case n => ZIO.succeed(stubKernel)
           }

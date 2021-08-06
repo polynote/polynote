@@ -8,8 +8,7 @@ import java.time.Instant
 import polynote.messages.{Message, Notebook}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.{Attempt, Codec, codecs}
-import scodec.stream.decode
-import scodec.stream.decode.StreamDecoder
+import scodec.stream.StreamDecoder
 import zio.{RIO, Task, ZIO}
 import zio.blocking.Blocking
 import zio.clock.{Clock, currentDateTime}
@@ -35,11 +34,11 @@ object WAL {
   val messageCodec: Codec[(Instant, Message)] = codecs.variableSizeBytes(codecs.int32, instantCodec ~ Message.codec)
 
   val decoder: StreamDecoder[(Instant, Message)] = {
-    val readMagic = decode.once(codecs.constant(ByteVector(WALMagicNumber)))
-    val readVersion = decode.once(codecs.int16)
+    val readMagic = StreamDecoder.once(codecs.constant(ByteVector(WALMagicNumber)))
+    val readVersion = StreamDecoder.once(codecs.int16)
     def readMessages(version: Int): StreamDecoder[(Instant, Message)] = version match {
-      case 1 => decode.many(messageCodec)
-      case v => decode.raiseError(new Exception(s"Unknown WAL version $v"))
+      case 1 => StreamDecoder.many(messageCodec)
+      case v => StreamDecoder.raiseError(new Exception(s"Unknown WAL version $v"))
     }
 
     for {

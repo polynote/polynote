@@ -659,11 +659,13 @@ object ScalaCompiler {
     val cp = classPath ++ requiredPaths
 
     val settings = initial.copy()
-    settings.target.value = "jvm-1.8" // set Java8 by default
+    settings.target.value = if (settings.target.choices.contains("jvm-1.8")) "jvm-1.8" else "8" // set Java8 by default
     settings.classpath.append(cp.map(_.getCanonicalPath).mkString(File.pathSeparator))
     settings.Yrangepos.value = true
     try {
-      settings.YpartialUnification.value = true
+      Option(settings.getClass.getMethod("YpartialUnification")).foreach {
+        method => method.invoke(settings).asInstanceOf[settings.BooleanSetting].value = true
+      }
     } catch {
       case err: Throwable =>  // not on Scala 2.11.11+ - that's OK, just won't get partial unification
     }

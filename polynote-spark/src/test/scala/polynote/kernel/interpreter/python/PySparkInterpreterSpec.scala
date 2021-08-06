@@ -205,11 +205,8 @@ class PySparkInterpreterSpec extends FreeSpec with InterpreterSpec with Matchers
       } catch {
         case err: Throwable =>
           err shouldBe a[RuntimeException]
-          err.getMessage should include ("AnalysisException: 'Path does not exist:")
-          err.getCause shouldBe a[RuntimeException]
-          err.getCause.getMessage should include ("Py4JJavaError: An error occurred while calling")
-          err.getCause.getCause shouldBe a[AnalysisException]
-          err.getCause.getCause.getMessage should include ("Path does not exist:")
+          err.getMessage should include ("AnalysisException:")
+          err.getMessage should include ("Path does not exist:")
       }
     }
   }

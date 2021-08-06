@@ -34,6 +34,7 @@ trait DataEncoder[@specialized T] extends Serializable {
         override def toFloat(x: U): Float = numericT.toFloat(from(x))
         override def toDouble(x: U): Double = numericT.toDouble(from(x))
         override def compare(x: U, y: U): Int = numericT.compare(from(x), from(y))
+        def parseString(str: String): Option[U] = None  // was added in 2.13, have to implement
       }
     }
   }
