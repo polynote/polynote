@@ -1,3 +1,5 @@
+import java.io.File
+
 name := "polynote"
 
 val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
@@ -248,9 +250,13 @@ val sparkSettings = Seq(
       Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
     }
   },
-  Test / envVars ++= Map(
-    "SPARK_HOME" -> (file(sparkInstallLocation.value) / s"spark-${sparkDistVersion.value}-bin-hadoop2.7").toString
-  )
+  Test / envVars ++= {
+    val sparkHome = (file(sparkInstallLocation.value) / s"spark-${sparkDistVersion.value}-bin-hadoop2.7").toString
+    Map(
+      "SPARK_HOME" -> sparkHome,
+      "PATH" -> Seq(sparkHome, sys.env("PATH")).mkString(File.pathSeparator)
+    )
+  }
 )
 
 lazy val `polynote-spark-runtime` = project.settings(
