@@ -551,11 +551,8 @@ class PythonInterpreter private[python] (
       |                # Lifted from IPython.core.ultratb
       |                def get_chained_exception(exception_value):
       |                    cause = getattr(exception_value, '__cause__', None)
-      |                    if cause == None:
-      |                        cause = getattr(exception_value, 'cause', None)
       |                    if cause:
       |                        return cause
-
       |                    if getattr(exception_value, '__suppress_context__', False):
       |                        return None
       |                    return getattr(exception_value, '__context__', None)
@@ -675,10 +672,10 @@ class PythonInterpreter private[python] (
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
-      val convert = convertToPython(jep).orElse[(String, Any), AnyRef] { case x@(_, _) => defaultConvertToPython(x) }
+      val convert = convertToPython(jep)
 
       state.scope.reverse.map(v => v.name -> v.value).foreach {
-        case nv@(name, value) => addGlobal.call(name, convert(nv))
+        case nv@(name, value) => addGlobal.call(name, convert.applyOrElse(nv, defaultConvertToPython))
       }
 
       globalsDict

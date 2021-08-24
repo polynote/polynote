@@ -9,6 +9,9 @@ import scala.reflect.internal.util.Position
 import scala.tools.nsc.Settings
 import scala.tools.nsc.reporters.FilteringReporter
 
+/**
+  * This separate source file is necessary, because the interface for Reporter changed in Scala 2.13
+  */
 case class KernelReporter(settings: Settings) extends FilteringReporter {
 
   private val _reports = new ListBuffer[KernelReport]()

@@ -95,7 +95,7 @@ We tag these images with the name `polynote-local`.
 > Change version to match desired target
 
 ```sh
-export POLYNOTE_VERSION=0.2.13
+export POLYNOTE_VERSION=0.4.2
 docker build -t polynote-local:latest --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION base
 ```
 
@@ -113,9 +113,11 @@ docker build -t polynote-local:dev -f docker/dev/Dockerfile .
 
 ## Spark v2.4 image
 
-> Change version to match desired target
+> Change versions to match desired target
 
 ```sh
-export POLYNOTE_VERSION=0.2.13
-docker build -t polynote-local:spark24 --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION spark-2.4
+export POLYNOTE_VERSION=0.4.2
+export SPARK_VERSION=3.1.2
+export SCALA_VERSION=2.12
+docker build -t polynote-local:spark --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION spark
 ```

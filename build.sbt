@@ -1,4 +1,5 @@
 import java.io.File
+import scala.util.Try
 
 name := "polynote"
 
@@ -10,7 +11,6 @@ val prepDistFiles: TaskKey[Seq[File]] = taskKey[Seq[File]]("Prepare distribution
 val dependencyJars: TaskKey[Seq[(File, String)]] = taskKey("Dependency JARs which aren't included in the assembly")
 val polynoteJars: TaskKey[Seq[(File, String)]] = taskKey("Polynote JARs")
 val sparkVersion: SettingKey[String] = settingKey("Spark version")
-val sparkDistVersion: SettingKey[String] = settingKey("Distribution version to use for tests")
 val circeVersion: SettingKey[String] = settingKey("circe version")
 val circeYamlVersion: SettingKey[String] = settingKey("circe-yaml version")
 val sparkInstallLocation: SettingKey[String] = settingKey("Location of Spark installation(s)")
@@ -25,7 +25,21 @@ val versions = new {
 }
 
 
-def nativeLibraryPath = s"${sys.env.get("JAVA_LIBRARY_PATH") orElse sys.env.get("LD_LIBRARY_PATH") orElse sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."}:."
+lazy val nativeLibraryPath = {
+  val jepPath = sys.env.get("JEP_DIR") orElse Try {
+    import sys.process._
+    Seq("bash", "-c", "pip3 show jep |grep ^Location |cut -d' ' -f2")
+      .lineStream.toList
+      .headOption.map(_.trim)
+      .filterNot(_.isEmpty)
+      .map(_ + "/jep")
+  }.toOption.flatten orElse
+    sys.env.get("JAVA_LIBRARY_PATH") orElse
+    sys.env.get("LD_LIBRARY_PATH") orElse
+    sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."
+
+  Seq(jepPath, ".").mkString(File.pathSeparator)
+}
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
 val scalaVersions = Seq("2.11.12", "2.12.12", "2.13.6")
@@ -202,23 +216,27 @@ val `polynote-server` = project.settings(
   distFiles := Seq(assembly.value)
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
+val sparkVersions = Map(
+  "2.11" -> "2.1.1",
+  "2.12" -> "3.1.2",
+  "2.13" -> "3.2.0"
+)
+
+val sparkDistUrl: String => String = {
+  case "3.2.0" => "https://dist.apache.org/repos/dist/dev/spark/v3.2.0-rc1-bin"
+  case ver     => s"https://archive.apache.org/dist/spark/spark-$ver/"
+}
+
+val pysparkVersion: String => String = {
+  case "3.2.0" => "3.1.2"
+  case ver     => ver
+}
+
 val sparkSettings = Seq(
   resolvers ++= {
-    Seq(MavenRepository(name = "Apache Snapshots", root = "https://repository.apache.org/content/repositories/snapshots"))
+    Seq(MavenRepository(name = "Apache Staging", root = "https://repository.apache.org/content/repositories/staging"))
   },
-  sparkVersion := {
-    scalaBinaryVersion.value match {
-      case "2.11" => "2.1.1"
-      case "2.12" => "3.1.2"
-      case "2.13" => "3.2.0-SNAPSHOT" // No stable release yet, 3.2.0-SNAPSHOT is earliest available for 2.13
-    }
-  },
-  sparkDistVersion := {
-    sparkVersion.value match {
-      case two if two startsWith "2" => "2.1.1"
-      case three                     => "3.1.2"
-    }
-  },
+  sparkVersion := sparkVersions(scalaBinaryVersion.value),
   libraryDependencies ++= Seq(
     "org.apache.spark" %% "spark-sql" % sparkVersion.value % "provided",
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
@@ -233,10 +251,10 @@ val sparkSettings = Seq(
   Test / testOptions += Tests.Setup { () =>
     import sys.process._
     val baseDir = file(sparkInstallLocation.value)
-    val distVersion = sparkDistVersion.value
+    val distVersion = sparkVersion.value
     val pkgName = s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
-    val distUrl = url(s"https://archive.apache.org/dist/spark/spark-$distVersion/$filename")
+    val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
     if (!destDir.exists()) {
       baseDir.mkdirs()
@@ -248,11 +266,11 @@ val sparkSettings = Seq(
       }
       println(s"Extracting $pkgFile to $baseDir")
       Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
-      Seq("pip3", "install", s"pyspark==$distVersion").!
+      Seq("pip3", "install", s"pyspark==${pysparkVersion(distVersion)}").!
     }
   },
   Test / envVars ++= {
-    val sparkHome = (file(sparkInstallLocation.value) / s"spark-${sparkDistVersion.value}-bin-hadoop2.7").toString
+    val sparkHome = (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
     Map(
       "SPARK_HOME" -> sparkHome,
       "PATH" -> Seq(sparkHome, sys.env("PATH")).mkString(File.pathSeparator)

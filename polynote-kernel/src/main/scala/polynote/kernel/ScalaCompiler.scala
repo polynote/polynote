@@ -3,7 +3,6 @@ package polynote.kernel
 import java.io.File
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
-
 import cats.syntax.traverse._
 import cats.instances.list._
 import polynote.kernel.environment.Config
@@ -22,6 +21,8 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.{Global, NscThief}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import ScalaCompiler.OriginalPos
+
+import scala.util.control.NonFatal
 
 class ScalaCompiler private (
   val global: Global,
@@ -662,12 +663,16 @@ object ScalaCompiler {
     settings.target.value = if (settings.target.choices.contains("jvm-1.8")) "jvm-1.8" else "8" // set Java8 by default
     settings.classpath.append(cp.map(_.getCanonicalPath).mkString(File.pathSeparator))
     settings.Yrangepos.value = true
+
+    // -YpartialUnification was removed as an option in 2.13 (because it's always-on). We still want to enable it for
+    // previous Scala versions, but it will cause compile error if we try to set it in 2.13. So this is a hack that
+    // attempts to enable it via reflection, and ignores errors from trying to do so
     try {
       Option(settings.getClass.getMethod("YpartialUnification")).foreach {
         method => method.invoke(settings).asInstanceOf[settings.BooleanSetting].value = true
       }
     } catch {
-      case err: Throwable =>  // not on Scala 2.11.11+ - that's OK, just won't get partial unification
+      case NonFatal(_) =>  // not on Scala 2.11.11+ - that's OK, just won't get partial unification
     }
     settings.exposeEmptyPackage.value = true
     settings.Ymacroexpand.value = settings.MacroExpand.Normal
