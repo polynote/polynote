@@ -2,11 +2,11 @@ package polynote.runtime.spark.reprs
 
 import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
-
-import org.apache.spark.sql.{DataFrame, Dataset, types => sparkTypes}
+import org.apache.spark.sql.{DataFrame, Dataset, Row, types => sparkTypes}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
-import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
+import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, SpecializedGetters}
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.storage.StorageLevel
 import polynote.runtime._
 
@@ -277,11 +277,20 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         val prototype = arr.head
         val rowEncoder = RowEncoder(prototype.schema) // to go from Row to InternalRow
         val (structType, encode) = structDataTypeAndEncoder(prototype.schema) // reuse code from InternalRow
+        val toBytes = rowToBytes(structType, encode)
+        val toInternalRow = {
+          val holder = new GenericInternalRow(1)
+          val proj = GenerateUnsafeProjection.generate(rowEncoder.serializer)
+          (row: Row) => {
+            holder.update(0, row)
+            proj.apply(holder)
+          }
+        }
         Array(
           StreamingDataRepr(
             structType,
             Some(arr.length),
-            arr.iterator.map(r => ByteBuffer.wrap(rowToBytes(structType, encode)(rowEncoder.toRow(r))))
+            arr.iterator.map(r => ByteBuffer.wrap(toBytes(toInternalRow(r))))
           )
         )
       }

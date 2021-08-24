@@ -7,6 +7,7 @@ import polynote.runtime
 
 import scala.collection.{GenSeq, mutable}
 import scala.concurrent.Future
+import scala.util.Success
 
 trait ReprsOf[T] extends Serializable {
   def apply(value: T): Array[ValueRepr]
@@ -129,8 +130,9 @@ private[runtime] trait CollectionReprs extends FromDataReprs { self: ReprsOf.typ
   implicit def future[A](implicit dataReprsOfA: DataReprsOf[A]): ReprsOf[Future[A]] = instance {
     fut =>
       val repr = UpdatingDataRepr(dataReprsOfA.dataType)
-      fut.onSuccess {
-        case a => repr.tryUpdate(dataReprsOfA.encode(a))
+      fut.onComplete {
+        case Success(a) => repr.tryUpdate(dataReprsOfA.encode(a))
+        case _ =>
       }(scala.concurrent.ExecutionContext.global)
       Array(repr)
   }

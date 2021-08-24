@@ -154,7 +154,7 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
       df => op match {
         case GroupAgg(cols, aggs) =>
           tryEither {
-            val pandasAggs = aggs.groupBy(_._1).mapValues(_.map(_._2)).map((mkAggs _).tupled).mapValues(aggs => df.runner.listOf(aggs: _*))
+            val pandasAggs = aggs.groupBy(_._1).mapValues(_.map(_._2)).map((mkAggs _).tupled).toMap.mapValues(aggs => df.runner.listOf(aggs: _*))
             val next = df.groupby(df.runner.listOf(cols: _*), as_index = false)
               .agg(df.runner.dictOf(pandasAggs.toSeq: _*))
 

@@ -48,7 +48,7 @@ class PythonInterpreter private[python] (
 ) extends Interpreter {
   import pyApi._
 
-  private val runner: PythonObject.Runner = new PythonObject.Runner {
+  protected val runner: PythonObject.Runner = new PythonObject.Runner {
     def run[T](task: => T): T = if (Thread.currentThread() eq jepThread.get()) {
       task
     } else {
@@ -672,10 +672,10 @@ class PythonInterpreter private[python] (
 
       val addGlobal = globalsDict.getAttr("__setitem__", classOf[PyCallable])
 
-      val convert = convertToPython(jep) orElse PartialFunction(defaultConvertToPython)
+      val convert = convertToPython(jep)
 
       state.scope.reverse.map(v => v.name -> v.value).foreach {
-        case nv@(name, value) => addGlobal.call(name, convert(nv))
+        case nv@(name, value) => addGlobal.call(name, convert.applyOrElse(nv, defaultConvertToPython))
       }
 
       globalsDict

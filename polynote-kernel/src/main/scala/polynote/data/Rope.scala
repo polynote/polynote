@@ -280,7 +280,7 @@ private final case class RopeLeaf(value: Array[Char]) extends Rope {
     0
 
   def charAt(idx: Int): Char =
-    value.charAt(idx)
+    value(idx)
 
   def splitAt(idx: Int): (Rope, Rope) = {
     val (s1, s2) = value.splitAt(idx)

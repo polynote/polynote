@@ -1,4 +1,4 @@
-name: Build 2.12
+name: Build
 
 on:
   push:
@@ -31,19 +31,6 @@ jobs:
         export LD_LIBRARY_PATH=${jep_path}:${jep_site_packages_path}:${jep_lib_path}:${LD_LIBRARY_PATH}
         export LD_PRELOAD=${jep_lib_path}/libpython3.so
 
-        echo "Downloading Spark 2.4.4"
-        wget -q https://archive.apache.org/dist/spark/spark-2.4.4/spark-2.4.4-bin-hadoop2.7.tgz
-        tar xfz spark-2.4.4-bin-hadoop2.7.tgz
-        rm spark-2.4.4-bin-hadoop2.7.tgz
-        wget -q https://archive.apache.org/dist/spark/spark-2.4.4/spark-2.4.4-bin-without-hadoop-scala-2.12.tgz
-        tar xfz spark-2.4.4-bin-without-hadoop-scala-2.12.tgz
-        rm spark-2.4.4-bin-without-hadoop-scala-2.12.tgz
-        for jar in `ls spark-2.4.4-bin-hadoop2.7/jars |grep -v '2\.11'`; do cp spark-2.4.4-bin-hadoop2.7/jars/$jar spark-2.4.4-bin-without-hadoop-scala-2.12/jars; done
-
-        export SPARK_HOME=`pwd`"/spark-2.4.4-bin-without-hadoop-scala-2.12"
-        export PATH="$SPARK_HOME/bin:$PATH"
-
-        echo "Testing with Scala 2.12"
         pushd $GITHUB_WORKSPACE
-          sbt ++2.12.10 test
+          sbt +test
         popd

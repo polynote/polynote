@@ -3,10 +3,16 @@
 
 set -e -x
 
-SPARK_VERSION="2.4.5"
+SPARK_VERSION=${SPARK_VERSION:-"2.4.5"}
 SPARK_VERSION_DIR="spark-${SPARK_VERSION}"
 
-if test "${SCALA_VERSION}" = "2.12"
+if test "${SPARK_VERSION}" \> "3" -a "${SCALA_VERSION}" = "2.11"
+then
+  echo "Spark ${SPARK_VERSION} is not available for Scala ${SCALA_VERSION}. Setting Scala version to 2.12."
+  SCALA_VERSION="2.12"
+fi
+
+if test "${SCALA_VERSION}" = "2.12" -a "${SPARK_VERSION}" \< "3"
 then
   SPARK_NAME="spark-${SPARK_VERSION}-bin-without-hadoop-scala-2.12"
   # install hadoop as well

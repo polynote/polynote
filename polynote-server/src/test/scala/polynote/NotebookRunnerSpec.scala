@@ -67,10 +67,10 @@ class NotebookRunnerSpec extends FreeSpec with ZIOSpec with MockFactory with Mat
 
 
   private def setupKernel(): Unit = {
-    (clock.currentDateTime _) expects () returning ZIO.succeed(fakeTime) anyNumberOfTimes()
-    (kernel.init _) expects () returning ZIO.unit
-    (kernel.queueCell _) expects (CellID(1)) returning ZIO.environment[PublishResult].map(env => PublishResult(exampleOutputs).provide(env))
-    (kernel.shutdown _) expects () returning ZIO.unit
+    (() => clock.currentDateTime).expects().returning(ZIO.succeed(fakeTime)).anyNumberOfTimes()
+    (kernel.init _).expects().returning(ZIO.unit)
+    (kernel.queueCell _).expects(CellID(1)).returning(ZIO.environment[PublishResult].map(env => PublishResult(exampleOutputs).provide(env)))
+    (kernel.shutdown _).expects().returning(ZIO.unit)
     ()
   }
 

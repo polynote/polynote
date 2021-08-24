@@ -263,7 +263,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
           !sym.hasFlag(ACCESSOR | PARAMACCESSOR) &&
           (!implicitlyAdded || m.implicitlyAdded)
 
-      def add(sym: Symbol, pre: Type, implicitlyAdded: Boolean)(toMember: (Symbol, Type) => M) {
+      def add(sym: Symbol, pre: Type, implicitlyAdded: Boolean)(toMember: (Symbol, Type) => M): Unit = {
         if ((sym.isGetter || sym.isSetter) && sym.accessed != NoSymbol) {
           add(sym.accessed, pre, implicitlyAdded)(toMember)
         } else if (!sym.name.decodedName.containsName("$") && !sym.isError && !sym.isArtifact && sym.hasRawInfo) {
