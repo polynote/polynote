@@ -125,12 +125,12 @@ class PythonInterpreter private[python] (
   }
 
   def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
-    cell      <- ZIO.succeed(s"Cell${state.id}")
-    parsed    <- parse(code, cell)
-    compiled  <- compile(parsed, cell)
-    globals   <- populateGlobals(state)
-    _         <- injectGlobals(globals)
-    resState  <- run(compiled, globals, state)
+    cell            <- ZIO.succeed(s"Cell${state.id}")
+    (parsed, decls) <- parse(code, cell)
+    compiled        <- compile(parsed, cell)
+    globals         <- populateGlobals(state)
+    _               <- injectGlobals(globals)
+    resState        <- run(compiled, decls, globals, state)
   } yield resState
 
   private def extractParams(jep: Jep, jediDefinition: PyObject): List[(String, String)] = {
@@ -437,67 +437,36 @@ class PythonInterpreter private[python] (
       |            else:
       |                return node
       |
-      |    class TrackingNamespace(UserDict, dict):
-      |        '''
-      |        A special namespace for Python 3 exec() that provides access to globals while tracking variables added or
-      |        updated in the local namespace.
+      |    def __get_decl_names__(node):
+      |       '''Fetch names declared (including in assignments) in the given ast node'''
+      |       if isinstance(node, ast.Assign):
+      |           names = []
+      |           for target in node.targets:
+      |               if isinstance(target, ast.Name):
+      |                   names.append(target.id)
+      |               elif isinstance(target, ast.Tuple) or isinstance(target, ast.List): # unpacking
+      |                   names.extend([name.id for name in target.elts])
+      |           return names
+      |       elif isinstance(node, ast.AnnAssign) or isinstance(node, ast.AugAssign):
+      |           if isinstance(node.target, ast.Name):
+      |               return [node.target.id]
+      |       elif isinstance(node, ast.FunctionDef) or isinstance(node, ast.ClassDef) or isinstance(node, ast.AsyncFunctionDef):
+      |           return [node.name]
       |
-      |        The global namespace is stored in `globals`.
-      |        The local namespace is stored in `locals`.
-      |
-      |        Why this is necessary:
-      |
-      |            When we run user code from a Python cell, we need to provide it access to the global namespace (builtins,
-      |            variables defined in other cells, etc). We also need to keep track of any modifications to the namespace
-      |            made as a result of executing the code (say, the definition/modification of a variable).
-      |
-      |            It would seem that the correct way to do this would be to call `exec` with all three parameters - the code,
-      |            the globals dictionary, and an empty locals dictionary to capture the execution results.
-      |
-      |            In fact, that is what we used to do, until we ran into this:
-      |
-      |               If exec gets two separate objects as globals and locals, the code will be executed as if it were embedded
-      |               in a class definition
-      |               (from https://docs.python.org/3/library/functions.html#exec)
-      |
-      |            Unfortunately, scoping acts a little strangely in class scopes:
-      |
-      |               Names in class scope are not accessible. Names are resolved in the innermost enclosing function scope. If
-      |               a class definition occurs in a chain of nested scopes, the resolution process skips class definitions.
-      |               (from https://www.python.org/dev/peps/pep-0227/#discussion)
-      |
-      |            See also this excellent post https://stackoverflow.com/a/13913933 for more details.
-      |
-      |            The solution to all this is "don't pass in two dictionaries to exec".
-      |
-      |            So, we need another way to provide a single dictionary that can provide the global namespace while still
-      |            tracking the execution result.
-      |
-      |            Luckily, someone else had the same problem, so I was able to grab this class from their solution, which
-      |            can be found at https://stackoverflow.com/a/48720150
-      |        '''
-      |
-      |
-      |        def __init__(self, initial, *args, **kw):
-      |            UserDict.__init__(self, *args, **kw)
-      |            self.globals = initial
-      |
-      |        def __getitem__(self, key):
-      |            try:
-      |                return self.data[key]
-      |            except KeyError:
-      |                return self.globals[key]
-      |
-      |        def __contains__(self, key):
-      |            return key in self.data or key in self.globals
-      |
-      |    def __polynote_mkindex__(l1, l2):
-      |        import pandas as pd
-      |        return pd.MultiIndex.from_arrays([[x for x in list(l1)], [x for x in list(l2)]])
+      |       return []
       |
       |    def __polynote_parse__(code, cell):
       |        try:
-      |            return { 'result': ast.fix_missing_locations(LastExprAssigner().visit(ast.parse(code, cell, 'exec'))) }
+      |            code_ast = LastExprAssigner().visit(ast.parse(code, cell, 'exec'))
+      |
+      |            # walk ast looking for declarations
+      |            # python note: sum(list, []) flattens a list of lists.
+      |            all_decls = sum([__get_decl_names__(node) for node in ast.walk(code_ast)], [])
+      |
+      |            # fix line numbers
+      |            parsed = ast.fix_missing_locations(code_ast)
+      |
+      |            return { 'result': parsed, 'decls': all_decls}
       |        except SyntaxError as err:
       |            lines = code.splitlines(True)
       |            pos = sum([len(lines[x]) for x in range(0, err.lineno - 1)])
@@ -521,19 +490,85 @@ class PythonInterpreter private[python] (
       |            result.append([compiled, isImport])
       |        return result
       |
-      |    def __polynote_run__(compiled, globals, kernel):
+      |    def __polynote_run__(compiled, decls, globals, kernel):
+      |        '''
+      |        Runs compiled user code while keeping track of declarations and managing the global namespace
+      |
+      |        When we run user code from a Python cell, we need to provide it access to the global namespace (builtins,
+      |        variables defined in other cells, etc). We also need to keep track of any modifications to the namespace
+      |        made as a result of executing the code (say, the definition/modification of a variable).
+      |
+      |        It would seem that the correct way to do this would be to call `exec` with all three parameters - the code,
+      |        the globals dictionary, and an empty locals dictionary to capture the execution results.
+      |
+      |        In fact, that is what we used to do, until we ran into this:
+      |
+      |           If exec gets two separate objects as globals and locals, the code will be executed as if it were embedded
+      |           in a class definition
+      |           (from https://docs.python.org/3/library/functions.html#exec)
+      |
+      |        Unfortunately, scoping acts a little strangely in class scopes:
+      |
+      |           Names in class scope are not accessible. Names are resolved in the innermost enclosing function scope. If
+      |           a class definition occurs in a chain of nested scopes, the resolution process skips class definitions.
+      |           (from https://www.python.org/dev/peps/pep-0227/#discussion)
+      |
+      |        See also this excellent post https://stackoverflow.com/a/13913933 for more details.
+      |
+      |        The solution to all this is "don't pass in two dictionaries to exec".
+      |
+      |        So, without being able to get exec to provide us with `locals`, how can we do that ourselves?
+      |        This is where the `decls` parameter comes in. It is a list of names parsed from user code AST
+      |        (in __polynote_parse__) that represent all the declared values (function defs, assignments, etc.) in the code.
+      |        We compare the contents of the values in the globals dictionary that correspond to these names before and
+      |        after the user code is run to determine which of the names actually refers to added or redefined values
+      |        (rather than, say, a value defined within a user code function). This way we ensure that our logic
+      |        follows Python's scoping rules (without needing to reimplement them in our parser).
+      |
+      |        Note: Previously (<=0.4.2), we passed in a custom dictionary implementation that tracked changes. This worked, but
+      |        had some serious performance degradations.
+      |        '''
       |        try:
       |            sys.stdout = kernel.display
-      |            tracking_ns = TrackingNamespace(globals)
+      |
+      |            # These names already exist in globals, so we keep track of them in case they might be reassignments
+      |            # This is needed for proper attribution of declarations to cells, otherwise a shadowed variable could
+      |            # wind up getting into the cell state.
+      |            possibly_reassigned_decls = {name: globals[name] for name in decls if name in globals}
+      |
+      |            def is_local(name, globals, possible_reassignments):
+      |                '''
+      |                Given the `name` of a declaration, determines whether it is "local" (i.e., in `locals()`-equivalent scope).
+      |
+      |                `globals` is the result of the global scope AFTER execution.
+      |                `possible_reassignments` stores the values of any `decls` that were present in the global
+      |                                         scope BEFORE execution.
+      |
+      |                Determines whether a variable is "local" as follows:
+      |                - If `name` is not in `globals`, it's definitely not local.
+      |                - if `name` IS in `globals` but NOT in `possible_reassignments`, it must be a new local declaration.
+      |                - If `name` IS in `possible_reassignments` and NOT referentially equal to `globals[name]`,
+      |                it must be a reassignment within local scope.
+      |                - If a name IS in `possible_reassignments` and IS referentially equal to `globals[name]`,
+      |                it must be a shadowed variable in some inner scope (e.g., `x` in a function definition that's
+      |                shadowing and `x` defined in a prior cell), so it's NOT local.
+      |                '''
+      |                if name not in globals:
+      |                    return False
+      |                else:
+      |                    return name not in possible_reassignments or globals[name] is not possible_reassignments[name]
+      |
+      |            locals = {}
       |            for stat, isImport in compiled:
       |                if isImport: # don't track locals if the tree is an import.
-      |                    exec(stat, tracking_ns.globals)
+      |                    exec(stat, globals) # Note: globals is mutated
       |                else:
-      |                    exec(stat, tracking_ns)
-      |                    tracking_ns.globals.update(tracking_ns.data)
+      |                    exec(stat, globals) # Note: globals is mutated
+      |                    local_decls = {name: globals[name] for name in decls if is_local(name, globals, possibly_reassigned_decls)}
+      |                    locals.update(local_decls)
       |
-      |            types = { x: type(y).__name__ for x,y in tracking_ns.data.items() }
-      |            return { 'globals': tracking_ns.globals, 'locals': tracking_ns.data, 'types': types }
+      |            types = { x: type(y).__name__ for x,y in locals.items() }
+      |            return { 'globals': globals, 'locals': locals, 'types': types }
       |        except Exception as err:
       |            import traceback
       |
@@ -564,6 +599,12 @@ class PythonInterpreter private[python] (
       |                return result
       |
       |            return handle_exception(type(err), err, err.__traceback__)
+      |
+      |    # Used in PandasHandle
+      |    def __polynote_mkindex__(l1, l2):
+      |        import pandas as pd
+      |        return pd.MultiIndex.from_arrays([[x for x in list(l1)], [x for x in list(l2)]])
+      |
       |except Exception as e:
       |    import sys, traceback
       |    print("An error occurred while initializing the Python interpreter.", e, file=sys.stderr)
@@ -690,12 +731,12 @@ class PythonInterpreter private[python] (
   protected def convertFromPython(jep: Jep): PartialFunction[(String, PyObject), (compiler.global.Type, Any)] =
     PartialFunction.empty
 
-  protected def parse(code: String, cell: String): Task[PyObject] = jep {
+  protected def parse(code: String, cell: String): Task[(PyObject, PyObject)] = jep {
     jep =>
       val result = jep.getValue("__polynote_parse__", classOf[PyCallable]).callAs(classOf[PyObject], code, cell)
       val get = result.getAttr("get", classOf[PyCallable])
-      get.callAs(classOf[PyObject], "result") match {
-        case null => get.callAs(classOf[KernelReport], "error") match {
+      (get.callAs(classOf[PyObject], "result"), get.callAs(classOf[PyObject], "decls")) match {
+        case (null, _) => get.callAs(classOf[KernelReport], "error") match {
           case null   => throw new IllegalStateException(s"No failure or success in python parse")
           case report => throw CompileErrors(List(report))
         }
@@ -709,12 +750,12 @@ class PythonInterpreter private[python] (
       compile.callAs(classOf[PyObject], parsed, cell)
   }
 
-  protected def run(compiled: PyObject, globals: PyObject, state: State): RIO[CurrentRuntime, State] =
+  protected def run(compiled: PyObject, decls: PyObject, globals: PyObject, state: State): RIO[CurrentRuntime, State] =
     CurrentRuntime.access.flatMap {
       kernelRuntime => jep {
         jep =>
           val run = jep.getValue("__polynote_run__", classOf[PyCallable])
-          val result = run.callAs(classOf[PyObject], compiled, globals, kernelRuntime)
+          val result = run.callAs(classOf[PyObject], compiled, decls, globals, kernelRuntime)
           val get = result.getAttr("get", classOf[PyCallable])
           val convert = convertFromPython(jep)
           get.callAs(classOf[util.ArrayList[Object]], "stack_trace") match {
@@ -736,7 +777,10 @@ class PythonInterpreter private[python] (
 
                   def valueAs[T](cls: Class[T]): T = getField.callAs(cls, Integer.valueOf(1))
 
-                  if (typeStr != null && typeStr != "NoneType" && typeStr != "module") {
+                  // filter `Out` values that are equal to `None` (this approximates a "void" return type for Python)
+                  val notNoneOut = key != "Out" || (key == "Out" && typeStr != "NoneType")
+
+                  if (typeStr != null && notNoneOut && typeStr != "module") {
                     val (typ, value) = typeStr match {
                       case "int" => (typeOf[Long], valueAs(classOf[java.lang.Number]).longValue())
                       case "float" => (typeOf[Double], valueAs(classOf[java.lang.Number]).doubleValue())
