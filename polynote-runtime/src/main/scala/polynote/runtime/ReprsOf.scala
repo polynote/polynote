@@ -59,10 +59,13 @@ object ReprsOf extends ExpandedScopeReprs {
 
     implicit def fromDataEncoder[T](implicit dataEncoder: DataEncoder[T]): DataReprsOf[T] = new DataReprsOf[T](dataEncoder.dataType) {
       val encode: T => ByteBuffer = t => DataEncoder.writeSized(t)
-      override def apply(value: T): Array[ValueRepr] = dataEncoder.sizeOf(value) match {
-        case s if s >= 0 && s <= EagerSizeThreshold => Array(DataRepr(dataType, DataEncoder.writeSized(value, s)))
-        case s if s >= 0 => Array(LazyDataRepr(dataType, DataEncoder.writeSized(value, s), Some(s))) // writeSized is suspended byname
-        case _ => Array(LazyDataRepr(dataType, DataEncoder.writeSized(value), None)) // writeSized is suspended byname
+      override def apply(value: T): Array[ValueRepr] = {
+        val stringRepr = StringRepr(dataEncoder.encodeDisplayString(value))
+        dataEncoder.sizeOf(value) match {
+          case s if s >= 0 && s <= EagerSizeThreshold => Array(stringRepr, DataRepr(dataType, DataEncoder.writeSized(value, s)))
+          case s if s >= 0 => Array(stringRepr, LazyDataRepr(dataType, DataEncoder.writeSized(value, s), Some(s))) // writeSized is suspended byname
+          case _ => Array(stringRepr, LazyDataRepr(dataType, DataEncoder.writeSized(value), None)) // writeSized is suspended byname
+        }
       }
     }
 
@@ -83,7 +86,7 @@ object ReprsOf extends ExpandedScopeReprs {
 
   val empty: ReprsOf[Any] = instance(_ => Array.empty)
 
-  implicit val sparkSession: ReprsOf[Runtime.type] = {
+  implicit val polynoteRuntime: ReprsOf[Runtime.type] = {
     instance {
       r =>
         val html =

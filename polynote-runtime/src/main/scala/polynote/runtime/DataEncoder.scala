@@ -14,10 +14,11 @@ trait DataEncoder[@specialized T] extends Serializable {
     encode(dataOutput, value)
     dataOutput
   }
+  def encodeDisplayString(value: T): String = DataEncoder.truncateString(value.toString)
   def dataType: DataType
   def sizeOf(t: T): Int
   def numeric: Option[Numeric[T]]
-  
+
   def bimap[U](from: U => T, to: T => U): DataEncoder[U] = new DataEncoder[U] {
     override def encode(dataOutput: DataOutput, value: U): Unit = DataEncoder.this.encode(dataOutput, from(value))
     override val dataType: DataType = DataEncoder.this.dataType
@@ -51,13 +52,41 @@ trait DataEncoder[@specialized T] extends Serializable {
 }
 
 object DataEncoder extends DataEncoder0 {
+  def truncateString(str: String): String = if (str.length > 255) str.substring(0, 254) + "…" else str
+  def formatCollection[T](coll: GenTraversable[T], formatItem: T => String, prefix: Option[String]): String = {
+    val innerStrs = if (coll.size > 10) {
+      coll.take(10).toSeq.map(formatItem).map(_.linesWithSeparators.map("  " + _).mkString) :+ s"  …(${coll.size - 10} more elements)"
+    } else coll.map(formatItem)
 
-  def sizedInstance[@specialized T](typ: DataType, size: T => Int, numericOpt: Option[Numeric[T]] = None)(fn: (DataOutput, T) => Unit): DataEncoder[T] = new DataEncoder[T] {
+    prefix.getOrElse(coll.stringPrefix) + "(\n" + innerStrs.mkString(",\n") + "\n)"
+  }
+
+  def formatCollection[T](coll: GenTraversable[T], formatItem: T => String, prefix: String): String =
+    formatCollection(coll, formatItem, Some(prefix))
+
+  def formatCollection[T](coll: GenTraversable[T], formatItem: T => String): String =
+    formatCollection(coll, formatItem, None)
+
+  def formatCollection[T](coll: GenTraversable[T], prefix: String)(implicit enc: DataEncoder[T]): String =
+    formatCollection(coll, t => enc.encodeDisplayString(t), Some(prefix))
+
+  def formatCollection[T](coll: GenTraversable[T])(implicit enc: DataEncoder[T]): String =
+    formatCollection(coll, t => enc.encodeDisplayString(t), None)
+
+  class SizedEncoder[@specialized T](
+    typ: DataType,
+    size: T => Int,
+    numericOpt: Option[Numeric[T]] = None)(
+    fn: (DataOutput, T) => Unit
+  ) extends DataEncoder[T] {
     def encode(dataOutput: DataOutput, value: T): Unit = fn(dataOutput, value)
     val dataType: DataType = typ
     override def sizeOf(t: T): Int = size(t)
     val numeric: Option[Numeric[T]] = numericOpt
   }
+
+  def sizedInstance[@specialized T](typ: DataType, size: T => Int, numericOpt: Option[Numeric[T]] = None)(fn: (DataOutput, T) => Unit): DataEncoder[T] =
+    new SizedEncoder[T](typ, size, numericOpt)(fn)
 
   def instance[@specialized T](typ: DataType)(fn: (DataOutput, T) => Unit): DataEncoder[T] = sizedInstance[T](typ, _ => typ.size)(fn)
 
@@ -128,7 +157,7 @@ object DataEncoder extends DataEncoder0 {
       case err: Throwable => -1
     }
 
-  implicit def array[A](implicit encodeA: DataEncoder[A]): DataEncoder[Array[A]] = sizedInstance[Array[A]](ArrayType(encodeA.dataType), arr => combineSize(seqSize(arr, encodeA), 4)) {
+  implicit def array[A](implicit encodeA: DataEncoder[A]): DataEncoder[Array[A]] = new SizedEncoder[Array[A]](ArrayType(encodeA.dataType), arr => combineSize(seqSize(arr, encodeA), 4))({
     (output, arr) =>
       output.writeInt(arr.length)
       var i = 0
@@ -136,14 +165,21 @@ object DataEncoder extends DataEncoder0 {
         encodeA.encode(output, arr(i))
         i += 1
       }
+  }) {
+    override def encodeDisplayString(value: Array[A]): String = formatCollection(value, "Array")
   }
 
-  implicit def optional[A](implicit encodeA: DataEncoder[A]): DataEncoder[Option[A]] = sizedInstance[Option[A]](OptionalType(encodeA.dataType), opt => opt.fold(1)(a => combineSize(encodeA.sizeOf(a), 1))) {
+  implicit def optional[A](implicit encodeA: DataEncoder[A]): DataEncoder[Option[A]] = new SizedEncoder[Option[A]](OptionalType(encodeA.dataType), opt => opt.fold(1)(a => combineSize(encodeA.sizeOf(a), 1)))({
     case (output, None) =>
       output.writeBoolean(false)
     case (output, Some(a)) =>
       output.writeBoolean(true)
       encodeA.encode(output, a)
+  }) {
+    override def encodeDisplayString(value: Option[A]): String = value match {
+      case Some(elem) => s"Some(${encodeA.encodeDisplayString(elem)})"
+      case None       => "None"
+    }
   }
 
   private[polynote] class BufferOutput(buf: ByteBuffer) extends DataOutput {
@@ -238,6 +274,12 @@ private[runtime] sealed trait DataEncoder0 extends DataEncoderDerivations { self
     }
 
     def numeric: Option[Numeric[F[K, V]]] = None
+
+    override def encodeDisplayString(value: F[K, V]): String = formatCollection[(K, V)](
+      value,
+      (tup: (K, V)) => s"${encodeK.encodeDisplayString(tup._1)} -> ${encodeV.encodeDisplayString(tup._2)}",
+      value.stringPrefix
+    )
   }
 
 
@@ -277,6 +319,8 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
       }
 
       override def sizeOf(t: (Int, A)): Int = encoder.sizeOf(t._2) + 4
+
+      override def encodeDisplayString(value: (Int, A)): String = s"(${value._1}, ${encoder.encodeDisplayString(value._2)})"
     }
   }
 
@@ -291,6 +335,8 @@ private[runtime] sealed trait DataEncoderDerivations { self: DataEncoder.type =>
     def dataType: DataType = ArrayType(encodeA.dataType)
     def sizeOf(t: F[A]): Int = if (encodeA.dataType.size >= 0) (encodeA.dataType.size * t.size + 4) else seqSize[A](t, encodeA) + 4
     def numeric: Option[Numeric[F[A]]] = None
+
+    override def encodeDisplayString(value: F[A]): String = formatCollection[A](value)(encodeA)
   }
 
   implicit def seq[A](implicit encodeA: DataEncoder[A]): DataEncoder[Seq[A]] = new SeqEncoder(encodeA)
