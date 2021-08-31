@@ -61,12 +61,14 @@ object DeploySparkSubmit extends DeployCommand {
 
     val applicationJar = additionalJars.find(_.getPath.contains("polynote-spark-assembly")).map(_.getPath).getOrElse(defaultJarLocation)
 
+    val jarsToAdd = additionalJars.filter(url => runtimeJarsFilter.findFirstMatchIn(url.getPath).nonEmpty)
+
     Seq("spark-submit", "--class", mainClass, "--name", appName) ++
       Seq("--driver-java-options", allDriverOptions) ++
       sparkConfig.get("spark.driver.memory").toList.flatMap(mem => List("--driver-memory", mem)) ++
       (if (isRemote) Seq("--deploy-mode", "cluster") else Nil) ++
-      sparkSubmitArgs ++ Seq("--driver-class-path", additionalJars.map(_.getPath).mkString(File.pathSeparator)) ++
-      Seq("--jars", additionalJars.filter(url => runtimeJarsFilter.findFirstMatchIn(url.getPath).nonEmpty).mkString(",")) ++
+      sparkSubmitArgs ++ Seq("--driver-class-path", classPath.map(_.getPath).mkString(File.pathSeparator)) ++
+      (if (jarsToAdd.nonEmpty) Seq("--jars", jarsToAdd.mkString(",")) else Nil) ++
       sparkArgs ++ Seq(applicationJar) ++ serverArgs
   }
 

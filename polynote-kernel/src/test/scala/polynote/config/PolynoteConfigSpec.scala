@@ -115,6 +115,11 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |    foo:   bar
         |  spark_submit_args: these are the args
         |  dist_classpath_filter: .jar$
+        |  pyspark:
+        |    distribute_dependencies: true
+        |    distribution_excludes:
+        |     - foo
+        |     - bar
         |  property_sets:
         |    - name: Test
         |      properties:
@@ -136,6 +141,8 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       SparkPropertySet(name = "Test", properties = Map("something" -> "thing", "another" -> "one"), sparkSubmitArgs = Some("some more args"), None),
       SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"))
     )
+    parsed.pyspark.get.distributionExcludes shouldEqual List("foo", "bar")
+    parsed.pyspark.get.distributeDependencies shouldEqual Option(true)
   }
 
   it should "fail on invalid configuration" in {

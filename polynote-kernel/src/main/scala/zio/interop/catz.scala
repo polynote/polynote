@@ -109,13 +109,13 @@ abstract class CatsInstances extends CatsInstances1 {
     bifunctorInstance0.asInstanceOf[Bifunctor[ZIO[R, *, *]]]
 
   implicit final def rioArrowInstance: ArrowChoice[RIO] =
-    zioArrowInstance0.asInstanceOf[ArrowChoice[RIO]]
+    zioArrowInstance00.asInstanceOf[ArrowChoice[RIO]]
 
   implicit final def contravariantInstance[E, A]: Contravariant[ZIO[*, E, A]] =
     contravariantInstance0.asInstanceOf[Contravariant[ZIO[*, E, A]]]
 
   private[this] val bifunctorInstance0: Bifunctor[ZIO[Any, *, *]]           = new CatsBifunctor
-  private[this] val zioArrowInstance0: ArrowChoice[ZIO[*, Any, *]]          = new CatsArrow
+  private[this] val zioArrowInstance00: ArrowChoice[ZIO[*, Any, *]]          = new CatsArrow
   private[this] val contravariantInstance0: Contravariant[ZIO[*, Any, Any]] = new CatsContravariant
 }
 

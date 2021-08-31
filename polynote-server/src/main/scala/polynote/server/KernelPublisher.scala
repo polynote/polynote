@@ -153,6 +153,15 @@ class KernelPublisher private (
     taskManager.cancelAll() *> cancelKernelTasks
   }.ignore
 
+  def cancelTask(taskId: String): TaskB[Unit] = {
+    val cancelKernelTasks = for {
+      kernel <- kernelRef.get.get
+      _      <- kernel.cancelTask(taskId).provideSomeLayer[BaseEnv](baseLayer)
+    } yield ()
+
+    taskManager.cancelTask(taskId) *> cancelKernelTasks
+  }.ignore
+
   def clearResults() = versionedNotebook.clearAllResults().flatMap {
     clearedCells =>
       ZIO.foreach_(clearedCells)(id => cellResults.publish1(Option(CellResult(id, ClearResults()))))

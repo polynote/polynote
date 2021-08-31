@@ -3,18 +3,15 @@ import {HandleData, ModifyStream, NotebookUpdate, NotebookVersion, ReleaseHandle
 import {
     ClientResult,
     Output,
-    ResultValue,
     ServerErrorWithCause
 } from "../data/result";
 import {
-    Destroy,
     Disposable, setProperty,
     setValue,
     StateHandler,
     StateView, UpdateResult
 } from "../state";
 import {About} from "../ui/component/about";
-import {ValueInspector} from "../ui/component/value_inspector";
 import {collect, partition} from "../util/helpers";
 import {Either} from "../data/codec_types";
 import {DialogModal} from "../ui/layout/modal";
@@ -24,9 +21,6 @@ import {CellState, NotebookState, NotebookStateHandler} from "../state/notebook_
 import {ErrorStateHandler} from "../state/error_state";
 import {ClientBackup} from "../state/client_backup";
 import {ServerState, ServerStateHandler} from "../state/server_state";
-import {OpenNotebooksHandler} from "../state/preferences";
-import {ViewType} from "../ui/input/viz_selector";
-import {CellMetadata} from "../data/data";
 
 /**
  * The Dispatcher is used to handle actions initiated by the UI.
@@ -154,18 +148,8 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         this.socket.send(new messages.CancelTasks(this.state.path))
     }
 
-    /*******************************
-     ** UI methods (which don't   **
-     ** really belong here)       **
-     *******************************/
-    // TODO: move this out of dispatcher
-    showValueInspector(result: ResultValue, viewType?: string) {
-        this.handler.insertInspectionCell(result, viewType);
-    }
-
-    // TODO: this is pointless now, remove once ValueInspector goes away
-    hideValueInspector() {
-        ValueInspector.get.hide()
+    cancelTask(id: string) {
+        this.socket.send(new messages.CancelTasks(this.state.path, id));
     }
 
     /*******************************
@@ -312,8 +296,6 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 ErrorStateHandler.addServerError(err.error)
             }
         }).disposeWith(this)
-
-        this.handler.observeKey("openNotebooks", nbs => OpenNotebooksHandler.update(() => setValue([...nbs])))
     }
 
     /*******************************
@@ -372,11 +354,11 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                 })
             })
         }
-        if (path) {
+        if (path && content) {
             this.socket.send(new messages.CreateNotebook(path, content))
             waitForNotebook(path)
         } else {
-            new DialogModal('Create Notebook', 'path/to/new notebook name', 'Create').show().then(newPath => {
+            new DialogModal('Create Notebook', (path ?? 'path/to/notebook') + "/", 'Create').show().then(newPath => {
                 this.socket.send(new messages.CreateNotebook(newPath, content))
                 waitForNotebook(newPath)
             })

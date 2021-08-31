@@ -30,7 +30,7 @@ import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
 import {changedKeys, findInstance} from "../../../util/helpers";
 import {remove} from "vega-lite/build/src/compositemark";
 import * as monaco from "monaco-editor";
-import {displayData} from "../../display/display_content";
+import {displayData, prettyDisplayData, prettyDisplayString} from "../../display/display_content";
 import {DataReader} from "../../../data/codec";
 import {DataRepr, StreamingDataRepr} from "../../../data/value_repr";
 import {ValueInspector} from "../value_inspector";
@@ -233,7 +233,7 @@ class KernelTasksEl extends Disposable {
     private notebookPathHandler: StateView<string>
     private kernelTasksHandler: StateHandler<KernelTasks>
 
-    constructor(dispatcher: NotebookMessageDispatcher,
+    constructor(private dispatcher: NotebookMessageDispatcher,
                 notebookPathHandler: StateView<string>,
                 kernelTasksHandler: StateHandler<KernelTasks>) {
         super()
@@ -247,6 +247,8 @@ class KernelTasksEl extends Disposable {
             ]),
             this.taskContainer = div(['task-container'], [])
         ]);
+
+        this.el.addEventListener('mousedown', evt => evt.preventDefault())
 
         this.notebookPath = notebookPathHandler.state
         notebookPathHandler.addObserver(path => this.notebookPath = path)
@@ -317,7 +319,7 @@ class KernelTasksEl extends Disposable {
         }
     }
 
-    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.removeTask(id)) {
+    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.cancelTask(id)) {
         // short-circuit if the task coming in is already completed.
         if (status === TaskStatus.Complete) {
             remove()
@@ -485,25 +487,14 @@ class KernelSymbolViewWidget {
     }
 
     private static contentFor(value: ResultValue) {
-        return monaco.editor.colorize(value.typeName, "scala", {}).then(typeHTML => {
-            const dataRepr = findInstance(value.reprs, DataRepr);
-            const resultType = span(['result-type'], []).attr("data-lang" as any, "scala");
-            resultType.innerHTML = typeHTML;
-            // why do they put <br> elements in there?
-            [...resultType.getElementsByTagName('br')].forEach(br => br.parentNode?.removeChild(br));
-
-            if (dataRepr) {
-                return div(['data-content'], [
-                    span(['result-name-and-type'], [span(['result-name'], [value.name]), ': ', resultType, ' = ']),
-                    displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
-                ]);
-            }
-
-            return div(['string-content'], [
-                span(['result-name-and-type'], [span(['result-name'], [value.name]), ': ', resultType, ' = ']),
-                value.valueText
-            ]);
-        })
+        const dataRepr = findInstance(value.reprs, DataRepr);
+        if (dataRepr) {
+            return prettyDisplayData(value.name, value.typeName, dataRepr)
+                .then(([_, el]) => el)
+        } else {
+            return prettyDisplayString(value.name, value.typeName, value.valueText)
+                .then(([_, el]) => el)
+        }
     }
 
     showFor(row: HTMLElement, value: ResultValue, handler: NotebookStateHandler) {
@@ -544,7 +535,8 @@ class KernelSymbolViewWidget {
             const rowDims = targetEl.getBoundingClientRect();
             const right = (document.body.clientWidth - rowDims.left);
             this.el.style.right = right + 'px';
-            this.el.style.maxWidth = (document.body.clientWidth - right - 200) + 'px';
+            this.el.style.maxWidth =
+                ((document.querySelector('.tab-view')?.clientWidth ?? document.body.clientWidth - right - 184) - 16) + 'px';
 
             document.body.appendChild(this.el);
 
@@ -653,12 +645,14 @@ class KernelSymbolsEl extends Disposable {
         super()
         this.el = div(['kernel-symbols'], [
             h3([], ['Symbols']),
-            this.tableEl = table(['kernel-symbols-table'], {
-                header: ['Name', 'Type'],
-                classes: ['name', 'type'],
-                rowHeading: true,
-                addToTop: true
-            })
+            div(['table-scroller'], [
+                this.tableEl = table(['kernel-symbols-table'], {
+                    header: ['Name', 'Type'],
+                    classes: ['name', 'type'],
+                    rowHeading: true,
+                    addToTop: true
+                })
+            ])
         ]);
         this.resultSymbols = (this.tableEl.tBodies[0] as TagElement<"tbody">).addClass('results');
         this.scopeSymbols = this.tableEl.addBody().addClass('scope-symbols');
@@ -718,9 +712,7 @@ class KernelSymbolsEl extends Disposable {
         tr.onmousedown = (evt) => {
             if (evt.button !== 0)
                 return; // only for primary mouse button
-            evt.preventDefault();
             evt.stopPropagation();
-            this.dispatcher.showValueInspector(tr.resultValue)
         };
         tr.onmouseover = () => this.showPopupFor(tr, resultValue);
         tr.data = {name: resultValue.name, type: resultValue.typeName};

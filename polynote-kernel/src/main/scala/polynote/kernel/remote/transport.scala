@@ -16,7 +16,7 @@ import polynote.messages._
 import scodec.Codec
 import scodec.codecs.implicits._
 import scodec.bits.BitVector
-import scodec.stream.decode
+import scodec.stream.StreamDecoder
 import zio.blocking.{Blocking, effectBlocking, effectBlockingCancelable, effectBlockingInterrupt}
 import zio.{Cause, Promise, RIO, Schedule, Task, URIO, ZIO, system => ZSystem}
 import zio.duration.{DurationOps, durationInt, Duration => ZDuration}
@@ -110,7 +110,7 @@ class SocketTransportServer private (
   override val responses: Stream[TaskB, RemoteResponse] =
         channels.mainChannel.bitVectors
           .interruptAndIgnoreWhen(closed)
-          .through(scodec.stream.decode.pipe[TaskB, RemoteResponse])
+          .through(StreamDecoder.many(RemoteResponse.codec).toPipe[TaskB])
 
   override def close(): TaskB[Unit] = closed.succeed(()) *> channels.close() *> process.awaitOrKill(30)
 
@@ -177,11 +177,11 @@ class SocketTransportClient private (channels: SocketTransport.Channels, closed:
 
   private val requestStream = channels.mainChannel.bitVectors.interruptAndIgnoreWhen(closed)
     .translate(logError(Logging.error("Remote kernel client's request stream had an networking error (it will probably die now)", _)))
-    .through(decode.pipe[TaskB, RemoteRequest])
+    .through(StreamDecoder.many(RemoteRequest.codec).toPipe[TaskB])
 
   private val updateStream = channels.notebookUpdatesChannel.bitVectors.interruptAndIgnoreWhen(closed)
     .translate(logError(Logging.error("Remote kernel client's update stream had an networking error (it will probably die now)", _)))
-    .through(decode.pipe[TaskB, NotebookUpdate])
+    .through(StreamDecoder.many(NotebookUpdate.codec).toPipe[TaskB])
 
   def sendResponse(rep: RemoteResponse): TaskB[Unit] = for {
     bytes <- ZIO.fromEither(RemoteResponse.codec.encode(rep).toEither).mapError(err => new RuntimeException(err.message))

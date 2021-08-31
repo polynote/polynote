@@ -55,6 +55,7 @@ class LocalSparkKernel private[kernel] (
   override protected def chooseInterpreterFactory(factories: List[Interpreter.Factory]): ZIO[Any, Option[Nothing], Interpreter.Factory] =
     ZIO.fromOption(factories.headOption)
 
+  override def shutdown(): Task[Unit] = super.shutdown() *> ZIO(sparkSession.stop())
 }
 
 class LocalSparkKernelFactory extends Kernel.Factory.LocalService {

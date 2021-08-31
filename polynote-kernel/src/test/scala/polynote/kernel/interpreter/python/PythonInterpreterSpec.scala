@@ -3,7 +3,7 @@ package polynote.kernel.interpreter.python
 import jep.python.PyCallable
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.interpreter.State
-import polynote.kernel.{CompileErrors, Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
+import polynote.kernel.{CompileErrors, Completion, CompletionType, Output, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
 import polynote.messages.TinyList
 import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
@@ -29,6 +29,7 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           |d = datetime.datetime(2019, 2, 3, 00, 00)
           |l = [x, y, {"sup?": "nm"}, False]
           |l2 = [100, l]
+          |empty = None
       """.stripMargin
       assertOutput(code) {
         case (vars, output) =>
@@ -36,9 +37,9 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
           vars("x") shouldEqual 1
           vars("y") shouldEqual "foo"
           vars("A") shouldBe a[PythonFunction]
-          vars("A").toString shouldEqual "<class 'A'>"
+          vars("A").toString shouldEqual "<class '__main__.A'>"
           vars("z") shouldBe a[PythonObject]
-          vars("z").toString should startWith("<A object")
+          vars("z").toString should startWith("<__main__.A object")
           vars("d") shouldBe a[PythonObject]
           vars("d").toString shouldEqual "2019-02-03 00:00:00"
           vars("l") match {
@@ -69,6 +70,9 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
             }
           }
 
+          vars("empty") shouldBe a[PythonObject]
+          vars("empty").toString shouldEqual "null"
+
           output shouldBe empty
       }
     }
@@ -87,6 +91,27 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
             "y" -> 2,
             "Out" -> 3
           )
+
+          output shouldBe empty
+      }
+    }
+
+    "follows proper scoping rules" in {
+      val code =
+        """
+          |x = 1
+          |def foo():
+          |    x = 2 # this shadows the outer `x` and should not modify `x` in the outer scope!
+          |    y = 3 # this value should not be present in the cell results
+          |foo()
+          |x
+      """.stripMargin
+      assertOutput(code) {
+        case (vars, output) =>
+          vars should have size 3
+          vars("x") shouldEqual 1
+          vars.contains("y") shouldBe false
+          vars("Out") shouldEqual 1
 
           output shouldBe empty
       }
@@ -330,6 +355,66 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       }
     }
 
+    "imports should be available to all cells underneath the importing cell" in {
+      val cell1 = interp("x = 1").run(cellState).runIO()
+      val cell2 = interp("x = 2").run(cell1._1).runIO()
+      val cell3 = interp("print(x)").run(cell2._1).runIO()
+      val cell4Code =
+        """
+          |try:
+          |    res = math.pi
+          |except NameError as e:
+          |    res = e""".stripMargin
+      val cell4 = interp(cell4Code).run(cell3._1).runIO()
+
+      // Oops! cell 4 failed because `math` has not yet been imported
+      val cell4Result = cell4._2.state.values.head
+      cell4Result.typeName should include ("NameError")
+
+      // Ok, let's fix the problem by importing math at the top
+      val rerunCell1 = interp("import math; x = 1").run(cellState).runIO()
+      val newCell3State = cell3._1.insertOrReplace(rerunCell1._1)
+
+      // Now let's try cell 4 again
+      val rerunCell4 = interp(cell4Code).run(newCell3State).runIO()
+
+      // it works!
+      val cell4Result2 = rerunCell4._2.state.values.head
+      cell4Result2.value shouldEqual Math.PI
+    }
+
+    "scoping of shadowed variables is handled correctly" in {
+      val cell1 = interp("x = 1").run(cellState).runIO()
+      val cell2 = interp(
+        """def foo():
+          |    x = 100 # this shadows x from cell 1, so it should NOT be in the output of cell 2!
+          |""".stripMargin).run(cell1._1).runIO()
+      val cell3 = interp("x = 2 # this is in scope and thus a reassignment. it should go through").run(cell2._1).runIO()
+      val cell4 = interp("print(x)").run(cell3._1).runIO()
+
+      cell1._2.state.values should have size 1
+      val cell1Decl = cell1._2.state.values.head
+      cell1Decl.name shouldEqual "x"
+      cell1Decl.value shouldEqual 1
+
+      // Shadowed x should not be present here!
+      cell2._2.state.values should have size 1
+      val cell2Decl = cell2._2.state.values.head
+      cell2Decl.name shouldEqual "foo"
+      cell2Decl.value shouldBe a[PythonFunction]
+
+      cell3._2.state.values should have size 1
+      val cell3Decl = cell3._2.state.values.head
+      cell3Decl.name shouldEqual "x"
+      cell3Decl.value shouldEqual 2
+
+      val cell4Out = cell4._2.env.publishResult.toList.runIO().collect {
+        case Output(_, content) =>
+          content.mkString
+      }.mkString
+      cell4Out shouldEqual "2\n"
+    }
+
     "completions" in {
       val completions = interpreter.completionsAt("dela", 4, State.id(1)).runIO()
       completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("o", ""), ("name", "str"))))), "", CompletionType.Method))
@@ -343,6 +428,26 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
         ParameterHints("delattr(o, name: str)", Option("Deletes the named attribute from the given object."),
           List(ParameterHint("o", "", None), ParameterHint("name", "str", None)))),0,0))
     }
+
+
+    "should get a RecursionError upon infinite recursion" in {
+      val code =
+        """
+          |def call_myself():
+          |    for r in call_myself():
+          |        pass
+          |
+          |call_myself()
+          |""".stripMargin
+      try {
+        assertOutput(code) { case _ => }
+      } catch {
+        case err: Throwable =>
+          err.getMessage shouldEqual "RecursionError: maximum recursion depth exceeded"
+      }
+    }
+
+
   }
 
   "PythonObject" - {
@@ -644,7 +749,7 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       // now let's add DelegatingFinder back
       assertOutput(addDelegatingFinder + defDummyFinder + conflictingDummy) {
         case (vars, output) =>
-          vars should have size 2
+          vars should have size 1
           val Array(jepModule, datetime, sys, arrayList) = stdOut(output).split("\n")
           jepModule should startWith("<module 'java' (<jep.java_import_hook.JepJavaImporter")
           datetime shouldEqual "<class 'datetime.datetime'>"

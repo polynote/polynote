@@ -1,19 +1,15 @@
 package polynote.kernel.interpreter.python
 
-import java.io.IOException
-import java.util.concurrent.atomic.AtomicReference
-
 import org.apache.spark.sql.{AnalysisException, SparkSession}
-import org.scalatest.{BeforeAndAfterEach, FreeSpec, Matchers}
-import polynote.kernel.ScalaCompiler
-import polynote.kernel.environment.Env
+import org.scalatest.{FreeSpec, Matchers}
+import polynote.config.PolynoteConfig
 import polynote.kernel.interpreter.{Interpreter, State}
-import polynote.runtime.python.PythonObject
 import polynote.testing.InterpreterSpec
 import polynote.testing.kernel.MockEnv
 import zio.ZLayer
 import zio.blocking.Blocking
 
+import java.util.concurrent.atomic.AtomicReference
 import scala.reflect.io.PlainDirectory
 import scala.tools.nsc.io.{AbstractFile, Directory}
 
@@ -41,7 +37,7 @@ class PySparkInterpreterSpec extends FreeSpec with InterpreterSpec with Matchers
     if (interpreterRef.get() != null) {
       interpreter.shutdown().runIO()
     }
-    interpreterRef.set(PySparkInterpreter(None).provideSomeLayer[Blocking](ZLayer.succeed(compiler)).runIO())
+    interpreterRef.set(PySparkInterpreter(None).provideSomeLayer[Blocking](ZLayer.succeed(compiler) ++ ZLayer.succeed(PolynoteConfig())).runIO())
 
     f
 
@@ -200,20 +196,17 @@ class PySparkInterpreterSpec extends FreeSpec with InterpreterSpec with Matchers
             "py" -> "four"))
         }
       }
+    }
 
-      "should capture py4j exceptions" in {
-        initialize()
-        try {
-          assertOutput("spark.read.text(\"doesnotexist\")"){ case _ => }
-        } catch {
-          case err: Throwable =>
-            err shouldBe a[RuntimeException]
-            err.getMessage should include ("AnalysisException: 'Path does not exist:")
-            err.getCause shouldBe a[RuntimeException]
-            err.getCause.getMessage should include ("Py4JJavaError: An error occurred while calling")
-            err.getCause.getCause shouldBe a[AnalysisException]
-            err.getCause.getCause.getMessage should include ("Path does not exist:")
-        }
+    "should capture py4j exceptions" in {
+      initialize()
+      try {
+        assertOutput("spark.read.text(\"doesnotexist\")"){ case _ => }
+      } catch {
+        case err: Throwable =>
+          err shouldBe a[RuntimeException]
+          err.getMessage should include ("AnalysisException:")
+          err.getMessage should include ("Path does not exist:")
       }
     }
   }

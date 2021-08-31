@@ -95,28 +95,29 @@ We tag these images with the name `polynote-local`.
 > Change version to match desired target
 
 ```sh
-export POLYNOTE_VERSION=0.2.13
+export POLYNOTE_VERSION=0.4.2
 docker build -t polynote-local:latest --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION base
 ```
 
 
 ## Dev image
 
-First we run `sbt dist` from the root of this repository to create `target/scala-2.11/` and the `.tar` file inside.
+First we run `sbt dist` from the root of this repository to create `target/` and the `.tar.gz` file inside.
 We then go to this new directory and build from within there:
 
 ```sh
 sbt dist
-cd target/scala-2.11/
-docker build -t polynote-local:dev -f ../../docker/dev/Dockerfile .
+docker build -t polynote-local:dev -f docker/dev/Dockerfile .
 ```
 
 
 ## Spark v2.4 image
 
-> Change version to match desired target
+> Change versions to match desired target
 
 ```sh
-export POLYNOTE_VERSION=0.2.13
-docker build -t polynote-local:spark24 --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION spark-2.4
+export POLYNOTE_VERSION=0.4.2
+export SPARK_VERSION=3.1.2
+export SCALA_VERSION=2.12
+docker build -t polynote-local:spark --build-arg POLYNOTE_VERSION=$POLYNOTE_VERSION spark
 ```

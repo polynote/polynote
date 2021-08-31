@@ -8,7 +8,7 @@ import {
     destroy,
     Disposable,
     editString,
-    insert,
+    insert, moveArrayValue,
     NoUpdate,
     removeIndex,
     removeKey,
@@ -20,7 +20,7 @@ import {
 import * as messages from "../data/messages";
 import {Identity, Message, TaskInfo, TaskStatus} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
-import {purematch} from "../util/match";
+import match, {purematch} from "../util/match";
 import {ContentEdit} from "../data/content_edit";
 import {
     ClearResults,
@@ -407,6 +407,14 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                                 }
                             }
                         }
+                    })
+                    .when(messages.MoveCell, (g, l, id, after) => {
+                        const currentIndex = s.cellOrder.indexOf(id);
+                        const afterIndex = s.cellOrder.indexOf(after);
+                        const toIndex = currentIndex <= afterIndex ? afterIndex : afterIndex + 1;
+                        return {
+                            cellOrder: moveArrayValue(currentIndex, toIndex)
+                        }
                     }).otherwiseThrow ?? s;
 
                 // make sure to update backups.
@@ -436,12 +444,10 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                     })
                     .otherwise(NoUpdate)
             } else {
-                let symbols: UpdateOf<KernelSymbols> = NoUpdate;
-                if (['busy', 'idle'].includes(s.kernel.status) && result instanceof ResultValue) {
-                    if (symbols === NoUpdate)
-                        symbols = {[cellId]: {}} as UpdateOf<KernelSymbols>;
-                    (symbols as any)[cellId][result.name] = result;
-                }
+                const symbols = match(result).typed<UpdateOf<KernelSymbols>>()
+                    .whenInstance(ResultValue, r => ['busy', 'idle'].includes(s.kernel.status) ? {[cellId]: {[r.name]: setValue(r)}} : NoUpdate)
+                    .whenInstance(ClearResults, _ => ({[cellId]: setValue({})}))
+                    .otherwise(NoUpdate)
 
                 const cells = cellId < 0 ? NoUpdate : { [cellId]: this.parseResult(s.cells[cellId], result) }
                 return {
@@ -596,7 +602,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             }
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {
-            const notebooks: UpdateOf<Record<string, boolean>> = {}
+            const notebooks: string[] = []
             kernelStatuses.forEach(kv => {
                 const path = kv.first;
                 const status = kv.second;
@@ -604,9 +610,9 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 nbInfo.handler.updateField("kernel", () => ({
                     status: status.asStatus
                 }))
-                notebooks[path] = setValue(nbInfo.loaded)
+                notebooks.push(path)
             })
-            return { notebooks: notebooks }
+            return { serverOpenNotebooks: notebooks }
         })
     }
 }

@@ -5,7 +5,6 @@ import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.{AtomicMoveNotSupportedException, FileAlreadyExistsException, FileVisitOption, Files, Path, StandardCopyOption, StandardOpenOption}
 import java.util.concurrent.atomic.AtomicBoolean
-
 import fs2.Chunk
 import polynote.kernel.BaseEnv
 import zio.blocking.{Blocking, effectBlocking}
@@ -15,6 +14,7 @@ import zio.ZIO.effect
 
 import scala.collection.JavaConverters._
 import LocalFilesystem.FileChannelWALWriter
+import cats.effect.Blocker
 
 class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
@@ -80,7 +80,7 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
     for {
       env    <- ZIO.environment[BaseEnv]
       ec      = env.get[Blocking.Service].blockingExecutor.asEC
-      chunks <- fs2.io.readInputStream[Task](effectBlocking(is).provide(env), 8192, ec, closeAfterUse = true).compile.toChunk.map(_.toBytes)
+      chunks <- fs2.io.readInputStream[Task](effectBlocking(is).provide(env), 8192, Blocker.liftExecutionContext(ec), closeAfterUse = true).compile.toChunk.map(_.toBytes)
     } yield chunks
   }
 

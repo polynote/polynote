@@ -166,14 +166,14 @@ select {
   &.hide-code .cell-input {
     .toggle-code {
       border-color: @ui-border;
-      background-color: @button-bg;
+      background-color: @button-selected-bg;
     }
   }
 
   &.hide-output {
     .cell-input .toggle-output {
       border-color: @ui-border;
-      background-color: @button-bg;
+      background-color: @button-selected-bg;
     }
   }
 
@@ -734,8 +734,10 @@ button.dialog-button {
   }
 
   tbody {
-    &.results {
-      border-bottom-color: black;
+    &.results tr:last-child {
+      th, td {
+        border-bottom-color: black;
+      }
     }
 
     background: @ui-table-bg;

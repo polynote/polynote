@@ -143,6 +143,8 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
         namedLambda("lambda x: x.max()", s"quartiles($col).max"),
         namedLambda("lambda x: x.mean()", s"quartiles($col).mean")
       )
+      case "count_distinct" => List(namedLambda("lambda x: x.unique().shape[0]", s"count_distinct($col)"))
+      case "approx_count_distinct" => List(namedLambda("lambda x: x.unique().shape[0]", s"approx_count_distinct($col)"))
       case agg => List(namedLambda(s"lambda x: x.$agg()", s"$agg($col)"))
     }
   }
@@ -152,7 +154,7 @@ class PandasHandle(val handle: Int, df: PythonObject) extends StreamingDataRepr.
       df => op match {
         case GroupAgg(cols, aggs) =>
           tryEither {
-            val pandasAggs = aggs.groupBy(_._1).mapValues(_.map(_._2)).map((mkAggs _).tupled).mapValues(aggs => df.runner.listOf(aggs: _*))
+            val pandasAggs = aggs.groupBy(_._1).mapValues(_.map(_._2)).map((mkAggs _).tupled).toMap.mapValues(aggs => df.runner.listOf(aggs: _*))
             val next = df.groupby(df.runner.listOf(cols: _*), as_index = false)
               .agg(df.runner.dictOf(pandasAggs.toSeq: _*))
 

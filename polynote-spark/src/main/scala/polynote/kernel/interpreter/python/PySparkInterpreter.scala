@@ -3,12 +3,11 @@ package polynote.kernel.interpreter.python
 import java.net.InetAddress
 import java.nio.file.{FileSystems, Files, Path}
 import java.util.concurrent.atomic.AtomicReference
-
 import jep.Jep
 import jep.python.{PyCallable, PyObject}
 import org.apache.commons.lang3.RandomStringUtils
-import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+import polynote.config.PySparkConfig
 import polynote.kernel.{BaseEnv, GlobalEnv, InterpreterEnv, ScalaCompiler}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.interpreter.{Interpreter, State}
@@ -31,7 +30,8 @@ class PySparkInterpreter(
   jepBlockingService: Blocking,
   runtime: Runtime[Any],
   pyApi: PythonInterpreter.PythonAPI,
-  venvPath: Option[Path]
+  venvPath: Option[Path],
+  pySparkConfig: Option[PySparkConfig]
 ) extends PythonInterpreter(_compiler, jepInstance, jepExecutor, jepThread, jepBlockingService, runtime, pyApi, venvPath) {
 
   val gatewayRef = new AtomicReference[GatewayServer]()
@@ -227,6 +227,12 @@ class PySparkInterpreter(
       // Archive venv dependencies and send it to Spark. We also add pyspark and py4j just in case.
       val pysparkModulesList = PySparkInterpreter.pysparkModules.fold(List.empty[String])(_.map(_.toString))
       jep.set("spark_py_libs", pysparkModulesList.toArray)
+      jep.set("do_distribute_deps", pySparkConfig.flatMap(_.distributeDependencies).getOrElse(true))
+
+      // These dependencies can't be distributed with pyspark. They need to be available on the executors.
+      // See https://github.com/boto/boto3/issues/1770 for more details.
+      val defaultExcludes = Array("boto", "h5py")
+      jep.set("dist_excludes", pySparkConfig.map(_.distributionExcludes.toArray).getOrElse(defaultExcludes))
 
       jep.exec(
         s"""
@@ -235,12 +241,15 @@ class PySparkInterpreter(
            |
            |venv_path = "${venvPath.getOrElse("")}"
            |dependencies = []
-           |if venv_path:
+           |if do_distribute_deps and venv_path:
            |    dependencies += list(Path(venv_path, 'deps').glob('*.whl'))
            |
            |# Add pyspark and py4j modules too.
            |if spark_py_libs:
            |    dependencies += [Path(x) for x in spark_py_libs]
+           |
+           |# Remove any exclusions
+           |dependencies = [d for d in dependencies if not any(x in str(d) for x in dist_excludes)]
            |
            |# Unfortunately pyspark's `sc.addPyFile` modifies the sys.path, but we don't want that to happen in this case.
            |# so, we'll just add the files ourselves.
@@ -300,10 +309,11 @@ object PySparkInterpreter {
     } yield interp
   }
 
-  def apply(venv: Option[Path]): RIO[ScalaCompiler.Provider, PySparkInterpreter] = {
+  def apply(venv: Option[Path]): RIO[Config with ScalaCompiler.Provider, PySparkInterpreter] = {
     for {
       (compiler, jep, executor, jepThread, blocking, runtime, api) <- PythonInterpreter.interpreterDependencies(venv)
-    } yield new PySparkInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv)
+      config  <- Config.access
+    } yield new PySparkInterpreter(compiler, jep, executor, jepThread, blocking, runtime, api, venv, config.spark.flatMap(_.pyspark))
   }
 
   // Grab the locations of the pyspark modules that are packaged with Spark: pyspark itself, and py4j.

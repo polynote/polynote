@@ -37,9 +37,11 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
       subscriber.checkPermission(Permission.ModifyNotebook) *> subscriber.update(update)
 
     case RunCell(ids) =>
-      if (ids.isEmpty) ZIO.unit else {
-        ids.map(id => subscriber.checkPermission(Permission.ExecuteCell(_, id))).reduce(_ *> _) *>
-          ids.map(id => subscriber.publisher.queueCell(id)).sequence.flatMap(_.sequence).unit
+      ZIO.unless(ids.isEmpty) {
+        ZIO.foreachPar_(ids)(id => subscriber.checkPermission(Permission.ExecuteCell(_, id))) *>
+          ZIO.foreach(ids.toList)(id => subscriber.publisher.queueCell(id)).flatMap {
+            tasks => ZIO.collectAll_(tasks.map(_.run.uninterruptible)).forkDaemon
+          }
       }
 
     case req@CompletionsAt(id, pos, _) => for {
@@ -80,7 +82,8 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
       _      <- PublishMessage(req)
     } yield ()
 
-    case CancelTasks(path) => subscriber.publisher.cancelAll()
+    case CancelTasks(path, None)         => subscriber.publisher.cancelAll()
+    case CancelTasks(path, Some(taskId)) => subscriber.publisher.cancelTask(taskId)
 
     case ClearOutput() => subscriber.publisher.clearResults()
 

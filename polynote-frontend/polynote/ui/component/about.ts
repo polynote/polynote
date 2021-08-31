@@ -6,7 +6,7 @@ import {
     IDisposable, setProperty,
     StateView,
 } from "../../state";
-import {ServerMessageDispatcher,} from "../../messaging/dispatcher";
+import {NotebookMessageDispatcher, ServerMessageDispatcher,} from "../../messaging/dispatcher";
 import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 import {ServerStateHandler} from "../../state/server_state";
@@ -249,7 +249,11 @@ export class About extends FullScreenModal implements IDisposable {
             ])
         ]);
 
+        const observers: IDisposable[] = [];
+
         const onNotebookUpdate = () => {
+
+            observers.forEach(obs => obs.dispose())
 
             const tableEl = table(['kernels'], {
                 header: ['path', 'status', 'actions'],
@@ -258,7 +262,7 @@ export class About extends FullScreenModal implements IDisposable {
                 addToTop: false
             });
 
-            ServerStateHandler.openNotebooks.forEach(([path, info]) => {
+            ServerStateHandler.serverOpenNotebooks.forEach(([path, info]) => {
                 const status = info.handler.state.kernel.status;
                 const statusEl = span([], [
                     span(['status'], [status]),
@@ -266,51 +270,57 @@ export class About extends FullScreenModal implements IDisposable {
                 const actions = div([], [
                     loader(),
                     iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
-                        info.info!.dispatcher.kernelCommand("start")
+                        dispatcher().then(d => d.kernelCommand("start"))
                     }),
                     iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(() => {
-                        info.info!.dispatcher.kernelCommand("kill")
+                        dispatcher().then(d => d.kernelCommand("kill"))
                     }),
                     iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
-                        ServerStateHandler.selectNotebook(path)
+                        ServerStateHandler.loadNotebook(path, true)
+                            .then(() => {
+                                ServerStateHandler.selectNotebook(path)
+                            })
                         this.hide();
                     }),
                 ]);
 
                 const rowEl = tableEl.addRow({ path, status: statusEl, actions });
                 rowEl.classList.add('kernel-status', status)
-                info.handler.addPreObserver(prev => {
+                observers.push(info.handler.addPreObserver(prev => {
                     const prevStatus = prev.kernel.status
                     return state => {
                         const status = state.kernel.status;
                         rowEl.classList.replace(prevStatus, status)
                         statusEl.innerText = status;
                     }
+                }))
+
+                const dispatcher: () => Promise<NotebookMessageDispatcher> = () => new Promise(resolve => {
+                    if (info.info?.dispatcher) {
+                        resolve(info.info.dispatcher)
+                    } else {
+                        rowEl.classList.add('loading')
+                        ServerStateHandler.loadNotebook(path, false).then(newInfo => {
+                            info = newInfo; // update `info` for the button click callbacks
+                            rowEl.classList.remove("loading");
+                            this.onDispose.then(() => ServerStateHandler.closeNotebook(path))
+                            resolve(newInfo.info!.dispatcher)
+                        })
+                    }
                 })
-
-                // load the notebook if it hasn't been already
-                if (!info.loaded) {
-                    rowEl.classList.add('loading')
-                    ServerStateHandler.loadNotebook(path, false).then(newInfo => {
-                        info = newInfo; // update `info` for the button click callbacks
-                        rowEl.classList.remove("loading");
-                    })
-
-                    this.onDispose.then(() => {
-                        if (ServerStateHandler.state.currentNotebook !== path) {
-                            ServerStateHandler.closeNotebook(path)
-                        }
-                    })
-                }
 
                 if (content.firstChild !== tableEl) {
                     content.firstChild?.replaceWith(tableEl);
                 }
             })
         }
-        this.serverMessageDispatcher.requestRunningKernels()
+
+        const checkNotebooks = setInterval(() => {
+            this.serverMessageDispatcher.requestRunningKernels()
+        }, 1000)
+        this.onDispose.then(() => clearInterval(checkNotebooks))
         onNotebookUpdate()
-        ServerStateHandler.view("notebooks").addObserver(() => onNotebookUpdate()).disposeWith(this)
+        ServerStateHandler.view("serverOpenNotebooks").addObserver(() => onNotebookUpdate()).disposeWith(this)
 
         return el;
     }

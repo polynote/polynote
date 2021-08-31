@@ -62,7 +62,7 @@ export class NotebookListContextMenu{
             evt.stopPropagation();
         }
         this.hide();
-        this.dispatcher.createNotebook()
+        this.dispatcher.createNotebook(this.targetItem)
     }
 
     showFor(evt: Event, targetItem?: LeafEl | BranchEl) {
@@ -75,9 +75,10 @@ export class NotebookListContextMenu{
 
         this.el.classList.remove('for-file', 'for-dir', 'for-item');
 
+        this.targetItem = targetItem?.path;
+
         if (targetItem) {
             this.el.classList.add('for-item');
-            this.targetItem = targetItem.path;
             if (targetItem instanceof LeafEl) {
                 this.el.classList.add('for-file');
             } else {

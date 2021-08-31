@@ -81,7 +81,8 @@ select {
   height: @toolbar-height;
   border-bottom-width: 1px;
   border-bottom-style: solid;
-  z-index: 2;
+  z-index: 50;
+  position: relative;
 
   user-select: none;
 
@@ -416,8 +417,9 @@ select {
     }
 
     .cell-input-editor {
-      padding: 3pt;
-      overflow: visible;
+      margin: 4px;
+      overflow: hidden;
+      height: fit-content;
     }
 
     .cell-footer {
@@ -1311,6 +1313,10 @@ button {
 
   .icon {
     vertical-align: middle;
+
+    img {
+      height: 1em;
+    }
   }
 }
 
@@ -1331,6 +1337,13 @@ button.inspect.icon-button {
   opacity: 1.0;
 }
 
+.monaco-overflow {
+  position: absolute !important;
+  visibility: hidden;
+  .visible {
+    visibility: visible !important;
+  }
+}
 
 .dependencies .icon {
   transform: scale(1, -1);
@@ -1439,22 +1452,24 @@ button.inspect.icon-button {
   width: 100%;
 
   .ui-panel-content {
-    display: inline-block;
     grid-area: body;
-    overflow-y: auto;
+    overflow: hidden;
     border-width: 1px;
     border-style: solid;
+    position: relative;
   }
 }
 
 .kernel-ui {
-  max-height: 100%;
-  width: 100%;
-  box-sizing: border-box;
-  > .ui-panel-content {
-    grid-template-areas: "info" "symbols" "tasks";
-    grid-template-rows:   auto   auto      1fr;
-  }
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-areas: "info"       "symbols"   "tasks";
+  grid-template-rows:   min-content min-content 1fr;
+
 
   h2 {
     position: relative;
@@ -1468,6 +1483,7 @@ button.inspect.icon-button {
 
   .kernel-tasks {
     grid-area: tasks;
+    overflow-y: auto;
     h3 button {
       font-size: inherit;
       padding: 0;
@@ -1481,7 +1497,7 @@ button.inspect.icon-button {
       padding: 8px;
       margin: 4px 0;
       white-space: pre-line;
-
+      position: relative;
       h4 {
         margin-top: 0;
       }
@@ -1510,6 +1526,12 @@ button.inspect.icon-button {
 
       .close-button {
         display: none;
+      }
+
+      &:hover .close-button {
+        display: block;
+        position: absolute;
+        right: 1em;
       }
 
       &.error {
@@ -1585,12 +1607,36 @@ button.inspect.icon-button {
     }*/
   }
 
+
+
   .kernel-symbols {
     position: relative;
     grid-area: symbols;
 
-    tbody tr {
-      cursor: zoom-in;
+    .table-scroller {
+      overflow-y: auto;
+      max-height: calc(60vh - 70px - 4em);
+    }
+
+    .kernel-symbols-table {
+      tbody {
+        position: relative;
+        z-index: 1;
+      }
+
+      tbody.results {
+        tr:last-child {
+          td, th {
+            border-bottom-width: 2pt;
+            border-bottom-style: solid;
+          }
+        }
+      }
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+      }
     }
   }
 
@@ -1632,13 +1678,13 @@ button.inspect.icon-button {
 
   z-index: 999;
 
-  padding-right: 16px;
+  padding-right: 8px;
 
   .pointer {
     position: absolute;
     right: 1px;
     top: 50%;
-    width: 16px;
+    width: 8px;
     height: 16px;
     margin-top: -8px;
     overflow: hidden;
@@ -1658,20 +1704,24 @@ button.inspect.icon-button {
     border-style: solid;
     border-width: 1px;
     border-radius: 4px;
-    max-width: 600px;
     display: grid;
     align-items: center;
-    grid-template-columns: 1fr min-content;
+    grid-template-columns: auto min-content;
 
     .content {
       font-family: @code-fonts;
       padding: 1em;
-      .result-name-and-type {
-        white-space: nowrap;
-      }
       max-height: 90vh;
       overflow-y: auto;
       box-sizing: border-box;
+
+      > .string-content {
+        word-break: break-all;
+      }
+
+      .result-name-and-type {
+        white-space: nowrap;
+      }
     }
 
     .buttons {
@@ -2340,11 +2390,11 @@ button.dialog-button {
 .kernel-ui .kernel-symbols table,
 .table-view table {
   width: 100%;
-  border-collapse: collapse;
+  border-spacing: 0;
   border-width: 1px 0;
 
   th, td {
-    border-width: 1px;
+    border-width: 1px 1px 0 0;
     border-style: solid;
     padding: 0.25em;
     font-weight: normal;
@@ -2358,18 +2408,16 @@ button.dialog-button {
     border-right-width: 0;
   }
 
+  tr:last-child th, tr:last-child td {
+    border-bottom-width: 1px;
+  }
+
   thead {
     th {
       text-align: left;
     }
   }
   tbody {
-    &.results {
-      border-bottom-width: 2pt;
-      border-bottom-style: solid;
-    }
-
-    overflow-y: auto;
 
     tr {
       animation: highlight 2s;
@@ -3174,6 +3222,8 @@ img.icon, svg.icon {
         display: grid;
         grid-template-columns: auto min-content;
         width: 100%;
+        cursor: default;
+        user-select: none;
 
         span {
           align-content: center;
@@ -3303,9 +3353,15 @@ img.icon, svg.icon {
   }
 }
 
+.vega-result {
+  height: 100%;
+}
+
 .vega-result .vega-embed {
   padding-right: 0;
   margin-right: 38px;
+  height: 100%;
+  min-height: 266px;
 }
 
 /*

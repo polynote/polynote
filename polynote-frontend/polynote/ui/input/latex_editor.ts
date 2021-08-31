@@ -29,6 +29,7 @@ export class LaTeXEditor extends Disposable {
 
         this.input.addEventListener('input', this.inputHandler);
         this.input.addEventListener('keydown', this.keyHandler);
+        this.input.addEventListener('blur', this.cancel)
         this.valid = false;
 
         if (outputEl.hasAttribute('data-tex-source')) {
@@ -39,6 +40,7 @@ export class LaTeXEditor extends Disposable {
         this.onDispose.then(() => {
             this.input.removeEventListener('input', this.inputHandler);
             this.input.removeEventListener('keydown', this.keyHandler);
+            this.input.removeEventListener('blur', this.cancel)
             this.el.innerHTML = '';
             if (this.el.parentNode)
                 this.el.parentNode.removeChild(this.el);
@@ -53,14 +55,16 @@ export class LaTeXEditor extends Disposable {
         this.el.style.width = width + 'px';
 
         const rect = this.outputEl.getBoundingClientRect()
-        const targetLeft = rect.left + rect.width / 2;
-        const targetTop = rect.bottom;
+        const outputElLeft = rect.left - this.parentEl.offsetLeft;
+        const outputElCenter = outputElLeft + rect.width / 2;
+        const outputElBottom = rect.bottom + this.parentEl.scrollTop - this.parentEl.offsetTop;
 
-        const left = Math.min(containerWidth - width, Math.max(0, Math.round(targetLeft - width / 2)));
+        const left = Math.min(containerWidth - width, Math.max(0, Math.round(outputElCenter - width / 2)));
 
-        this.el.style.top = targetTop + 'px';
+        this.el.style.top = outputElBottom + 'px';
         this.el.style.left = left + "px";
-        this.pointer.style.left = (width - this.pointer.offsetWidth) / 2 + 'px';
+        // the pointer's left is relative to `left`, so we need to subtract it.
+        this.pointer.style.left = outputElCenter - left - (this.pointer.offsetWidth / 2) + 'px';
 
         this.input.focus();
 
@@ -91,7 +95,6 @@ export class LaTeXEditor extends Disposable {
             return;
         }
         const parent = this.outputEl.parentNode;
-        const textEditorElement = Array.from(this.parentEl.querySelectorAll(".markdown-body")).find(i => i.contains(parent))
         if (evt.key === 'Enter') {
             evt.preventDefault();
             evt.cancelBubble = true;
@@ -122,15 +125,31 @@ export class LaTeXEditor extends Disposable {
             // clean up space element
             parent?.removeChild(space)
 
-            textEditorElement?.dispatchEvent(new CustomEvent('input'));
+            this.textEditorEl?.dispatchEvent(new CustomEvent('input'));
             this.dispose();
         } else if (evt.key === 'Escape' || evt.key === 'Cancel') {
-            if (parent && this.deleteOnCancel) {
-                parent.removeChild(this.outputEl);
-                textEditorElement?.dispatchEvent(new CustomEvent('input'));
-            }
-            this.dispose();
+            this.cancel()
         }
+    }
+
+    get textEditorEl() {
+        return this.outputEl.closest(".markdown-body")
+    }
+
+    delete() {
+        this.outputEl.remove()
+        this.textEditorEl?.dispatchEvent(new CustomEvent("input"))
+        this.dispose()
+    }
+
+    cancel() {
+        if (this.deleteOnCancel) {
+            this.delete()
+        } else this.dispose();
+    }
+
+    static isLatexEl(el: Element): boolean {
+        return el.closest("[data-tex-source]") !== null
     }
 
     static forSelection() {
@@ -197,6 +216,12 @@ export class LaTeXEditor extends Disposable {
         }
 
         displayMode = displayMode || (el?.classList.contains('katex-block') || el?.classList.contains('katex-display'));
+
+        // center the temporary span if we're in displayMode.
+        if (displayMode && el.id === "tmp-katex") {
+            el.style.display = "block"
+            el.style.textAlign = "center"
+        }
 
         const editor = new LaTeXEditor(el, notebookParent, deleteOnCancel, displayMode);
         this.editorCells.push(cellContainer)

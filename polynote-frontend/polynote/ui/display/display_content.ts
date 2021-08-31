@@ -2,9 +2,11 @@
 
 import * as monaco from "monaco-editor";
 import * as katex from "katex";
-import {Content, details, div, span, tag, TagElement} from "../tags";
+import {Content, details, div, h4, span, tag, TagElement} from "../tags";
 import {ArrayType, MapType, OptionalType, StructField, StructType} from "../../data/data_type";
 import embed from "vega-embed";
+import {DataRepr} from "../../data/value_repr";
+import {DataReader} from "../../data/codec";
 
 export function displayContent(contentType: string, content: string | DocumentFragment, contentTypeArgs?: Record<string, string>): Promise<TagElement<any>> {
     const [mimeType, args] = contentTypeArgs ? [contentType, contentTypeArgs] : parseContentType(contentType);
@@ -15,7 +17,8 @@ export function displayContent(contentType: string, content: string | DocumentFr
         if (content instanceof DocumentFragment) {
             node.appendChild(content);
         } else {
-            node.innerHTML = content;
+            const frame = buildContainerFrame(content)
+            node.appendChild(frame)
         }
         result = Promise.resolve(node);
     } else if (mimeType === "text/plain") {
@@ -39,7 +42,7 @@ export function displayContent(contentType: string, content: string | DocumentFr
         const wrapperEl = div(['vega-result'], [targetEl]);
         const spec = JSON.parse(content);
 
-        if (spec?.width === 'container') {
+        if (spec?.width === 'container' || spec?.height === 'container') {
             // must wait until the element is in the DOM before embedding, in case it's responsive sized.
             const onVisible = () => {
                 embed(targetEl, spec);
@@ -205,6 +208,37 @@ export function displayData(data: any, fieldName?: string, expandObjects: boolea
     }
 }
 
+function colorizeResultType(typeName: string, language: string = "scala"): Promise<TagElement<"span">> {
+    return monaco.editor.colorize(typeName, language, {}).then(typeHTML => {
+        const resultType = span(['result-type'], []).attr("data-lang" as any, language);
+        resultType.innerHTML = typeHTML;
+
+        // why do they put <br> elements in there?
+        [...resultType.getElementsByTagName('br')].forEach(br => br.parentNode?.removeChild(br));
+        return resultType
+    })
+}
+
+export function prettyDisplayString(resultName: string, typeName: string, valueText: string): Promise<[string, TagElement<"div">]> {
+    return colorizeResultType(typeName, "scala").then(resultType => {
+        const el = div(['string-content'], [
+            span(['result-name-and-type'], [span(['result-name'], [resultName]), ': ', resultType, ' = ']),
+            valueText
+        ]);
+        return ["text/html", el];
+    })
+}
+
+export function prettyDisplayData(resultName: string, typeName: string, dataRepr: DataRepr): Promise<[string, TagElement<"div">]> {
+    return colorizeResultType(typeName, "scala").then(resultType => {
+        const el = div([], [
+            span(['result-name-and-type'], [span(['result-name'], [resultName]), ': ', resultType, ' = ']),
+            displayData(dataRepr.dataType.decodeBuffer(new DataReader(dataRepr.data)), undefined, 1)
+        ]);
+        return ["text/html", el];
+    })
+}
+
 export function prettyDuration(milliseconds: number) {
     function quotRem(dividend: number, divisor: number) {
         const quotient = Math.floor(dividend / divisor);
@@ -298,4 +332,51 @@ export function displaySchema(structType: StructType): HTMLElement {
             [span(['object-summary', 'schema-summary'], [span(['summary-content', 'object-field-summary'], [truncate(structType.fields.map(f => f.name).join(", "), 64)])])],
             [tag("ul", ['object-fields'], {}, structType.fields.map(displayField))]).attr('open', 'open')
     ]);
+}
+
+/**
+ * Build an iframe to hold HTML output. Not secured.
+ *
+ * @param content HTML string to place into the iframe.
+ */
+function buildContainerFrame(content: string): HTMLIFrameElement {
+    const doc = document.implementation.createHTMLDocument("Polynote output container");
+    const head = doc.documentElement.appendChild(doc.createElement('head'));
+    [...document.head.getElementsByTagName('link')].forEach((stylesheet: HTMLLinkElement) => {
+        const link = doc.importNode(stylesheet, true);
+        link.href = new URL(link.href, document.location.href).href;
+        head.appendChild(link);
+    });
+    const style = head.appendChild(doc.createElement('style'));
+    style.setAttribute('type', 'text/css');
+    style.innerText = `
+        html, body { margin: 0; padding: 0 }
+    `;
+    // apparently Monaco adds a bazillion style elements to the page...
+    [...document.head.getElementsByTagName("style")].forEach(style => {
+        const s = doc.importNode(style, true)
+        head.appendChild(s)
+    })
+    const body = doc.documentElement.appendChild(doc.createElement('body'));
+    const container = body.appendChild(doc.createElement('div'));
+    container.classList.add('htmltext');
+    container.id = 'polynote-sandbox-container';
+    container.innerHTML = content;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.border = '0';
+    iframe.style.width = '100%';
+    iframe.onload = evt => {
+        const sandboxContainer = iframe.contentDocument?.getElementById('polynote-sandbox-container');
+        if (sandboxContainer) {
+            iframe.style.height = sandboxContainer.scrollHeight + "px";
+            iframe.style.width = sandboxContainer.scrollWidth + "px";
+        } else {
+            iframe.style.height = "300px";
+            iframe.style.width = "100%";
+        }
+    }
+    iframe.srcdoc = doc.documentElement.outerHTML;
+
+    return iframe;
 }

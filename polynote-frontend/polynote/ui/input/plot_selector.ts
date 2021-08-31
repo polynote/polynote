@@ -2,7 +2,7 @@ import {
     button,
     checkbox,
     div,
-    dropdown,
+    dropdown, DropdownElement,
     h3,
     h4,
     iconButton,
@@ -32,8 +32,9 @@ import match from "../../util/match";
 import {GroupAgg, Histogram, Select, TableOp} from "../../data/messages";
 import {Pair} from "../../data/codec";
 import {collect, collectDefined, deepCopy, deepEquals, diffArray, isDescendant} from "../../util/helpers";
-import {Disposable, Observer, StateHandler} from "../../state";
+import {Disposable, NoUpdate, Observer, setValue, StateHandler} from "../../state";
 import {CompileErrors} from "../../data/result";
+import {sanitizeJSVariable} from "../../interpreter/vega_interpreter";
 
 export interface DimensionAxis {
     title?: string
@@ -114,7 +115,7 @@ export interface PlotDefinition {
     facet?: Facet
 }
 
-interface ValidPlotDefinition extends PlotDefinition {
+export interface ValidPlotDefinition extends PlotDefinition {
     plot: Plot
 }
 
@@ -152,7 +153,7 @@ export const PlotDefinition = {
 /**
  * Validate the given plot definition, throwing a PlotValidationErrors error if it is not valid.
  */
-function validatePlot(plotDefinition: PlotDefinition): asserts plotDefinition is ValidPlotDefinition {
+export function validatePlot(plotDefinition: PlotDefinition): asserts plotDefinition is ValidPlotDefinition {
     const errs = PlotDefinition.validationErrors(plotDefinition);
     if (errs.length) {
         throw new PlotValidationErrors(errs);
@@ -227,9 +228,7 @@ export function savePlotDefinition(plotDef: PlotDefinition) {
     return JSON.stringify(plotDef)
 }
 
-function plotToSpec(plotDef: PlotDefinition, schema: StructType): TopLevelSpec {
-    validatePlot(plotDef);
-
+function plotToSpec(plotDef: ValidPlotDefinition, schema: StructType): TopLevelSpec {
     const spec = (() => {
         const plot: Plot = plotDef.plot;
         switch (plot.type) {
@@ -319,19 +318,20 @@ function tableOps(plotDef: PlotDefinition): TableOp[] {
     }
 }
 
-export function plotToVega(plotDef: PlotDefinition, schema: StructType): TopLevelSpec {
+export function plotToVega(plotDef: ValidPlotDefinition, schema: StructType): TopLevelSpec {
     const spec = plotToSpec(plotDef, schema) as any;
     spec.width = 'container';
+    spec.height = 'container';
     return spec as TopLevelSpec;
 }
 
-export function plotToVegaCode(plotDef: PlotDefinition, schema: StructType): string {
+export function plotToVegaCode(plotDef: ValidPlotDefinition, schema: StructType): string {
     const spec = plotToVega(plotDef, schema) as any;
     spec.data.values = '$DATA_STREAM$';
     const ops = tableOps(plotDef);
-    let streamSpec = `${plotDef.value}.useUnsafeLongs()`;
+    let streamSpec = `${sanitizeJSVariable(plotDef.value)}.useUnsafeLongs()`;
     ops.forEach(op => streamSpec = op.streamCode(streamSpec));
-    return JSON.stringify(spec).replace('"$DATA_STREAM$"', streamSpec);
+    return JSON.stringify(spec, undefined, 2).replace('"$DATA_STREAM$"', streamSpec);
 }
 
 function seriesName(series: PlotSeries) {
@@ -703,6 +703,9 @@ function histogramPlot(plotDef: PlotDefinition, plot: HistogramPlot, schema: Str
         throw new Error(`Field ${plot.x.field} is not in the schema`);
     }
 
+    // TODO: Bins would look nicer if the "step" could be calculated from the data as (max - min) / binCount.
+    //       But, vega-lite isn't capable of that (requires the `extent` transform from vega). Should this be
+    //       rewritten as a vega spec instead of vega-lite? It's quite a bit more complicated...
     return {
         $schema: 'https://vega.github.io/schema/vega-lite/v4.json',
         title: plotDef.title,
@@ -715,7 +718,7 @@ function histogramPlot(plotDef: PlotDefinition, plot: HistogramPlot, schema: Str
             x: {
                 field: "start",
                 type: "quantitative",
-                bin: "binned",
+                bin: {binned: true},
                 axis: {
                     title: plot.x.title,
                     tickCount: plot.binCount
@@ -734,14 +737,20 @@ function histogramPlot(plotDef: PlotDefinition, plot: HistogramPlot, schema: Str
 
 }
 
-const plotTypes = {
+const anyPlotTypes = {
+    histogram: "Histogram"
+}
+
+const dimensionPlotTypes = {
     bar: "Bar",
     line: "Line",
     area: "Stacked area",
-    xy: "XY Scatter",
     boxplot: "Box plot",
-    pie: "Pie",
-    histogram: "Histogram"
+    pie: "Pie"
+}
+
+const numericPlotTypes = {
+    xy: "XY Scatter"
 }
 
 function deepFields(fields: StructField[], predicate: (type: DataType) => boolean, path?: string): StructField[] {
@@ -757,8 +766,8 @@ function deepFields(fields: StructField[], predicate: (type: DataType) => boolea
     );
 }
 
-function deepNumericFields(fields: StructField[]): StructField[] {
-    return deepFields(fields, type => NumericTypes.indexOf(type) >= 0);
+function deepMeasureFields(fields: StructField[]): StructField[] {
+    return deepFields(fields, type => NumericTypes.indexOf(type) >= 0 || type === StringType);
 }
 
 function deepDimensionFields(fields: StructField[]): StructField[] {
@@ -773,7 +782,15 @@ const Measures = {
     mean: "Mean",
     sum: "Sum",
     count: "Count",
+    count_distinct: "Count distinct",
+    approx_count_distinct: "Approx. count distinct",
     quartiles: "Median & error"
+}
+
+const NonNumericMeasures = {
+    count: "Count",
+    count_distinct: "Count distinct",
+    approx_count_distinct: "Approx. count distinct",
 }
 
 class MeasurePicker {
@@ -789,7 +806,7 @@ class MeasurePicker {
                 span(['indicator'], '▸')
             ]),
             this.popup = div(['measures-popup', 'dropdown', 'open'], [
-                ...Object.entries(Measures).map(
+                ...Object.entries(field.dataType.isNumeric ? Measures : NonNumericMeasures).map(
                     pair => button([pair[0]], {name: pair[0]}, pair[1]).click(evt => this.trigger(pair[0]))
                 )
             ])
@@ -1014,6 +1031,7 @@ export class PlotSelector extends Disposable {
     private readonly stateHandler: StateHandler<PlotSelectorState>;
     private listeners: ((newPlot: PlotDefinition, oldPlot?: PlotDefinition) => any)[] = [];
 
+    private typeSelector: DropdownElement;
     private dimensionFields: StructField[];
     private measuresUI: MeasuresUI;
     private xField: TagElement<'select'>;
@@ -1027,16 +1045,23 @@ export class PlotSelector extends Disposable {
         super();
         const dimensionFields = this.dimensionFields = deepDimensionFields(schema.fields);
 
-        if (dimensionFields.length === 0) {
-            throw new Error("No possible dimension fields");
+        const dimensionOptions    = Object.fromEntries(dimensionFields.map(field => [field.name, field.name]));
+        const measureFields       = deepMeasureFields(schema.fields);
+        const numericFields       = measureFields.filter(field => field.dataType.isNumeric);
+        const numericFieldOptions = Object.fromEntries(numericFields.map(field => [field.name, field.name]));
+
+
+        if (dimensionFields.length === 0 && measureFields.length === 0) {
+            throw new Error("No dimension or measure fields in schema!");
         }
 
-        const dimensionOptions = Object.fromEntries(dimensionFields.map(field => [field.name, field.name]));
-        const measureFields    = deepNumericFields(schema.fields);
-        const measureOptions   = Object.fromEntries(measureFields.map(field => [field.name, field.name]));
-
-        const state = initialState ? PlotSelectorState.fromPlotDef(initialState, dimensionFields[0].name) : PlotSelectorState.empty(name, dimensionFields[0].name, name);
-        const stateHandler = this.stateHandler = StateHandler.from(state).disposeWith(this);
+        const hasDimensions       = dimensionFields.length > 0;
+        const hasNumericFields    = numericFields.length > 0;
+        const defaultX            = dimensionFields[0]?.name ?? measureFields[0].name;
+        const defaultType         = hasDimensions ? "bar" : "xy";
+        const state               = initialState ? PlotSelectorState.fromPlotDef(initialState, defaultX)
+                                                 : PlotSelectorState.empty(name, defaultX, defaultType, name);
+        const stateHandler        = this.stateHandler = StateHandler.from(state).disposeWith(this);
 
         const typeHandler         = stateHandler.lens("type");
         const facetHandler        = stateHandler.lensOpt("facet");
@@ -1053,62 +1078,70 @@ export class PlotSelector extends Disposable {
                 this.listeners.forEach(l => l(newState.toPlotDef(), result.oldValue?.toPlotDef()))
         });
         stateHandler.addObserver(newState => {
-            if (newState.facet) {
-                this.el.classList.add('facet');
-                this.facetCheckbox.querySelector('input')!.checked = true;
-            } else {
-                this.el.classList.remove('facet');
-                this.facetCheckbox.querySelector('input')!.checked = false;
+            if (hasDimensions) {
+                if (newState.facet) {
+                    this.el.classList.add('facet');
+                    this.facetCheckbox.querySelector('input')!.checked = true;
+                } else {
+                    this.el.classList.remove('facet');
+                    this.facetCheckbox.querySelector('input')!.checked = false;
+                }
             }
         });
+
+        const availablePlotTypes = {
+            ...anyPlotTypes,
+            ...(hasDimensions ? dimensionPlotTypes : {}),
+            ...(hasNumericFields ? numericPlotTypes : {})
+        }
 
         this.el = div(['plot-selector', state.type, ...(state.facet ? ['facet'] : [])], [
             div(['top-tools'], [
                 h3(['table-name'], 'Plot'),
                 div(['type-selector'], [
                     label([], "Type",
-                        dropdown(['plot-type'], plotTypes, state.type).bind(typeHandler))
+                        this.typeSelector = dropdown(['plot-type'], availablePlotTypes, state.type).bind(typeHandler))
                 ]),
                 div(['title-input'], [
                     label([], "Title",
                         textbox([], "Plot title", initialState?.title || initialState?.value || "")
                             .bindWithDefault(stateHandler.lens('title'), ""))
                 ]),
-                this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
+                hasDimensions ? this.facetCheckbox = checkbox(['facet'], 'Facet', !!(state.facet)).onValueChange<boolean>(checked => {
                     if (checked) {
-                        this.el.classList.add('facet');
+                        this.stateHandler.updateField("facet", s => s === undefined ? setValue({}) : NoUpdate )
                     } else {
-                        this.el.classList.remove('facet');
+                        this.stateHandler.updateField("facet", s => s !== undefined ? setValue(undefined) : NoUpdate )
                     }
-                }),
-                div(['facet-options'], [
+                }) : undefined,
+                hasDimensions ? div(['facet-options'], [
                     label(['facet-row'], "Facet row",
                         dropdown([], { "": "None", ...dimensionOptions}, state.facet?.row || undefined)
-                            .bindWithDefault(facetHandler.lens("row"), "")),
+                            .bindWithDefault(facetHandler.lensOpt("row"), "")),
                     label(['facet-col'], "Facet column",
                         dropdown([], { "": "None", ...dimensionOptions}, state.facet?.col || undefined)
-                            .bindWithDefault(facetHandler.lens("col"), "")),
+                            .bindWithDefault(facetHandler.lensOpt("col"), "")),
                     label(['facet-width'], "Width",
                         numberbox([], "Width", state.facet?.width)
-                            .bindWithDefault(facetHandler.lens("width"), 50)
+                            .bindWithDefault(facetHandler.lensOpt("width"), 50)
                             .attr("step", "1")),
                     label(['facet-width'], "Height",
                         numberbox([], "Height", state.facet?.height)
-                            .bindWithDefault(facetHandler.lens("height"), 50)
+                            .bindWithDefault(facetHandler.lensOpt("height"), 50)
                             .attr("step", "1"))
-                ])
+                ]) : undefined
             ]),
             div(['x-axis-config'], [
                 h3([], "X Axis"),
                 label(['title'], "Title",
                     textbox([], "Axis title", initialState?.plot?.x.title)
                         .bindWithDefault(xHandler.lens("title"), "")),
-                label(['dimension-field'], "Dimension",
+                hasDimensions ? label(['dimension-field'], "Dimension",
                     this.xDimension = dropdown([], dimensionOptions, initialState?.plot?.x.field)
-                        .bind(xHandler.lens("field"))),
-                label(['x-field'], "Field",
-                    this.xField = dropdown([], measureOptions, initialState?.plot?.x.field)
-                        .bind(xHandler.lens("field")))
+                        .bind(xHandler.lens("field"))) : undefined,
+                hasNumericFields ? label(['x-field'], "Field",
+                    this.xField = dropdown([], numericFieldOptions, initialState?.plot?.x.field)
+                        .bind(xHandler.lens("field"))) : undefined
             ]),
             div(['y-axis-config'], [
                 h3([], "Y Axis"),
@@ -1123,9 +1156,9 @@ export class PlotSelector extends Disposable {
                         .disposeWith(this)
                         .bind(multiSeriesHandler)
                 ]),
-                label(['y-field'], "Field",
-                    this.yField = dropdown([], measureOptions, state.singleY || undefined)
-                        .bindPartial(singleSeriesHandler)),
+                hasNumericFields ? label(['y-field'], "Field",
+                    this.yField = dropdown([], numericFieldOptions, state.singleY || undefined)
+                        .bindPartial(singleSeriesHandler)) : undefined,
                 checkbox(['force-zero'], 'Force zero', state.forceZero)
                     .bind(stateHandler.lens("forceZero"))
             ]),
@@ -1141,7 +1174,7 @@ export class PlotSelector extends Disposable {
                         dropdown([], { "": "None", ...dimensionOptions}, state.pointColorChannel || undefined)
                             .bindWithDefault(stateHandler.lens("pointColorChannel"), "")),
                     label(['bubble-size'], "Bubble size",
-                        dropdown([], {"": "None", ...measureOptions}, state.bubbleSizeChannel || undefined)
+                        dropdown([], {"": "None", ...numericFieldOptions}, state.bubbleSizeChannel || undefined)
                             .bindWithDefault(stateHandler.lens("bubbleSizeChannel"), ""))
                 ]),
                 div(['histogram-options'], [
@@ -1154,6 +1187,8 @@ export class PlotSelector extends Disposable {
                 ])
             ])
         ]);
+
+        this.onSetType(this.typeSelector.getSelectedValue())
 
         this.onDispose.then(() => {
             this.listeners = [];
@@ -1241,8 +1276,8 @@ class PlotSelectorState {
         public facet: Facet | undefined = undefined
     ) {}
 
-    public static empty(name: string, defaultX: string, title?: string) {
-        return new PlotSelectorState(name, "bar", title, { field: defaultX })
+    public static empty(name: string, defaultX: string, type?: "bar" | "xy", title?: string) {
+        return new PlotSelectorState(name, type ?? "bar", title, { field: defaultX })
     }
 
     static fromPlotDef(plotDef: PlotDefinition, defaultX: string): PlotSelectorState {

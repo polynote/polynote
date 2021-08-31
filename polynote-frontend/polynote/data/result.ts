@@ -260,7 +260,7 @@ export class ResultValue extends Result {
     static codec = combined(tinyStr, tinyStr, arrayCodec(uint8, ValueRepr.codec), int16, optional(PosRange.codec), bool).to(ResultValue);
     static get msgTypeId() { return 4; }
 
-    static unapply(inst: ResultValue) {
+    static unapply(inst: ResultValue): ConstructorParameters<typeof ResultValue> {
         return [inst.name, inst.typeName, inst.reprs, inst.sourceCell, inst.pos, inst.live];
     }
 

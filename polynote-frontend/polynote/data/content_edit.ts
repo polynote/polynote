@@ -1,5 +1,5 @@
 import {Codec, CodecContainer, combined, discriminated, int32, str, uint8} from "./codec";
-import {Diff} from "../util/diff";
+import * as fastdiff from "fast-diff";
 
 export abstract class ContentEdit extends CodecContainer {
     static codec: Codec<ContentEdit>;
@@ -155,24 +155,25 @@ ContentEdit.codec = discriminated(
 );
 
 export function diffEdits(oldContent: string, newContent: string): ContentEdit[] {
-    const diff = Diff.diff(oldContent, newContent);
+    const diff = fastdiff(oldContent, newContent);
     const edits: ContentEdit[] = [];
     let i = 0;
     let pos = 0;
     while (i < diff.length) {
         // skip through any untouched pieces
-        while (i < diff.length && !diff[i].added && !diff[i].removed) {
-            pos += diff[i].value.length;
+        while (i < diff.length && diff[i][0] === fastdiff.EQUAL) {
+            pos += diff[i][1].length;
             i++;
         }
 
         if (i < diff.length) {
             const d = diff[i];
-            const text = d.value;
-            if (d.added) {
+            const type = d[0];
+            const text = d[1];
+            if (type === fastdiff.INSERT) {
                 edits.push(new Insert(pos, text));
                 pos += text.length;
-            } else if (d.removed) {
+            } else if (type === fastdiff.DELETE) {
                 edits.push(new Delete(pos, text.length));
             }
             i++;

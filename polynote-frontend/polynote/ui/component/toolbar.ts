@@ -1,7 +1,7 @@
 import {NotebookMessageDispatcher, ServerMessageDispatcher,} from "../../messaging/dispatcher";
 import {button, div, fakeSelectElem, h3, iconButton, TagElement} from "../tags";
-import {Disposable, IDisposable, StateView} from "../../state";
-import {NotebookStateHandler} from "../../state/notebook_state"
+import {Disposable, IDisposable, OptionalStateView, StateView} from "../../state";
+import {CellState, NotebookStateHandler} from "../../state/notebook_state"
 import {ServerStateHandler} from "../../state/server_state";
 import {FakeSelect} from "../display/fake_select";
 import {LaTeXEditor} from "../input/latex_editor";
@@ -36,9 +36,9 @@ export class Toolbar extends Disposable {
                 const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
                 if (nbInfo?.info) {
                     currentNotebookHandler = nbInfo.handler
-                    const newListener = currentNotebookHandler.addObserver(state => {
-                        if (state.activeCellId !== undefined) {
-                            const lang = state.cells[state.activeCellId].language
+                    const newListener = currentNotebookHandler.activeCellView.addObserver(activeCell => {
+                        if (activeCell !== undefined) {
+                            const lang = activeCell.language
                             if (lang === "text") {
                                 this.el.classList.remove('editing-code');
                                 this.el.classList.add('editing-text');
@@ -46,18 +46,19 @@ export class Toolbar extends Disposable {
                                 this.el.classList.remove('editing-text');
                                 this.el.classList.add('editing-code');
                             }
+                        } else {
+                            this.el.classList.remove('editing-code');
+                            this.el.classList.remove('editing-text');
                         }
                     }).disposeWith(this);
-                    if (currentNotebookHandler) {
-                        if (cellSelectionListener !== undefined)
-                            cellSelectionListener.tryDispose();
-                        cellSelectionListener = newListener;
-                        currentNotebookHandler = nbInfo.handler;
-                        nb.enable(nbInfo.info.dispatcher);
-                        cell.enable(currentNotebookHandler);
-                        code.enable(nbInfo.info.dispatcher);
-                        text.enable();
-                    }
+
+                    if (cellSelectionListener !== undefined)
+                        cellSelectionListener.tryDispose();
+                    cellSelectionListener = newListener;
+                    nb.enable(currentNotebookHandler, nbInfo.info.dispatcher);
+                    cell.enable(currentNotebookHandler);
+                    code.enable(nbInfo.info.dispatcher, currentNotebookHandler.activeCellView);
+                    text.enable();
                 }
             } else {
                 cellSelectionListener = undefined;
@@ -138,6 +139,8 @@ abstract class ToolbarElement extends Disposable {
 
 class NotebookToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
+    private handler?: NotebookStateHandler;
+    private cancelButton: TagElement<'button'>;
     constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
@@ -145,6 +148,8 @@ class NotebookToolbar extends ToolbarElement {
             [
                 iconButton(["run-cell", "run-all"], "Run all cells", "forward", "Run all")
                     .click(() => this.dispatcher?.runCells([])),
+                this.cancelButton = iconButton(["stop-cell"], "Cancel all tasks", "stop", "Cancel All")
+                    .click(_ => this.dispatcher?.cancelTasks()),
                 iconButton(["branch"], "Create branch", "code-branch", "Branch").disable().withKey('alwaysDisabled', true),
                 iconButton(["download"], "Download", "download", "Download").click(() => this.dispatcher?.downloadNotebook()),
                 iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.clearOutput())
@@ -154,20 +159,38 @@ class NotebookToolbar extends ToolbarElement {
         ]);
     }
 
-    enable(dispatcher: NotebookMessageDispatcher) {
+    enable(handler: NotebookStateHandler, dispatcher: NotebookMessageDispatcher) {
+        if (this.handler && handler !== this.handler) {
+            this.handler.dispose();
+            this.handler = undefined;
+        }
+
+        if (!this.handler) {
+            this.handler = handler.fork();
+            this.handler.view("kernel").view("tasks").addObserver((tasks, updateResult) => {
+                // only when there are newly added or removed tasks, not on any progress update
+                if (Object.keys(updateResult.addedValues ?? {}).length || Object.keys(updateResult.removedValues ?? {}).length) {
+                    this.cancelButton.disabled = !Object.keys(tasks).find(taskId => taskId.startsWith("Cell"));
+                }
+            });
+        }
+
+        this.cancelButton.disabled = !Object.keys(this.handler.state.kernel.tasks).find(taskId => taskId.startsWith("Cell"));
+
         this.dispatcher = dispatcher;
         this.setDisabled(false);
     }
 
     disable() {
         this.dispatcher = undefined;
+        this.handler?.dispose();
+        this.handler = undefined;
         this.setDisabled(true);
     }
 }
 
 class CellToolbar extends ToolbarElement {
     private nbHandler?: NotebookStateHandler;
-    private activeCellHandler?: StateView<number|undefined>;
     private enabled = new Disposable()
     private langSelector: FakeSelect;
     private disabledLangSelector: FakeSelect;
@@ -186,11 +209,11 @@ class CellToolbar extends ToolbarElement {
             ], [
                 iconButton(["insert-cell-above"], "Insert cell above current", "arrow-up", "Insert above")
                     .click(() => {
-                        if(this.nbHandler) this.nbHandler.insertCell('above').then(id => this.nbHandler?.selectCell(id))
+                        if(this.nbHandler) this.nbHandler.insertCell('above').then(id => this.nbHandler?.selectCell(id, {editing: true}))
                     }),
                 iconButton(["insert-cell-below"], "Insert cell below current", "arrow-down", "Insert below")
                     .click(() => {
-                        if (this.nbHandler) this.nbHandler.insertCell('below').then(id => this.nbHandler?.selectCell(id))
+                        if (this.nbHandler) this.nbHandler.insertCell('below').then(id => this.nbHandler?.selectCell(id, {editing: true}))
                     }),
                 iconButton(["delete-cell"], "Delete current cell", "trash-alt", "Delete")
                     .click(() => {
@@ -221,9 +244,9 @@ class CellToolbar extends ToolbarElement {
         ServerStateHandler.get.observeKey("interpreters", langs => updateSelectorLanguages(langs)).disposeWith(this)
 
         this.langSelector.addListener(change => {
-            const id = this.activeCellHandler?.state;
+            const id = this.nbHandler?.activeCellView?.state?.id;
             if (this.nbHandler && id !== undefined) {
-                this.nbHandler.setCellLanguage(id, change.newValue)
+                this.nbHandler.setCellLanguage(id, change.newValue, this)
             }
         })
     }
@@ -231,11 +254,8 @@ class CellToolbar extends ToolbarElement {
     enable(currentNotebookHandler: NotebookStateHandler) {
         this.enabled = new Disposable()
         this.nbHandler = currentNotebookHandler;
-        this.activeCellHandler = currentNotebookHandler.view("activeCellId");
-        this.activeCellHandler.addObserver(cellId => {
-            if (cellId !== undefined) {
-                const cell = currentNotebookHandler.state.cells[cellId];
-                const lang = cell.language;
+        this.nbHandler.activeCellView.viewOpt("language").addObserver((lang, updateResult, source) => {
+            if (lang !== undefined) {
                 if (ClientInterpreters[lang] && ClientInterpreters[lang].hidden) {
                     this.disabledLangSelector.element.querySelector('button')!.innerHTML = ClientInterpreters[lang].languageTitle;
                     if (this.langSelector.element.parentNode) {
@@ -246,55 +266,79 @@ class CellToolbar extends ToolbarElement {
                     if (this.disabledLangSelector.element.parentNode) {
                         this.disabledLangSelector.element.parentNode.replaceChild(this.langSelector.element, this.disabledLangSelector.element);
                     }
-                    this.langSelector.setState(cell.language)
                 }
-
-                // watch for cell language changes
-                this.nbHandler?.cellsHandler.view(cellId).observeKey("language", lang => {
-                    this.langSelector.setState(lang)
-                }).disposeWith(this.enabled)
+                if (source !== this) {
+                    this.langSelector.setState(lang);
+                }
             }
-        }).disposeWith(this.enabled)
+        }).disposeWith(this.enabled);
+
         this.setDisabled(false);
     }
 
     disable() {
         this.nbHandler = undefined;
         this.enabled.dispose();
-        this.activeCellHandler = undefined;
         this.setDisabled(true);
     }
 }
 
 class CodeToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
+    private activeCellView?: OptionalStateView<CellState>;
+    private activeObserver: IDisposable;
+    private runButton: TagElement<'button'>;
+    private runToButton: TagElement<'button'>;
+    private cancelButton: TagElement<'button'>;
+
     constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
         this.el = this.toolbarElem("code", [
             [
-                iconButton(["run-cell"], "Run this cell (only)", "play", "Run")
+                this.runButton = iconButton(["run-cell"], "Run this cell (only)", "play", "Run")
                     .click(() => {
                         if (this.dispatcher) this.dispatcher.runActiveCell();
                     }),
-                iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "fast-forward", "Run to cursor")
+                this.runToButton = iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "fast-forward", "Run to cursor")
                     .click(() => {
                         if (this.dispatcher) this.dispatcher.runToActiveCell()
                     }),
-                iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
+                this.cancelButton = iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
                     .click(() => {
-                        this.dispatcher?.cancelTasks();
+                        const activeId = this.activeCellView?.state?.id;
+                        if (activeId !== undefined) {
+                            this.dispatcher?.cancelTask(`Cell ${activeId}`);
+                        }
                     }),
             ]
         ]);
     }
 
-    enable(dispatcher: NotebookMessageDispatcher) {
+    enable(dispatcher: NotebookMessageDispatcher, activeCellView: OptionalStateView<CellState>) {
         this.dispatcher = dispatcher;
+        this.activeCellView = activeCellView;
+        if (this.activeObserver) {
+            this.activeObserver.dispose();
+        }
+
+        const updateActive: (state: CellState | undefined) => void = cellState => {
+            if (cellState) {
+                const isRunningOrQueued = cellState.running || cellState.queued;
+                this.runButton.disabled = this.runToButton.disabled = isRunningOrQueued;
+                this.cancelButton.disabled = !isRunningOrQueued;
+            }
+        };
+
+        this.activeObserver = activeCellView.addObserver(updateActive);
+        updateActive(activeCellView.state);
         this.setDisabled(false);
     }
 
     disable() {
+        if (this.activeObserver) {
+            this.activeObserver.dispose();
+        }
         this.dispatcher = undefined;
         this.setDisabled(true);
     }

@@ -4,13 +4,16 @@ import {
     Disposable,
     EditString,
     IDisposable,
-    ImmediateDisposable, MoveArrayValue,
+    ImmediateDisposable,
+    MoveArrayValue,
     NoUpdate,
     ObjectStateHandler,
+    OptionalStateView,
     setValue,
     StateHandler,
     StateView,
-    UpdatePartial, UpdateResult,
+    UpdatePartial,
+    UpdateResult,
 } from ".";
 import {ClientResult, CompileErrors, Output, PosRange, ResultValue, RuntimeError,} from "../data/result";
 
@@ -22,16 +25,17 @@ import {
     ModifyStream,
     NotebookUpdate,
     Signatures,
-    TaskInfo, TaskStatus
+    TaskInfo,
+    TaskStatus
 } from "../data/messages";
 
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepEquals, diffArray, Deferred} from "../util/helpers";
-import {NotebookMessageDispatcher} from "../messaging/dispatcher";
-import {availableResultValues} from "../interpreter/client_interpreter";
+import {deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
+import {ConstView, ProxyStateView} from "./state_handler";
+import {ServerStateHandler} from "./server_state";
 
 
 export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
@@ -91,6 +95,7 @@ export interface NotebookState {
 
 export class NotebookStateHandler extends BaseHandler<NotebookState> {
     readonly loaded: Promise<void>;
+    private lazyActiveCellView?: StateView<CellState | undefined>;
 
     constructor(
         parent: StateHandler<NotebookState>,
@@ -119,6 +124,35 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         }
 
         this.loaded.then(_ => this.updateHandler.localVersion = 0)
+    }
+
+    /**
+     * A (lazily-created) view which gives update on whatever the focused cell is (if a cell is focused)
+     */
+    get activeCellView(): OptionalStateView<CellState> {
+        if (!this.lazyActiveCellView) {
+            const noActiveState: StateView<CellState | undefined> = new ConstView(undefined);
+            let currentState = this.state.activeCellId !== undefined ? this.cellsHandler.view(this.state.activeCellId) : noActiveState;
+            const view = new ProxyStateView(currentState);
+            this.lazyActiveCellView = view;
+
+            this.observeKey("activeCellId", activeCellId => {
+                if (activeCellId !== undefined && (!view.state || view.state.id !== activeCellId)) {
+                    if (currentState !== noActiveState) {
+                        currentState.dispose();
+                    }
+                    currentState = this.cellsHandler.view(activeCellId);
+                    view.setParent(currentState);
+                } else if (activeCellId === undefined && view.state) {
+                    if (currentState !== noActiveState) {
+                        currentState.dispose();
+                    }
+                    currentState = noActiveState;
+                    view.setParent(noActiveState);
+                }
+            });
+        }
+        return this.lazyActiveCellView;
     }
 
     static forPath(path: string) {
@@ -303,7 +337,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         } else return Promise.resolve(undefined)
     }
 
-    setCellLanguage(id: number, language: string) {
+    setCellLanguage(id: number, language: string, source?: any) {
         const cell = this.cellsHandler.state[id];
         this.cellsHandler.updateField(id, () => ({
             language,
@@ -313,7 +347,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             error: language === "text" ? false : NoUpdate,
             compileErrors: language === "text" ? clearArray() : NoUpdate,
             runtimeError: language === "text" ? setValue(undefined) : NoUpdate,
-        }))
+        }), source)
     }
 
     // wait for cell to transition to a specific state
@@ -330,7 +364,8 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
     }
 
     get isLoading(): boolean {
-        return !!(this.state.kernel.tasks[this.state.path] ?? false)
+        const nbLoaded = ServerStateHandler.getNotebook(this.state.path)?.loaded
+        return nbLoaded === undefined || !nbLoaded || !!(this.state.kernel.tasks[this.state.path] ?? false)
     }
 
     fork(disposeContext?: IDisposable): NotebookStateHandler {
@@ -543,4 +578,25 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
     protected compare(s1: any, s2: any): boolean {
         return deepEquals(s1, s2);
     }
+}
+
+/**
+ * Helper function for extracting the result values available to a particular cell from the symbols available in the
+ * kernel
+ */
+export function availableResultValues(symbols: KernelSymbols, cellOrder: number[], id?: number): Record<string, ResultValue> {
+    const availableCells = Object.keys(symbols);
+    // first, make sure to add any predef cells (they don't appear in cellOrder)
+    const cellsInScope = availableCells.filter(id => id.startsWith('-'));
+    const cellIdx = id !== undefined ? cellOrder.indexOf(id) : cellOrder.length - 1;
+
+    if (cellIdx >= 0) {
+        cellsInScope.push(...cellOrder.slice(0, cellIdx).map(id => id.toString()));
+    }
+
+    return cellsInScope.reduce<Record<string, ResultValue>>((acc, next) => {
+        Object.values(symbols[next] || {})
+            .forEach((result: ResultValue) => acc[result.name] = result);
+        return acc;
+    }, {});
 }

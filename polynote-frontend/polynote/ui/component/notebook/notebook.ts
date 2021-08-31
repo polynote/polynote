@@ -1,6 +1,6 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {Disposable, MoveArrayValue, NoUpdate, setValue, StateHandler, UpdateResult} from "../../../state";
+import {Disposable, IDisposable, MoveArrayValue, NoUpdate, setValue, StateHandler, UpdateResult} from "../../../state";
 import {CellMetadata} from "../../../data/data";
 import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
@@ -9,6 +9,7 @@ import {PosRange} from "../../../data/result";
 import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {NotebookScrollLocationsHandler} from "../../../state/preferences";
 import {ServerStateHandler} from "../../../state/server_state";
+import {Main} from "../../../main";
 
 type CellInfo = {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">};
 
@@ -28,6 +29,23 @@ export class Notebook extends Disposable {
 
         this.el = div(['notebook-content'], [cellsEl]);
 
+        let needLayout = true;
+        const layoutCells = () => {
+            if (!needLayout)
+                return;
+            // console.time("Layout cells")
+            const cells = Object.values(this.cells);
+            const layoutCell = cellsEl.querySelector('.code-cell .cell-input-editor');
+            if (cells.length) {
+                const width = layoutCell?.clientWidth || cells[0].cell.cell.editorEl.clientWidth;
+                const didLayoutCells = cells.map(cellInfo => {
+                    return cellInfo.cell.layout(width)
+                });
+                needLayout = !didLayoutCells.every(x => x);
+            }
+            // console.timeEnd("Layout cells")
+        }
+
         const handleVisibility = (currentNotebook: string | undefined) => {
             if (currentNotebook === path) {
                 // when this notebook becomes visible, scroll to the saved location (if present)
@@ -36,10 +54,7 @@ export class Notebook extends Disposable {
                     cellsEl.scrollTop = maybeScrollLocation
                 }
 
-                // layout cells
-                Object.values(this.cells).forEach(({cell, handler, el}) => {
-                    cell.layout()
-                })
+                notebookState.loaded.then(() => layoutCells())
             } else {
                 // deselect cells.
                 this.notebookState.selectCell(undefined)
@@ -51,6 +66,13 @@ export class Notebook extends Disposable {
         const cellsHandler = notebookState.cellsHandler
 
         const handleAddedCells = (added: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
+
+            // if no cells exist yet, we'll need to do an initial layout after adding the cells.
+            const layoutAllCells = Object.keys(this.cells).length === 0;
+
+            // layout each new cell because we're no longer initializing.
+            const layoutNewCells = !layoutAllCells && cellsEl.isConnected; // if cellsEl is in the DOM it means we're done initializing.
+
             Object.entries(cellOrderUpdate.addedValues!).forEach(([idx, id]) => {
                 const handler = cellsHandler.lens(id)
                 const cell = new CellContainer(this.newCellDivider(), dispatcher, notebookState, handler);
@@ -67,7 +89,16 @@ export class Notebook extends Disposable {
                     // index not found, must be at the end
                     cellsEl.appendChild(el);
                 }
+
+                if (layoutNewCells) {
+                    cell.layout()
+                }
             })
+
+            if (layoutAllCells) {
+                needLayout = true;
+                window.requestAnimationFrame(layoutCells);
+            }
         }
 
         const handleDeletedCells = (deletedPartial: Partial<Record<number, CellState>>, cellOrderUpdate: UpdateResult<number[]>) => {
@@ -162,6 +193,15 @@ export class Notebook extends Disposable {
             }
         }).disposeWith(this)
 
+        this.notebookState.loaded.then(() => {
+            Main.get.splitView.onEndResize(width => {
+                needLayout = true;
+                if (ServerStateHandler.state.currentNotebook === path) {
+                    layoutCells();
+                }
+            }).disposeWith(this);
+        })
+
         // select cell + highlight based on the current hash
         const hash = document.location.hash;
         // the hash can (potentially) have two parts: the selected cell and selected position.
@@ -207,7 +247,7 @@ export class Notebook extends Disposable {
     private insertCell(prev: number, language: string, content: string, metadata?: CellMetadata) {
         this.notebookState.insertCell("below", {id: prev, language, content, metadata: metadata ?? new CellMetadata()})
             .then(newCellId => {
-                this.notebookState.selectCell(newCellId)
+                this.notebookState.selectCell(newCellId, {editing: true})
             })
     }
 

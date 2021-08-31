@@ -1,5 +1,5 @@
 import {storage} from "./storage";
-import {BaseHandler, Disposable, IDisposable, ObjectStateHandler, setValue, StateHandler, StateView, UpdateOf} from ".";
+import {BaseHandler, IDisposable, ObjectStateHandler, setValue, StateHandler} from ".";
 import {deepEquals, diffArray} from "../util/helpers";
 
 export type RecentNotebooks = {name: string, path: string}[];

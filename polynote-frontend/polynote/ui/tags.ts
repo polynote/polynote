@@ -8,6 +8,9 @@ export type Content = ContentElement | ContentElement[];
 export type AsyncContent = Content | Promise<ContentElement>
 
 function appendContent(el: Node, content: AsyncContent) {
+    if (content === undefined)
+        return;
+
     if (content instanceof Promise) {
         content.then(c => appendContent(el, c));
         return;
@@ -17,13 +20,15 @@ function appendContent(el: Node, content: AsyncContent) {
         content = [content];
     }
 
-    for (let item of content) {
-        if (typeof item === "string") {
-            el.appendChild(document.createTextNode(item));
-        } else if (item instanceof Node) {
-            el.appendChild(item);
-        } else if (item && item.el) {
-            el.appendChild(item.el);
+    for (const item of content) {
+        if (item !== undefined) {
+            if (typeof item === "string") {
+                el.appendChild(document.createTextNode(item));
+            } else if (item instanceof Node) {
+                el.appendChild(item);
+            } else if (item && item.el) {
+                el.appendChild(item.el);
+            }
         }
     }
 }
@@ -134,20 +139,20 @@ export interface BindableTag<ValueType, K extends keyof HTMLElementTagNameMap, T
      * updated with the new value. If value of the form field is changed by the user agent, the state handler will be
      * updated with the new value.
      */
-    bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T>
+    bind(state: UpdatableState<ValueType>): T & BindableTagElement<ValueType, K, T>
 
     /**
      * Like `bind`, but handles optional state values. If the state value is `undefined`, it does not propagate to the
      * form field; the state change is instead ignored.
      */
-    bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T>
+    bindPartial(state: UpdatableState<ValueType | undefined>): T & BindableTagElement<ValueType, K, T>
 
     /**
      * Like `bind`, but handles optional state values. If the value is `undefined`, the form field is updated with a
      * default value instead. If the form field is updated by the user agent to the default value, a default state value
      * can be specified.
      */
-    bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T>
+    bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): T & BindableTagElement<ValueType, K, T>
 }
 
 export type BindableTagElement<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]> =
@@ -216,24 +221,24 @@ function bindableTextInput<K extends 'input' | 'textarea', T extends HTMLElement
     return mkBindable(self, el => el.value, (el, value) => el.value = value || "", 'input') as unknown as BindableTagElement<string, K, T>;
 }
 
-function delegateBinding<ValueType, K extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K]>(
-    from: BindableTagElement<ValueType, any, any>,
-    to: TagElement<K, T>
-): BindableTagElement<ValueType, K, T> {
-    const result: BindableTagElement<ValueType, K, T> = Object.assign(to, {
-        bind(state: UpdatableState<ValueType>): BindableTagElement<ValueType, K, T> {
+function delegateBinding<ValueType, K extends keyof HTMLElementTagNameMap, K1 extends keyof HTMLElementTagNameMap, T extends HTMLElementTagNameMap[K] = HTMLElementTagNameMap[K], T1 extends HTMLElementTagNameMap[K1] = HTMLElementTagNameMap[K1]>(
+    from: T1 & BindableTagElement<ValueType, K1, T1>,
+    to: T & TagElement<K, T>
+): T & BindableTagElement<ValueType, K, T> {
+    const result: T & BindableTagElement<ValueType, K, T> = Object.assign(to, {
+        bind(state: UpdatableState<ValueType>): T & BindableTagElement<ValueType, K, T> {
             from.bind(state);
             return result;
         },
-        bindPartial(state: UpdatableState<ValueType | undefined>): BindableTagElement<ValueType, K, T> {
+        bindPartial(state: UpdatableState<ValueType | undefined>): T & BindableTagElement<ValueType, K, T> {
             from.bindPartial(state);
             return result;
         },
-        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): BindableTagElement<ValueType, K, T> {
+        bindWithDefault(state: UpdatableState<ValueType | undefined>, defaultValue: ValueType, defaultState?: ValueType): T & BindableTagElement<ValueType, K, T> {
             from.bindWithDefault(state, defaultValue, defaultState);
             return result;
         }
-    }) //as unknown as E1 & BindableTagElement<ValueType, K1, T1>;
+    })
     return result;
 }
 
@@ -380,7 +385,7 @@ export interface DropdownElement extends TagElement<"select"> {
     onSelect(fn: (newValue: string) => void): TagElement<"select">
 }
 
-export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement & BindableTagElement<string, 'select'> {
+export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement & BindableTagElement<string, 'select', DropdownElement> {
     let opts: TagElement<"option">[] = [];
 
     for (const value in options) {

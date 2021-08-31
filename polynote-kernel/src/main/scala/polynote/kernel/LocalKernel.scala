@@ -14,14 +14,14 @@ import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState,
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.RefMap
-import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, Updating, truncateTinyString}
+import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, TinyString, Updating, truncateTinyString}
 import polynote.runtime._
 import scodec.bits.ByteVector
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.interop.catz._
-import zio.{Promise, RIO, Task, ZIO, ZLayer}
+import zio.{Promise, RIO, Task, UIO, URIO, ZIO, ZLayer}
 
 
 class LocalKernel private[kernel] (
@@ -36,6 +36,8 @@ class LocalKernel private[kernel] (
 
   override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = PublishStatus.access.flatMap {
     publishStatus =>
+      val notifyCancelled = publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie
+      val notifyErrored   = publishStatus.publish1(CellStatusUpdate(id, ErrorStatus)).orDie
       val queueTask: RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
         currentTime.flatMap {
           startTime =>
@@ -60,28 +62,30 @@ class LocalKernel private[kernel] (
               _             <- updateState(resultState)
               _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
               _             <- publishEndTime
-              _             <- PublishStatus(CellStatusUpdate(id, Complete))
+              _             <- notifyCancelled
               notebook      <- CurrentNotebook.get
               _             <- busyState.update(_.setIdle)
             } yield ()
 
-            run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt { _ =>
+            run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt {
               PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
-              PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
+              notifyErrored *>
               busyState.update(_.setIdle).orDie *>
               publishEndTime.orDie
             }.catchAll {
               err =>
-                PublishStatus(CellStatusUpdate(id, ErrorStatus)).orDie *>
-                  PublishResult(ErrorResult(err)) *>
+                PublishResult(ErrorResult(err)) *>
+                  notifyErrored *>
                   busyState.update(_.setIdle) *>
                   publishEndTime.orDie
             }
         }
       }
 
-      PublishStatus(CellStatusUpdate(id, Queued)) *>
-      queueTask.map(_.onInterrupt(_ => publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie))
+      for {
+        inner <- queueTask
+        _     <- publishStatus.publish1(CellStatusUpdate(id, Queued))
+      } yield inner.onInterrupt(notifyCancelled)
   }
 
   private def latestPredef(state: State) = state.rewindWhile(_.id >= 0) match {
@@ -90,11 +94,15 @@ class LocalKernel private[kernel] (
   }
 
   private def updateState(resultState: State) = {
-    interpreterState.updateState {
-      state =>
-        val rs = resultState
-        val updated = state.insertOrReplace(resultState)
-        updated
+    // release any handles from a previous run of this cell
+    val releaseExisting = interpreterState.getState.flatMap {
+      prevState => ZIO.foreach_(prevState.at(resultState.id)) {
+        prevCellState => releaseReprs(prevCellState.values.flatMap(_.reprs))
+      }
+    }
+
+    releaseExisting *> interpreterState.updateState {
+      state => state.insertOrReplace(resultState)
     }
   }
 
@@ -234,7 +242,7 @@ class LocalKernel private[kernel] (
         }.toMap
 
         def updateValue(value: ResultValue): RIO[Blocking with Logging, ResultValue] = {
-          def stringRepr = StringRepr(truncateTinyString(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
+          def stringRepr = StringRepr(TinyString.truncatePretty(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null")))
           if (value.value != null) {
             ZIO.effectTotal(instanceMap.get(value.name)).flatMap {
               case Some(instance) =>
@@ -243,7 +251,7 @@ class LocalKernel private[kernel] (
                   .catchAll(_ => ZIO.succeed(Array.empty[ValueRepr])).map(_.toList).map {
                     case reprs if reprs.exists(_.isInstanceOf[StringRepr]) => reprs
                     case reprs => reprs :+ stringRepr
-                  }.map {
+                  }.flatMap(filterReprs).map {
                     reprs => value.copy(reprs = reprs)
                   }
 
@@ -256,6 +264,27 @@ class LocalKernel private[kernel] (
         state.updateValuesM(updateValue)
     }
 
+  }
+
+  // remove any invalid reprs from the given list, and release any handles owned by invalid reprs.
+  // returns the filtered (valid) reprs.
+  private def filterReprs(reprs: List[ValueRepr]): URIO[Logging, List[ValueRepr]] = reprs.partition(isValidRepr) match {
+    case (valid, invalid) => releaseReprs(invalid).as(valid)
+  }
+
+  private def releaseReprs(reprs: List[ValueRepr]): URIO[Logging, Unit] = ZIO.foreach_(reprs) {
+    case StreamingDataRepr(handleId, _, _) => ZIO.effect(StreamingDataRepr.releaseHandle(handleId)).catchAll(Logging.error)
+    case UpdatingDataRepr(handleId, _)     => ZIO.effect(UpdatingDataRepr.releaseHandle(handleId)).catchAll(Logging.error)
+    case LazyDataRepr(handleId, _, _)      => ZIO.effect(LazyDataRepr.releaseHandle(handleId)).catchAll(Logging.error)
+    case _ => ZIO.unit
+  }
+
+  private def isValidRepr(repr: ValueRepr): Boolean = repr match {
+    case StreamingDataRepr(_, StructType(Nil), _) => false
+    case UpdatingDataRepr(_, StructType(Nil))     => false
+    case LazyDataRepr(_, StructType(Nil), _)      => false
+    case DataRepr(StructType(Nil), _)             => false
+    case _ => true
   }
 
   override def awaitClosed: Task[Unit] = closed.await

@@ -1,0 +1,23 @@
+name: Build Frontend
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: Build
+      run: |
+        echo "Testing npm build"
+        pushd $GITHUB_WORKSPACE/polynote-frontend
+          npm install
+          npm run test
+          npm run dist
+        popd
