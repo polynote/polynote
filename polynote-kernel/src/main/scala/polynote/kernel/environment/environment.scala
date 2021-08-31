@@ -73,6 +73,9 @@ object PublishMessage extends (Message => RIO[PublishMessage, Unit]) {
     access.flatMap(_.publish1(message))
 
   def of(publish: Publish[Task, Message]): PublishMessage = Has(publish)
+  def ignore: PublishMessage = Has[Publish[Task, Message]](new Publish[Task, Message] {
+    override def publish1(t: Message): Task[Unit] = ZIO.unit
+  })
 }
 
 /**
@@ -162,15 +165,6 @@ object CurrentNotebook {
 
   def config: URIO[CurrentNotebook, NotebookConfig] = get.map(_.config.getOrElse(NotebookConfig.empty))
 }
-
-/**
-  * The capability to access a stream of changes to the notebook's content
-  */
-object NotebookUpdates {
-  def access: RIO[NotebookUpdates, Stream[Task, NotebookUpdate]] = ZIO.access[NotebookUpdates](_.get)
-  def empty: ULayer[NotebookUpdates] = ZLayer.succeed[Stream[Task, NotebookUpdate]](Stream.empty)
-}
-
 
 
 /**

@@ -1,5 +1,5 @@
 import * as messages from "../data/messages";
-import {HandleData, ModifyStream, NotebookUpdate, ReleaseHandle, TableOp} from "../data/messages";
+import {HandleData, ModifyStream, NotebookUpdate, NotebookVersion, ReleaseHandle, TableOp} from "../data/messages";
 import {
     ClientResult,
     Output,
@@ -107,6 +107,20 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
                 }
             })
         })
+
+        // periodically inform server about known global version, so it can clean up the version buffer
+        let lastVersion = this.handler.updateHandler.globalVersion
+        const interval = window.setInterval(
+            () => {
+                const currentVersion = this.handler.updateHandler.globalVersion
+                if (currentVersion !== lastVersion) {
+                    this.socket.send(new NotebookVersion(this.handler.state.path, this.handler.updateHandler.globalVersion))
+                    lastVersion = currentVersion
+                }
+            },
+            30000   // every 30 seconds
+        );
+        this.onDispose.then(() => window.clearInterval(interval))
     }
 
     private watchCell(cellView: StateView<CellState>) {

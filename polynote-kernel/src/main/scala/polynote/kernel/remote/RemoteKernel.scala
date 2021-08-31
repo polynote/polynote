@@ -14,7 +14,7 @@ import fs2.{Chunk, Pipe, Stream}
 import polynote.app.Environment
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
-import polynote.kernel.environment.{Config, CurrentNotebook, Env, NotebookUpdates, PublishResult, PublishStatus}
+import polynote.kernel.environment.{Config, CurrentNotebook, Env, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.{Interpreter, InterpreterState}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
@@ -30,7 +30,6 @@ import scala.collection.JavaConverters._
 
 class RemoteKernel[ServerAddress](
   private[polynote] val transport: TransportServer[ServerAddress],
-  updates: Stream[Task, NotebookUpdate],
   closing: Semaphore,
   closed: Promise[Throwable, Unit]
 ) extends Kernel {
@@ -88,9 +87,10 @@ class RemoteKernel[ServerAddress](
     case rep: RemoteRequestResponse      => withHandler(rep)(_.run(rep).ignore)
   }
 
-  def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = for {                                                          // have to start pulling the updates before getting the current notebook
-    pullUpdates    <- updates.evalMap(transport.sendNotebookUpdate).interruptAndIgnoreWhen(closed).compile.drain.forkDaemon   // otherwise some may be missed
-    versioned      <- CurrentNotebook.getVersioned
+  def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = for {
+    notebookRef    <- CurrentNotebook.access
+    pullUpdates    <- notebookRef.updates.interruptWhen(closed.await.ignore).foreach(transport.sendNotebookUpdate).forkDaemon
+    versioned      <- notebookRef.getVersioned
     (ver, notebook) = versioned
     config         <- Config.access
     process        <- processResponses.compile.drain.forkDaemon
@@ -199,23 +199,22 @@ class RemoteKernel[ServerAddress](
 }
 
 object RemoteKernel extends Kernel.Factory.Service {
-  def apply[ServerAddress](transport: Transport[ServerAddress]): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, RemoteKernel[ServerAddress]] = for {
+  def apply[ServerAddress](transport: Transport[ServerAddress]): RIO[BaseEnv with GlobalEnv with CellEnv, RemoteKernel[ServerAddress]] = for {
     closed  <- Promise.make[Throwable, Unit]
     closing <- Semaphore.make(1L)
     server  <- transport.serve()
-    updates <- NotebookUpdates.access
-    kernel   = new RemoteKernel(server, updates, closing, closed)
+    kernel   = new RemoteKernel(server, closing, closed)
     _ <- (server.awaitClosed.to(closed).ensuring(kernel.shutdown().orDie)).forkDaemon
   } yield kernel
 
-  override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = apply(
+  override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = apply(
     new SocketTransport(
       new SocketTransport.DeploySubprocess(
         new SocketTransport.DeploySubprocess.DeployJava[LocalKernelFactory])
     ))
 
   def service[ServerAddress](transport: Transport[ServerAddress]): Kernel.Factory.Service = new Factory.Service {
-    override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv with NotebookUpdates, Kernel] = RemoteKernel(transport)
+    override def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = RemoteKernel(transport)
   }
 
   def factory[ServerAddress](transport: Transport[ServerAddress]): Kernel.Factory.Service = service(transport)

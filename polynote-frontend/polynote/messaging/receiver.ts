@@ -130,7 +130,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
-            if (updateHandler.globalVersion === -1) {
+            if (updateHandler.globalVersion === 0) {
                 // first version, just set it
                 updateHandler.globalVersion = serverGlobalVersion
             } else if (updateHandler.globalVersion !== serverGlobalVersion){
@@ -311,7 +311,6 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
         });
         this.receive(messages.NotebookUpdate, (s: NotebookState, update: messages.NotebookUpdate) => {
             if (update.globalVersion >= updateHandler.globalVersion) {
-
                 update = updateHandler.rebaseUpdate(update)
 
                 const res = purematch<messages.NotebookUpdate, UpdateOf<NotebookState>>(update)

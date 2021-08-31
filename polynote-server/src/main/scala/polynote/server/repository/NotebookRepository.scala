@@ -3,14 +3,15 @@ package polynote.server.repository
 import java.io.{File, FileNotFoundException, IOException}
 import java.net.URI
 import java.nio.file.{Path, Paths}
-
 import cats.implicits._
 import polynote.config.{Mount, PolynoteConfig, Wal}
 import polynote.kernel.NotebookRef.AlreadyClosed
 import polynote.kernel.environment.Config
+import polynote.kernel.util.ZTopic
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages._
 import polynote.server.repository.fs.FileSystems
+import zio.stream.ZStream
 import zio.{Has, IO, Promise, RIO, Ref, Semaphore, Task, UIO, URIO, URLayer, ZIO, ZLayer}
 
 
@@ -110,7 +111,8 @@ class TreeRepository (
   private class TreeNotebookRef private (
     currentRef: Ref[TreeNotebookRef.State],
     renameLock: Semaphore,
-    closed: Promise[Throwable, Unit]
+    closed: Promise[Throwable, Unit],
+    updatesTopic: ZTopic.Of[NotebookUpdate]
   ) extends NotebookRef {
     import TreeNotebookRef.State
     import renameLock.withPermit
@@ -170,6 +172,7 @@ class TreeRepository (
                 _        <- state.ref.close()
                 nb       <- state.ref.getVersioned
                 newRef   <- newRepo.createAndOpen(relativePath, nb._2.copy(path = relativePath), nb._1)
+                _        <- newRef.updates.foreach(updatesTopic.publish).forkDaemon
                 validate <- loadNotebook(newPath)
                   .filterOrFail(_.cells.map(_.copy(id = 0)) == nb._2.cells.map(_.copy(id = 0)))(new IOException("Validation error moving notebook across repositories; will not remove from previous location"))
                   .zipRight(state.repo.deleteNotebook(state.relativePath))
@@ -180,9 +183,11 @@ class TreeRepository (
         }
       }
 
-    override def close(): Task[Unit] = currentRef.get.flatMap(_.ref.close()) <* closed.succeed(())
+    override def close(): Task[Unit] = withRef(_.close()) <* closed.succeed(())
 
     override def awaitClosed: Task[Unit] = closed.await
+
+    override def updates: ZStream[Any, Nothing, NotebookUpdate] = updatesTopic.subscribeStream
 
   }
 
@@ -209,11 +214,13 @@ class TreeRepository (
     }
 
     def apply(repo: NotebookRepository, underlying: NotebookRef, basePath: Option[String], relativePath: String): RIO[BaseEnv with GlobalEnv, TreeNotebookRef] = for {
+      updates    <- ZTopic.unbounded[NotebookUpdate]
+      _          <- underlying.updates.foreach(updates.publish).forkDaemon
       closed     <- Promise.make[Throwable, Unit]
       state      <- State(repo, underlying, basePath, relativePath, closed)
       underlying <- Ref.make(state)
       renameLock <- Semaphore.make(Short.MaxValue)
-    } yield new TreeNotebookRef(underlying, renameLock, closed)
+    } yield new TreeNotebookRef(underlying, renameLock, closed, updates)
   }
 
   /**

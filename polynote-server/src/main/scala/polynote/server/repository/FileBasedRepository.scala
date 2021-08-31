@@ -7,22 +7,22 @@ import java.nio.file.{FileAlreadyExistsException, Path, Paths}
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-
 import polynote.kernel.NotebookRef.AlreadyClosed
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
-import polynote.kernel.util.LongRef
+import polynote.kernel.util.{LongRef, ZTopic}
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem, WAL}, WAL.WALWriter
+import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem, WAL}
+import WAL.WALWriter
 import scodec.Codec
 import zio.{Fiber, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO}
 import zio.ZIO.effectTotal
 import zio.blocking.effectBlocking
 import zio.clock.currentDateTime
 import zio.duration.Duration
-import zio.stream.Take
+import zio.stream.{Take, ZStream}
 import zio.interop.catz._
 
 
@@ -38,6 +38,7 @@ class FileBasedRepository(
   private final class FileNotebookRef private (
     current: Ref[(Int, Notebook)],
     pending: Queue[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]],
+    updatesTopic: ZTopic.Of[NotebookUpdate],
     closed: Promise[Throwable, Unit],
     log: Logging.Service,
     renameLock: Semaphore,
@@ -135,6 +136,7 @@ class FileBasedRepository(
       closed.succeed(()) *>
         pending.offer(Take.end) *>
         pending.awaitShutdown *>
+        updatesTopic.close() *>
         process.await.flatMap(_.join) *>
         closed.await
 
@@ -208,7 +210,7 @@ class FileBasedRepository(
           _ => ZIO.dieMessage("Unreachable state"),
           chunk => chunk.mapM {
             case ((update, completerOpt)) =>
-              (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError
+              (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError <& updatesTopic.publish(update)
           }.unit
         )
       }.forever.flip
@@ -227,6 +229,8 @@ class FileBasedRepository(
         .ensuring(finalSave).ensuring(closeWAL)
         .forkDaemon.flatMap(process.succeed).unit
     }
+
+    override def updates: ZStream[Any, Nothing, NotebookUpdate] = updatesTopic.subscribeStream
   }
 
   private object FileNotebookRef {
@@ -243,16 +247,17 @@ class FileBasedRepository(
       }
 
     def apply(notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
-      log        <- Logging.access
-      current    <- Ref.make(version -> notebook)
-      closed     <- Promise.make[Throwable, Unit]
-      pending    <- Queue.unbounded[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]]
-      renameLock <- Semaphore.make(1L)
-      process    <- Promise.make[Nothing, Fiber[Nothing, Unit]]
-      env        <- ZIO.environment[BaseEnv with GlobalEnv]
-      wal        <- openWAL(notebook.path.stripPrefix("/")).tap(_.writeHeader(notebook)).provide(env).memoize
-      ref         = new FileNotebookRef(current, pending, closed, log, renameLock, process, wal)
-      _          <- ref.init().onError(_ => ref.close().orDie)
+      log          <- Logging.access
+      current      <- Ref.make(version -> notebook)
+      updatesTopic <- ZTopic.unbounded[NotebookUpdate]
+      closed       <- Promise.make[Throwable, Unit]
+      pending      <- Queue.unbounded[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]]
+      renameLock   <- Semaphore.make(1L)
+      process      <- Promise.make[Nothing, Fiber[Nothing, Unit]]
+      env          <- ZIO.environment[BaseEnv with GlobalEnv]
+      wal          <- openWAL(notebook.path.stripPrefix("/")).tap(_.writeHeader(notebook)).provide(env).memoize
+      ref           = new FileNotebookRef(current, pending, updatesTopic, closed, log, renameLock, process, wal)
+      _            <- ref.init().onError(_ => ref.close().orDie)
     } yield ref
   }
 

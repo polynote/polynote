@@ -11,7 +11,7 @@ export abstract class ContentEdit extends CodecContainer {
     static rebase(a: Insert | Delete, b: Insert | Delete): ContentEdit[][] {
         if (a instanceof Insert) {
             if (b instanceof Insert) { // (Insert, Insert)
-                if (a.pos === b.pos && a.content.length === b.content.length && a.content === b.content) {
+                if (a.pos === b.pos && a.content === b.content) {
                     return [[a], [b]]
                 } else if (a.pos < b.pos || (a.pos === b.pos && (a.content.length < b.content.length || (a.content.length === b.content.length && a.content < b.content)))) {
                     return [[a], [new Insert(b.pos + a.content.length, b.content)]];

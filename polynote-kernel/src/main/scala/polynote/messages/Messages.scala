@@ -254,7 +254,7 @@ sealed trait NotebookUpdate extends Message {
   }
 
   // transform this update so that it has the same effect when applied after the given update
-  def rebase(prev: NotebookUpdate): NotebookUpdate = (this, prev) match {
+  def rebase(prev: NotebookUpdate, reverse: Boolean = false): NotebookUpdate = (this, prev) match {
     case (i@InsertCell(_, _, cell1, after1), InsertCell(_, _, cell2, after2)) if after1 == after2 =>
       // we both tried to insert a cell after the same cell. Transform the first update so it inserts after the cell created by the second update.
       i.copy(after = cell2.id)
@@ -262,11 +262,30 @@ sealed trait NotebookUpdate extends Message {
     case (u@UpdateCell(_, _, id1, edits1, _), UpdateCell(_, _, id2, edits2, _)) if id1 == id2 =>
       // we both tried to edit the same cell. Transform first edits so they apply to the document state as it exists after the second edits are already applied.
 
-      u.copy(edits = edits1.rebase(edits2))
+      u.copy(edits = edits1.rebase(edits2, reverse))
 
     // all other cases should be independent (TODO: they're not yet, though)
     case _ => this
 
+  }
+
+  def rebaseAll(prev: List[NotebookUpdate], log: Option[StringBuilder] = None): (NotebookUpdate, List[NotebookUpdate]) = this match {
+    case UpdateCell(_, _, _, ContentEdits(ShortList.Nil), _) => (this, Nil)
+    case self@UpdateCell(_, _, id, myEdits, _) =>
+      val conflicting = prev.collect {
+        case update@UpdateCell(_, _, `id`, _, _) => update
+      }
+
+      val (result, updatedPrev) = conflicting.foldLeft((myEdits, List.empty[NotebookUpdate])) {
+        case ((myEdits, newUpdates), nextUpdate) =>
+          val (myRebased, theirRebased) = myEdits.rebaseBoth(nextUpdate.edits)
+          log.foreach(log => log ++= s"  $nextUpdate => $myRebased")
+          (myRebased, nextUpdate.copy(edits = ContentEdits(theirRebased)) :: newUpdates)
+      }
+
+      self.copy(edits = result) -> updatedPrev.reverse
+
+    case _ => (prev.foldLeft(this)(_ rebase _), Nil)
   }
 
   def applyTo(notebook: Notebook): Notebook = this match {

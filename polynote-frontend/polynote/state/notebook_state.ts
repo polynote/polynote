@@ -175,7 +175,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         });
 
         const cellsHandler = baseHandler.lens("cells");
-        const updateHandler = new NotebookUpdateHandler(baseHandler, cellsHandler, -1, 0, new EditBuffer())
+        const updateHandler = new NotebookUpdateHandler(baseHandler, cellsHandler, 0, 0, new EditBuffer())
         const handler = new NotebookStateHandler(baseHandler, cellsHandler, updateHandler);
         cellsHandler.disposeWith(handler);
         updateHandler.disposeWith(handler);

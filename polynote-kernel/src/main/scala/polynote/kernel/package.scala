@@ -16,11 +16,12 @@ import scodec.bits.ByteVector
 import zio.{Has, Promise, RIO, Semaphore, Task, UIO, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
+import zio.random.Random
 import zio.system.System
 
 package object kernel {
 
-  type BaseEnv = Blocking with Clock with System with Logging
+  type BaseEnv = Blocking with Clock with System with Logging with Random
 
   // some type aliases jut to avoid env clutter
   type TaskB[+A] = RIO[BaseEnv, A]

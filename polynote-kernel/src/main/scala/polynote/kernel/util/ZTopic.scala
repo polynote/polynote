@@ -107,7 +107,7 @@ sealed trait ZTopic[-RA, -RB, +EA, +EB, -A, +B] {
 
 object ZTopic {
 
-  type Of[A] = ZTopic[Any, Nothing, Any, Nothing, A, A]
+  type Of[A] = ZTopic[Any, Any, Nothing, Nothing, A, A]
 
   trait Subscriber[-R, +E, +A] {
 
@@ -140,7 +140,7 @@ object ZTopic {
     def isShutdown: UIO[Boolean]
   }
 
-  def unbounded[A]: UIO[ZTopic[Any, Nothing, Any, Nothing, A, A]] =
+  def unbounded[A]: UIO[ZTopic[Any, Any, Nothing, Nothing, A, A]] =
     make(Queue.unbounded[Take[Nothing, A]])
 
   def dropping[A](capacity: Int): UIO[ZTopic[Any, Nothing, Any, Nothing, A, A]] =
@@ -149,7 +149,7 @@ object ZTopic {
   def bounded[A](capacity: Int): UIO[ZTopic[Any, Nothing, Any, Nothing, A, A]] =
     make(Queue.bounded[Take[Nothing, A]](capacity))
 
-  private def make[A](mkQueue: UIO[Queue[Take[Nothing, A]]]): UIO[ZTopic[Any, Nothing, Any, Nothing, A, A]] = for {
+  private def make[A](mkQueue: UIO[Queue[Take[Nothing, A]]]): UIO[ZTopic[Any, Any, Nothing, Nothing, A, A]] = for {
     subscriberSet <- Ref.make(Map.empty[Long, SubscriberWrite[Any, Nothing, A]])
     closed        <- Promise.make[Nothing, Unit]
     closeLock     <- Semaphore.make(1L)
@@ -163,7 +163,7 @@ object ZTopic {
     mkQueue: UIO[Queue[Take[Nothing, A]]],
     closed: Promise[Nothing, Unit],
     closeLock: Semaphore
-  ) extends ZTopic[Any, Nothing, Any, Nothing, A, A] {
+  ) extends ZTopic[Any, Any, Nothing, Nothing, A, A] {
 
     private val nextSubscriberId = new AtomicLong(0L)
     private val mkSubscriberId = ZIO.effectTotal(nextSubscriberId.getAndIncrement())
@@ -230,7 +230,7 @@ object ZTopic {
     private def mkSubscriber: UIO[Subscriber[Any, Nothing, A, A]] = for {
       queue <- mkQueue
       id    <- mkSubscriberId
-      sub    = new Subscriber(id, queue)
+      sub    = new Subscriber[Any, Nothing, A, A](id, queue)
       _     <- subscriberSet.update(_ + (id -> sub))
     } yield sub
 

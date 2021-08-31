@@ -1,31 +1,30 @@
 package polynote
 package server
 
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import cats.effect.concurrent.{Ref => CatsRef}
 import cats.instances.list._
-import cats.syntax.traverse._
-import fs2.Stream
-import fs2.concurrent.{Queue, SignallingRef, Topic}
+import fs2.concurrent.Topic
 import polynote.kernel.util.{Publish, RefMap}
-import polynote.kernel.environment.{CurrentNotebook, NotebookUpdates, PublishMessage, PublishResult, PublishStatus}
-import polynote.messages.{CellID, CellResult, DeleteCell, Error, Message, Notebook, NotebookUpdate, ShortList}
+import polynote.kernel.environment.{CurrentNotebook, PublishMessage, PublishResult, PublishStatus}
+import polynote.messages.{CellID, CellResult, ContentEdits, DeleteCell, Error, Insert, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
-import zio.{Fiber, Has, Promise, RIO, Ref, Semaphore, Task, UIO, ULayer, ZIO, ZLayer}
+import zio.{Fiber, Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, ULayer, URIO, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.server.auth.UserIdentity
+import polynote.server.auth.{BasicIdentity, UserIdentity}
 import zio.clock.Clock
 import zio.duration._
+import zio.stream.ZStream
+
+import java.util.concurrent.TimeUnit
+import scala.collection.mutable.ListBuffer
 
 class KernelPublisher private (
   val versionedNotebook: NotebookRef,
-  val versionBuffer: VersionBuffer[NotebookUpdate],
-  publishUpdate: Publish[Task, (SubscriberId, NotebookUpdate)],
+  private[server] val updateQueue: Queue[(SubscriberId, NotebookUpdate)], // visible for testing
   val broadcastUpdates: Topic[Task, Option[(SubscriberId, NotebookUpdate)]],
   val status: Topic[Task, KernelStatusUpdate],
   val cellResults: Topic[Task, Option[CellResult]],
@@ -56,25 +55,23 @@ class KernelPublisher private (
   private def cellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, CellEnv] =
     baseLayer ++ ZLayer.succeed(interpreterState) ++ cellLayer(cellID, tapResults)
 
-  private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv with NotebookUpdates] = {
-    val updates = broadcastUpdates.subscribe(128).unNone.map(_._2)
-    cellEnv(CellID(-1)) ++ ZLayer.succeed(updates)
-  }
+  private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv] =
+    cellEnv(CellID(-1))
 
   private val nextSubscriberId = new AtomicInteger(0)
 
   def latestVersion: Task[(GlobalVersion, Notebook)] = versionedNotebook.getVersioned
 
   def subscribersPresent: UIO[List[(Presence, Option[PresenceSelection])]] = subscribers.values.flatMap {
-    subscribers => subscribers.map {
+    subscribers => ZIO.foreachPar(subscribers) {
       subscriber => subscriber.getSelection.map {
         presenceSelection => subscriber.presence -> presenceSelection
       }
-    }.sequence
+    }
   }
 
   def update(subscriberId: SubscriberId, update: NotebookUpdate): Task[Unit] =
-    publishUpdate.publish1((subscriberId, update))
+    updateQueue.offer((subscriberId, update)).unit //.repeatUntil(identity).unit
 
   private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
     kernel.awaitClosed.catchAllCause {
@@ -245,6 +242,27 @@ object KernelPublisher {
 
   type GlobalVersion = Int
   type SubscriberId  = Int
+  
+  def rebaseAllUpdates(
+    update: NotebookUpdate,
+    prev: List[(SubscriberId, NotebookUpdate)]
+  ): (NotebookUpdate, List[(SubscriberId, NotebookUpdate)]) = update match {
+    case UpdateCell(_, _, _, ContentEdits(ShortList.Nil), _) => (update, Nil)
+    case self@UpdateCell(_, _, id, myEdits, _) =>
+      val conflicting = prev.collect {
+        case (subscriber, update@UpdateCell(_, _, `id`, _, _)) => (subscriber, update)
+      }
+
+      val (result, updatedPrev) = conflicting.foldLeft((myEdits, List.empty[(SubscriberId, UpdateCell)])) {
+        case ((myEdits, newUpdates), (subscriberId, nextUpdate)) =>
+          val (myRebased, theirRebased) = myEdits.rebaseBoth(nextUpdate.edits)
+          (myRebased, (subscriberId, nextUpdate.copy(edits = ContentEdits(theirRebased))) :: newUpdates)
+      }
+
+      self.copy(edits = result) -> updatedPrev.reverse
+
+    case _ => (prev.foldLeft(update) { case (rebased, (_, next)) => rebased.rebase(next) }, Nil)
+  }
 
   /**
     * Given the versioned notebook's current value, and a buffer of previous versioned updates, and a publisher of
@@ -254,41 +272,96 @@ object KernelPublisher {
   def applyUpdate(
     versionRef: NotebookRef,
     interpState: InterpreterState.Service,
-    versions: VersionBuffer[NotebookUpdate],
+    versions: SubscriberUpdateBuffer,
     publishUpdates: Publish[Task, (SubscriberId, NotebookUpdate)],
-    subscriberVersions: ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)])(
+    subscribers: RefMap[SubscriberId, KernelSubscriber],
+    log: ListBuffer[(Long, String)])(
     subscriberId: SubscriberId,
     update: NotebookUpdate
-  ): TaskG[Unit] = {
-    interpState.updateStateWith(update) &> versionRef.updateAndGet(update).flatMap {
-      case (nextVer, notebook) =>
-        val newUpdate = update.withVersions(nextVer, update.localVersion)
-        publishUpdates.publish1((subscriberId, newUpdate)) *> ZIO(versions.add(nextVer, newUpdate))
-    }
+  ): TaskG[Unit] = interpState.updateStateWith(update) &> versionRef.getVersioned.flatMap {
+    case (globalVersion, notebook) =>
+      subscribers.get(subscriberId).someOrFail(new NoSuchElementException(s"No such subscriber $subscriberId")).flatMap {
+        subscriber =>
+            val from = update.globalVersion
+          val time = System.currentTimeMillis()
+//            def rebaseOnto(updates: List[(SubscriberId, NotebookUpdate)], from: Int, to: Int) = {
+//              rebaseAllUpdates(update, updates)
+//            }
+//
+//            val (rebased, updateBuffer) = if (from < globalVersion) {
+//              val (rebasedUpdate, updatedPrev) = rebaseOnto(
+//                versions.getRange(from + 1, globalVersion).collect {
+//                  case tup@(source, update) if source != subscriberId => tup
+//                },
+//                from, globalVersion
+//              )
+//              val updateBuffer = ZIO.effectTotal {
+//                versions.updateRange(updatedPrev.map {
+//                  case tup@(_, update) => (update.globalVersion, tup)
+//                })
+//              }
+//              rebasedUpdate -> updateBuffer
+//            } else update -> ZIO.unit
+          val logStr = new StringBuilder
+          logStr ++= s"> S $update (from $subscriberId)\n"
+          val rebased = if (update.globalVersion < globalVersion) {
+            logStr ++= s"  Rebasing from ${update.globalVersion} to $globalVersion\n"
+            versions.rebaseThrough(update, subscriberId, globalVersion, Some(logStr))
+          } else update
+
+          versionRef.updateAndGet(rebased).flatMap {
+            case (nextVer, notebook) =>
+              val newUpdate = (subscriberId, rebased.withVersions(nextVer, rebased.localVersion))
+              subscriber.setLastGlobalVersion(nextVer) *>
+                ZIO(versions.add(nextVer, newUpdate)) *>
+                publishUpdates.publish1(newUpdate) *>
+                ZIO.effectTotal {
+                  logStr ++= s"""  $newUpdate "${notebook.cells.head.content}""""
+                  log += ((time, logStr.result()))
+                }
+              //updateBuffer
+          }
+
+      }
   }
 
-  def apply(versionedRef: NotebookRef, broadcastMessage: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
+  // periodically clean old versions from the version buffer
+  private def cleanVersionBuffer(
+    subscriberMap: RefMap[SubscriberId, KernelSubscriber],
+    buffer: VersionBuffer[(SubscriberId, NotebookUpdate)],
+    closed: Promise[Throwable, Unit]
+  ): URIO[Clock, Unit] = {
+    val clean = for {
+      subscribers <- subscriberMap.values
+      versions    <- ZIO.foreachPar(subscribers)(_.getLastGlobalVersion)
+      minVersion   = versions.min
+      _           <- ZIO.effectTotal(buffer.discardUntil(minVersion))
+    } yield ()
+
+    clean.repeat(Schedule.spaced(Duration(30, TimeUnit.SECONDS)).untilInputM(_ => closed.isDone)).unit
+  }
+
+
+  def apply(versionedRef: NotebookRef, broadcastMessage: Topic[Task, Option[Message]], log: ListBuffer[(Long, String)] = new ListBuffer[(Long, String)]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
     kernelFactory    <- Kernel.Factory.access
     closed           <- Promise.make[Throwable, Unit]
     // TODO: need to close if the versionedRef closes, hook up e.g. TreeRepository so it cascades
-    updates          <- Queue.unbounded[Task, Option[(SubscriberId, NotebookUpdate)]]
+    updates          <- Queue.unbounded[(SubscriberId, NotebookUpdate)]
                         // TODO: replace the following with ZTopic
     broadcastUpdates <- Topic[Task, Option[(SubscriberId, NotebookUpdate)]](None)
     broadcastStatus  <- Topic[Task, KernelStatusUpdate](KernelBusyState(busy = false, alive = false))
     broadcastResults <- Topic[Task, Option[CellResult]](None)
     taskManager      <- TaskManager(broadcastStatus)
-    versionBuffer     = new VersionBuffer[NotebookUpdate]  // TODO: should NotebookRef capture this instead?
+    versionBuffer     = new SubscriberUpdateBuffer()
     kernelStarting   <- Semaphore.make(1)
     queueingCell     <- Semaphore.make(1)
     subscribing      <- Semaphore.make(1)
-    subscribers      <- RefMap.empty[Int, KernelSubscriber]
+    subscribers      <- RefMap.empty[SubscriberId, KernelSubscriber]
     kernel           <- Ref.make[Option[Kernel]](None)
     interpState      <- InterpreterState.empty
-    subscriberVersions = new ConcurrentHashMap[SubscriberId, (GlobalVersion, Int)]()
     publisher = new KernelPublisher(
       versionedRef,
-      versionBuffer,
-      Publish(updates).some,
+      updates,
       broadcastUpdates,
       broadcastStatus,
       broadcastResults,
@@ -304,15 +377,72 @@ object KernelPublisher {
       subscribers
     )
     env <- ZIO.environment[BaseEnv]
-    _   <- updates.dequeue.unNoneTerminate
-      .evalMap((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates).some, subscriberVersions) _).tupled)
-      .compile.drain
+    // process the queued updates, rebasing as needed
+    _   <- ZStream.fromQueue(updates)
+      .mapM((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates).some, subscribers, log) _).tupled)
+      .runDrain
+      .flatMap(_ => ZIO.effectTotal(println("STOPPED PROCESSING!")))
       .catchAll {
         err =>
           broadcastMessage.publish1(Option(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook. Editing will now be disabled.", err)))) *> broadcastMessage.publish1(None) *> publisher.close().provide(env)
       }
       .forkDaemon
+    _   <- cleanVersionBuffer(subscribers, versionBuffer, closed).forkDaemon
   } yield publisher
 }
 
 case object PublisherClosed extends Throwable
+
+final class SubscriberUpdateBuffer extends VersionBuffer[(SubscriberId, NotebookUpdate)] {
+
+  /**
+    * Rebase the update through the given version, excluding updates from the given subscriber. Each version that's
+    * rebased through will also be mutated to account for the given update with respect to future updates which
+    * go through that version.
+    * @return
+    */
+  def rebaseThrough(update: NotebookUpdate, subscriberId: SubscriberId, targetVersion: GlobalVersion, log: Option[StringBuilder] = None, reverse: Boolean = false, updateBuffer: Boolean = true): NotebookUpdate = update match {
+    case update@UpdateCell(sourceVersion, _, cellId, sourceEdits, _) =>
+      synchronized {
+        var index = versionIndex(sourceVersion + 1)
+        if (index < 0) {
+          log.foreach(_ ++= s"  No version ${sourceVersion + 1}")
+          return update
+        };
+
+        val size = numVersions
+        var currentVersion = versionedValueAt(index)._1
+        var rebasedEdits = sourceEdits
+        try {
+          if (!(currentVersion <= targetVersion && index < size)) {
+            log.foreach(_ ++= s"  No updates")
+          }
+          while (currentVersion <= targetVersion && index < size) {
+            val elem = versionedValueAt(index)
+            currentVersion = elem._1
+            if (elem._2._1 != subscriberId) {
+              val prevUpdateTuple@(_, prevUpdate) = elem._2
+              prevUpdate match {
+                case prevUpdate@UpdateCell(_, _, `cellId`, targetEdits, _) =>
+                  val (sourceRebased, targetRebased) = rebasedEdits.rebaseBoth(targetEdits, reverse)
+                  rebasedEdits = sourceRebased
+                  log.foreach(_ ++= s"  $prevUpdate => $sourceRebased\n")
+                  if (updateBuffer) {
+                    setValueAt(index, prevUpdateTuple.copy(_2 = prevUpdate.copy(edits = ContentEdits(targetRebased))))
+                  }
+                case _ =>
+              }
+            }
+            index += 1
+          }
+        } catch {
+          case err: Throwable => err.printStackTrace()
+        }
+        update.copy(edits = rebasedEdits)
+      }
+    case update => getRange(update.globalVersion + 1, targetVersion).foldLeft(update) {
+      case (accum, (_, next)) => accum.rebase(next)
+    }
+  }
+
+}
