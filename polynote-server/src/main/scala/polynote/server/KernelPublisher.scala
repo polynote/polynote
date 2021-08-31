@@ -334,8 +334,7 @@ object KernelPublisher {
     val clean = for {
       subscribers <- subscriberMap.values
       versions    <- ZIO.foreachPar(subscribers)(_.getLastGlobalVersion)
-      minVersion   = versions.min
-      _           <- ZIO.effectTotal(buffer.discardUntil(minVersion))
+      _           <- ZIO.when(versions.nonEmpty)(ZIO.effectTotal(buffer.discardUntil(versions.min)))
     } yield ()
 
     clean.repeat(Schedule.spaced(Duration(30, TimeUnit.SECONDS)).untilInputM(_ => closed.isDone)).unit
