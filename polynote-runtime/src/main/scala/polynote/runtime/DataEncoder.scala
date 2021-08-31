@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 
 import scala.collection.GenTraversable
 import polynote.runtime.macros.StructDataEncoderMacros
+import polynote.runtime.util.stringPrefix
 
 trait DataEncoder[@specialized T] extends Serializable {
   final type In = T
@@ -58,7 +59,7 @@ object DataEncoder extends DataEncoder0 {
       coll.take(10).toSeq.map(formatItem).map(_.linesWithSeparators.map("  " + _).mkString) :+ s"  …(${coll.size - 10} more elements)"
     } else coll.map(formatItem)
 
-    prefix.getOrElse(coll.stringPrefix) + "(\n" + innerStrs.mkString(",\n") + "\n)"
+    prefix.getOrElse(stringPrefix(coll)) + "(\n" + innerStrs.mkString(",\n") + "\n)"
   }
 
   def formatCollection[T](coll: GenTraversable[T], formatItem: T => String, prefix: String): String =
@@ -278,7 +279,7 @@ private[runtime] sealed trait DataEncoder0 extends DataEncoderDerivations { self
     override def encodeDisplayString(value: F[K, V]): String = formatCollection[(K, V)](
       value,
       (tup: (K, V)) => s"${encodeK.encodeDisplayString(tup._1)} -> ${encodeV.encodeDisplayString(tup._2)}",
-      value.stringPrefix
+      stringPrefix(value)
     )
   }
 
