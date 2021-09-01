@@ -185,8 +185,8 @@ class FileBasedRepository(
           nextVer -> next
       } <* setNeedSave
 
-      def notifyCompleter(completerOpt: Option[Promise[Nothing, (Int, Notebook)]]): ((Int, Notebook)) => UIO[Unit] =
-        tup => completerOpt match {
+      def notifyCompleter(completerOpt: Option[Promise[Nothing, (Int, Notebook)]], tup: (Int, Notebook)): UIO[Unit] =
+        completerOpt match {
           case Some(completer) => completer.succeed(tup).unit
           case None            => ZIO.unit
         }
@@ -209,8 +209,11 @@ class FileBasedRepository(
           pending.shutdown *> closed.succeed(()).unit <* ZIO.fail(None),
           _ => ZIO.dieMessage("Unreachable state"),
           chunk => chunk.mapM {
-            case ((update, completerOpt)) =>
-              (writeWAL(update).forkDaemon &> doUpdate(update) >>= notifyCompleter(completerOpt)).asSomeError <& updatesTopic.publish(update)
+            case ((update, completerOpt)) => for {
+              newVersioned <- writeWAL(update).forkDaemon &> doUpdate(update)
+              newUpdate     = update.withVersions(newVersioned._1, update.localVersion)
+              _            <- notifyCompleter(completerOpt, newVersioned) &> updatesTopic.publish(newUpdate)
+            } yield ()
           }.unit
         )
       }.forever.flip

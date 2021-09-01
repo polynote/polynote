@@ -1,7 +1,7 @@
 package polynote.server
 
 import java.util.concurrent.atomic.AtomicInteger
-import fs2.concurrent.{SignallingRef, Topic}
+import fs2.concurrent.SignallingRef
 import fs2.Stream
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamThrowableOps, StreamUIOps}
