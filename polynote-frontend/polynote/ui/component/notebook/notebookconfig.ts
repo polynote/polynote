@@ -457,7 +457,8 @@ class KernelConf extends Disposable {
         // TODO: this could come from the server
         const availableScalaVersions = {
             "2.11": "2.11",
-            "2.12": "2.12"
+            "2.12": "2.12",
+            "2.13": "2.13"
         }
 
         this.el = div(['notebook-env', 'notebook-config-section'], [
