@@ -48,7 +48,7 @@ lazy val scalaBinaryVersions = scalaVersions.map {
 }.distinct
 
 val commonSettings = Seq(
-  scalaVersion := "2.13.6",
+  scalaVersion := "2.11.12",
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,

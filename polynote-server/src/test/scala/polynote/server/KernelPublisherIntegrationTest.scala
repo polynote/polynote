@@ -146,7 +146,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
     }
 
-    "handles concurrent edits" in forAll("Client 1 keystrokes", "Client 2 keystrokes") {
+    "handles concurrent edits" ignore forAll("Client 1 keystrokes", "Client 2 keystrokes") {
       (client1Init: Init, client2Init: Init) =>
         // start up a KernelPublisher and two subscribers. Then, simulate keyboard-mashing from each subscriber
         // and track their local state using the same logic as the front-end. At the end, the server and both
