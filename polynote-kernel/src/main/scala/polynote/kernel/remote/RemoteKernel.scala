@@ -5,12 +5,6 @@ import java.net.{InetAddress, InetSocketAddress}
 import java.nio.channels.ClosedChannelException
 import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
-import scala.compat.java8.FunctionConverters.enrichAsJavaFunction
-import cats.effect.concurrent.{Deferred, Ref}
-import cats.instances.list._
-import cats.syntax.traverse._
-import fs2.concurrent.SignallingRef
-import fs2.{Chunk, Pipe, Stream}
 import polynote.app.Environment
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
@@ -18,13 +12,13 @@ import polynote.kernel.environment.{Config, CurrentNotebook, Env, PublishResult,
 import polynote.kernel.interpreter.{Interpreter, InterpreterState}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.kernel.util.Publish
+import polynote.kernel.util.{Publish, RPublish, TPublish, UPublish}
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
 import zio.{Cause, Layer, Promise, RIO, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
 import zio.blocking.effectBlocking
 import zio.duration.Duration
-import zio.interop.catz._
+import zio.stream.ZStream
 
 import scala.collection.JavaConverters._
 
@@ -80,7 +74,7 @@ class RemoteKernel[ServerAddress](
     case _ => ZIO.unit
   }
 
-  private val processResponses = transport.responses.evalMap[TaskC, Unit] {
+  private val processResponses = transport.responses.mapM {
     case KernelStatusResponse(status)    => PublishStatus(status)
     case rep@ResultResponse(_, result)   => withHandler(rep)(handler => PublishResult(result).provide(handler.env.asInstanceOf[PublishResult]))
     case rep@ResultsResponse(_, results) => withHandler(rep)(handler => PublishResult(results).provide(handler.env.asInstanceOf[PublishResult]))
@@ -93,7 +87,7 @@ class RemoteKernel[ServerAddress](
     versioned      <- notebookRef.getVersioned
     (ver, notebook) = versioned
     config         <- Config.access
-    process        <- processResponses.compile.drain.forkDaemon
+    process        <- processResponses.runDrain.forkDaemon
     startup        <- request(StartupRequest(nextReq, notebook, ver, config)) {
       case Announce(reqId, remoteAddress) => done(reqId, ()) // TODO: may want to keep the remote address to try reconnecting?
     }
@@ -190,7 +184,7 @@ class RemoteKernel[ServerAddress](
   private[this] def close(): TaskB[Unit] = for {
     _ <- closed.succeed(())
     _ <- transport.close()
-    _ <- waiting.values().asScala.toList.map(_.promise.interrupt).sequence
+    _ <- ZIO.foreach_(waiting.values().asScala.toList)(_.promise.interrupt)
     _ <- ZIO.effectTotal(waiting.clear())
   } yield ()
 
@@ -223,8 +217,8 @@ object RemoteKernel extends Kernel.Factory.Service {
 
 class RemoteKernelClient(
   kernel: Kernel,
-  requests: Stream[TaskB, RemoteRequest],
-  publishResponse: Publish[Task, RemoteResponse],
+  requests: ZStream[BaseEnv, Throwable, RemoteRequest],
+  publishResponse: RPublish[BaseEnv, RemoteResponse],
   cleanup: TaskB[Unit],
   closed: Promise[Throwable, Unit],
   private[remote] val notebookRef: RemoteNotebookRef // for testing
@@ -235,12 +229,13 @@ class RemoteKernelClient(
   def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Int] =
     requests
       .map(handleRequest)
-      .map(Stream.eval)
-      .parJoinUnbounded
-      .evalTap(publishResponse.publish1)
-      .evalMap(closeOnShutdown)
-      .terminateWhen(closed)
-      .compile.drain.uninterruptible.as(0)
+      .map(z => ZStream.fromEffect(z))
+      .flattenParUnbounded()
+      .tap(publishResponse.publish1)
+      .mapM(closeOnShutdown)
+      .haltWhen(closed)
+      .runDrain.uninterruptible.as(0)
+
 
   private def closeOnShutdown(rep: RemoteResponse): URIO[BaseEnv, Unit] = rep match {
     case _: ShutdownResponse => close()
@@ -253,7 +248,7 @@ class RemoteKernelClient(
           completed =>
             completed
               .catchAll(err => publishResponse.publish1(ResultResponse(reqId, ErrorResult(err))))
-              .ensuring(publishResponse.publish1(RunCompleteResponse(reqId)).orDie)
+              .ensuring(publishResponse.publish1(RunCompleteResponse(reqId)).catchAll(Logging.error))
               .forkDaemon
         }.as(UnitResponse(reqId))
         case ListTasksRequest(reqId)                      => kernel.tasks().map(ListTasksResponse(reqId, _))
@@ -311,9 +306,9 @@ object RemoteKernelClient extends polynote.app.App {
     transport       <- SocketTransport.connectClient(addr)
     baseEnv         <- ZIO.environment[BaseEnv]
     requests         = transport.requests
-    publishResponse  = Publish.fn[Task, RemoteResponse](rep => transport.sendResponse(rep).provide(baseEnv))
+    publishResponse  = Publish.fn[BaseEnv, Throwable, RemoteResponse](rep => transport.sendResponse(rep).provide(baseEnv))
     localAddress    <- effectBlocking(InetAddress.getLocalHost.getHostAddress)
-    firstRequest    <- requests.head.compile.lastOrError
+    firstRequest    <- requests.take(1).runHead.someOrFail(new NoSuchElementException("No messages were received"))
     initial         <- firstRequest match {
       case req@StartupRequest(_, _, _, _) => ZIO.succeed(req)
       case other                          => ZIO.fail(new RuntimeException(s"Handshake error; expected StartupRequest but found ${other.getClass.getName}"))
@@ -334,12 +329,18 @@ object RemoteKernelClient extends polynote.app.App {
   def mkEnv(
     currentNotebook: NotebookRef,
     reqId: Int,
-    publishResponse: Publish[Task, RemoteResponse],
+    publishResponse: RPublish[BaseEnv, RemoteResponse],
     interpreterFactories: Map[String, List[Interpreter.Factory]],
     kernelFactory: Factory.Service,
     polynoteConfig: PolynoteConfig
   ): ZLayer[BaseEnv with InterpreterState, Throwable, GlobalEnv with CellEnv with PublishRemoteResponse] = {
-    val publishStatus = PublishStatus.layer(publishResponse.contramap(KernelStatusResponse.apply))
+    val publishStatus = ZLayer.fromFunction[BaseEnv, UPublish[KernelStatusUpdate]] {
+      baseEnv => publishResponse
+        .contramap(KernelStatusResponse.apply)
+        .catchAll(err => baseEnv.get[Logging.Service].error(None, err))
+        .provide(baseEnv)
+    }
+
     val publishRemote: Layer[Nothing, PublishRemoteResponse] = ZLayer.succeed(publishResponse)
 
     Config.layerOf(polynoteConfig) ++
@@ -349,18 +350,17 @@ object RemoteKernelClient extends polynote.app.App {
       ZLayer.succeed(kernelFactory) ++
       publishStatus ++
       (publishStatus >>> TaskManager.layer) ++
-      (publishRemote >>> mkResultPublisher(reqId)) ++
+      ((ZLayer.requires[BaseEnv] ++ publishRemote) >>> mkResultPublisher(reqId)) ++
       publishRemote
   }
 
-  def mkResultPublisher(reqId: Int): ZLayer[PublishRemoteResponse, Nothing, PublishResult] = ZLayer.fromService {
-    publishResponse: Publish[Task, RemoteResponse] => new Publish[Task, Result] {
-      override def publish1(result: Result): Task[Unit] = publishResponse.publish1(ResultResponse(reqId, result))
-      override def publish: Pipe[Task, Result, Unit] = results => results.mapChunks {
-        resultChunk => Chunk.singleton(ResultsResponse(reqId, ShortList(resultChunk.toList)))
-      }.through(publishResponse.publish)
+  def mkResultPublisher(reqId: Int): ZLayer[BaseEnv with PublishRemoteResponse, Nothing, PublishResult] =
+    ZLayer.fromFunction[BaseEnv with PublishRemoteResponse, UPublish[Result]] {
+      env => env.get[RPublish[BaseEnv, RemoteResponse]]
+        .contramap[Result](result => ResultResponse(reqId, result))
+        .catchAll(env.get[Logging.Service].error(None, _))
+        .provide(env)
     }
-  }
 
 
   case class Args(address: Option[String] = None, port: Option[Int] = None, kernelFactory: Option[Kernel.Factory.LocalService] = None) {

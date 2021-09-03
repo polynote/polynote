@@ -1,13 +1,13 @@
 package polynote.kernel
 
-import polynote.kernel.util.Publish
-import zio.{Has, Task}
+import polynote.kernel.util.RPublish
+import zio.Has
 
 import java.io.File
 
 package object remote {
 
-  type PublishRemoteResponse = Has[Publish[Task, RemoteResponse]]
+  type PublishRemoteResponse = Has[RPublish[BaseEnv, RemoteResponse]]
 
   lazy val javaOptions: Map[String, String] = {
     val libraryPath = List(sys.props.get("java.library.path"), sys.env.get("LD_LIBRARY_PATH"))
@@ -23,4 +23,5 @@ package object remote {
   def asPropString(m: Map[String, String]): List[String] = m.toList.map {
     case (name, value) => s"-D$name=$value"
   }
+
 }

@@ -17,11 +17,8 @@ val sparkInstallLocation: SettingKey[String] = settingKey("Location of Spark ins
 
 
 val versions = new {
-  val fs2        = "2.0.0"
-  val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC5-6"
-  val zio        = "1.0.5"
-  val zioInterop = "2.0.0.0-RC12"
+  val zio        = "1.0.11"
 }
 
 
@@ -48,7 +45,7 @@ lazy val scalaBinaryVersions = scalaVersions.map {
 }.distinct
 
 val commonSettings = Seq(
-  scalaVersion := "2.11.12",
+  scalaVersion := "2.13.6",
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
@@ -174,13 +171,9 @@ val `polynote-kernel` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
-    "org.typelevel" %% "cats-effect" % versions.catsEffect,
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
-    //"dev.zio" %% "zio-interop-cats" % versions.zioInterop,
-    "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.11.4",
-    "org.scodec" %% "scodec-stream" % "2.0.0",
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.github.classgraph" % "classgraph" % "4.8.47",
@@ -203,7 +196,7 @@ val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.polynote" %% "uzhttp" % "0.2.6",
+    "org.polynote" %% "uzhttp" % "0.2.8",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"

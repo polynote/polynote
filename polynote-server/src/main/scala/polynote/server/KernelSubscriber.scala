@@ -1,26 +1,22 @@
 package polynote.server
 
-import java.util.concurrent.atomic.AtomicInteger
-import fs2.concurrent.SignallingRef
-import fs2.Stream
-import polynote.kernel.environment.{Config, PublishMessage}
-import polynote.kernel.{BaseEnv, GlobalEnv, Presence, PresenceSelection, StreamThrowableOps, StreamUIOps}
-import polynote.messages.{CellID, CreateComment, DeleteCell, DeleteComment, InsertCell, KernelStatus, Notebook, NotebookUpdate, TinyString, UpdateComment}
-import KernelPublisher.{GlobalVersion, SubscriberId}
-import polynote.kernel.logging.Logging
+import polynote.kernel.environment.PublishMessage
+import polynote.kernel.{BaseEnv, Presence, PresenceSelection}
+import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate, TinyString}
 import polynote.runtime.CellRange
+import polynote.server.KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.server.auth.{Identity, IdentityProvider, Permission, UserIdentity}
-import polynote.util.VersionBuffer
-import zio.{Fiber, Promise, RIO, Task, UIO, URIO, ZIO}
-import zio.interop.catz._
+import zio.stream.{SubscriptionRef, ZStream}
+import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
 
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.IntUnaryOperator
 
 
 class KernelSubscriber private[server] (
   val id: SubscriberId,
   val identity: Option[Identity],
-  currentSelection: SignallingRef[UIO, Option[PresenceSelection]],
+  currentSelection: SubscriptionRef[Option[PresenceSelection]],
   val closed: Promise[Throwable, Unit],
   process: Fiber[Throwable, Unit],
   val publisher: KernelPublisher,
@@ -45,11 +41,11 @@ class KernelSubscriber private[server] (
     currentPath.map(permission) >>= IdentityProvider.checkPermission
 
   def setSelection(cellID: CellID, range: CellRange): UIO[Unit] =
-    currentSelection.set(Some(PresenceSelection(id, cellID, range)))
+    currentSelection.ref.set(Some(PresenceSelection(id, cellID, range)))
 
-  def getSelection: UIO[Option[PresenceSelection]] = currentSelection.get
+  def getSelection: UIO[Option[PresenceSelection]] = currentSelection.ref.get
 
-  def selections: Stream[UIO, PresenceSelection] = currentSelection.discrete.unNone.interruptAndIgnoreWhen(closed)
+  def selections: ZStream[Any, Throwable, PresenceSelection] = currentSelection.changes.collectSome.haltWhen(closed.await.run)
 
   private[server] val getLastGlobalVersion = ZIO.effectTotal(lastGlobalVersion.get())
   private[server] def setLastGlobalVersion(version: GlobalVersion): UIO[Unit] = ZIO.effectTotal(lastGlobalVersion.set(version))
@@ -65,11 +61,11 @@ object KernelSubscriber {
   def apply(
     id: SubscriberId,
     publisher: KernelPublisher
-  ): RIO[PublishMessage with UserIdentity, KernelSubscriber] = {
+  ): RIO[BaseEnv with PublishMessage with UserIdentity, KernelSubscriber] = {
 
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
-      publisher.broadcastUpdates.subscribe(128).unNone
-        .evalTap {
+      publisher.broadcastUpdates.subscribeStream
+        .tap {
           case (`id`, update) => ZIO.effectTotal { local.set(update.localVersion) }
           case _              => ZIO.unit
         }.filter {
@@ -86,12 +82,13 @@ object KernelSubscriber {
       lastLocalVersion  = new AtomicInteger(0)
       lastGlobalVersion = new AtomicInteger(ver)
       publishMessage   <- PublishMessage.access
-      currentSelection <- SignallingRef[UIO, Option[PresenceSelection]](None)
-      updater          <- Stream.emits(Seq(
+      currentSelection <- SubscriptionRef.make[Option[PresenceSelection]](None)
+      updater          <- ZStream(
           foreignUpdates(lastLocalVersion, lastGlobalVersion),
-          publisher.status.subscribe(128).tail.filter(_.isRelevant(id)).map(update => KernelStatus(update.forSubscriber(id))),
-          publisher.cellResults.subscribe(128).tail.unNone
-        )).parJoinUnbounded.interruptAndIgnoreWhen(closed).through(publishMessage.publish).compile.drain.forkDaemon
+          ZStream.fromEffect(publisher.kernelStatus().map(KernelStatus(_))) ++
+            publisher.status.subscribeStream.filter(_.isRelevant(id)).map(update => KernelStatus(update.forSubscriber(id))),
+          publisher.cellResults.subscribeStream
+        ).flattenParUnbounded().haltWhen(closed.await.run).mapM(publishMessage.publish1).runDrain.forkDaemon
     } yield new KernelSubscriber(
       id,
       identity,

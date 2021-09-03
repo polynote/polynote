@@ -1,79 +1,68 @@
 package polynote.kernel.util
 
-import cats.{FlatMap, Monad}
-import cats.effect.Concurrent
-import cats.syntax.flatMap._
-import fs2.Pipe
-import fs2.concurrent.{Enqueue, Topic}
-import zio.{IO, Task, ZIO, ZQueue}
+import zio.{ZHub, ZIO, ZQueue}
 import zio.stream.Take
 
 /**
-  * Captures only the ability to Publish, as in [[Topic]], but without the ability to subscribe. This means it can
+  * Captures only the ability to Publish, but without the ability to subscribe. This means it can
   * be contravariant.
   */
-trait Publish[F[+_], -T] {
+trait Publish[-R, +E, -T] {
 
-  def publish1(t: T): F[Unit]
+  def publish1(t: T): ZIO[R, E, Unit]
 
-  def publish: Pipe[F, T, Unit] = _.evalMap(publish1)
-
-  def contramap[U](fn: U => T): Publish[F, U] = new Publish[F, U] {
-    override def publish1(t: U): F[Unit] = Publish.this.publish1(fn(t))
-    override def publish: Pipe[F, U, Unit] = {
-      stream => Publish.this.publish(stream.map(fn))
-    }
+  def contramap[U](fn: U => T): Publish[R, E, U] = new Publish[R, E, U] {
+    override def publish1(t: U): ZIO[R, E, Unit] = Publish.this.publish1(fn(t))
   }
 
-  def contraFlatMap[U](fn: U => F[T])(implicit F: Monad[F]): Publish[F, U] = new Publish[F, U] {
-    override def publish1(t: U): F[Unit] = fn(t).flatMap(u => Publish.this.publish1(u))
-    override def publish: Pipe[F, U, Unit] = stream => stream.evalMap(publish1)
+  def contraFlatMap[R1 <: R, E1 >: E, U](fn: U => ZIO[R1, E1, T]): Publish[R1, E1, U] = new Publish[R1, E1, U] {
+    override def publish1(t: U): ZIO[R1, E1, Unit] = fn(t).flatMap(u => Publish.this.publish1(u))
   }
 
-  def some[U](implicit ev: Option[U] <:< T): Publish[F, U] = contramap[U](u => ev(Option(u)))
-
-  def tap[T1 <: T](into: T1 => F[Unit])(implicit F: FlatMap[F]): Publish[F, T1] = new Publish[F, T1] {
-    def publish1(t: T1): F[Unit] = Publish.this.publish1(t).flatMap(_ => into(t))
-    override def publish: Pipe[F, T1, Unit] = stream => stream.evalTap(into).through(Publish.this.publish)
+  def tap[R1 <: R, E1 >: E, T1 <: T](into: T1 => ZIO[R1, E1, Unit]): Publish[R1, E1, T1] = new Publish[R1, E1, T1] {
+    def publish1(t: T1): ZIO[R1, E1, Unit] = Publish.this.publish1(t) *> into(t)
   }
 
-  def tap[T1 <: T](into: Publish[F, T1])(implicit F: Concurrent[F]): Publish[F, T1] = new Publish[F, T1] {
-    def publish1(t: T1): F[Unit] = Publish.this.publish1(t).flatMap(_ => into.publish1(t))
-    override def publish: Pipe[F, T1, Unit] = stream => stream.broadcastThrough(Publish.this.publish, into.publish)
+  def tap[R1 <: R, E1 >: E, T1 <: T](into: Publish[R1, E1, T1]): Publish[R1, E1, T1] = new Publish[R1, E1, T1] {
+    def publish1(t: T1): ZIO[R1, E1, Unit] = Publish.this.publish1(t) *> into.publish1(t)
+  }
+
+  def catchAll[R1 <: R](fn: E => ZIO[R1, Nothing, Unit]): Publish[R1, Nothing, T] = new Publish[R1, Nothing, T] {
+    override def publish1(t: T): ZIO[R1, Nothing, Unit] = Publish.this.publish1(t).catchAll(fn)
+  }
+
+  def provide(env: R): Publish[Any, E, T] = new Publish[Any, E, T] {
+    override def publish1(t: T): ZIO[Any, E, Unit] = Publish.this.publish1(t).provide(env)
   }
 
 }
 
 object Publish {
 
-  // Allow a Topic to be treated as a Publish
-  final case class PublishTopic[F[+_], -T, T1 >: T](topic: Topic[F, T1]) extends Publish[F, T] {
-    override def publish1(t: T): F[Unit] = topic.publish1(t)
-    override def publish: Pipe[F, T, Unit] = topic.publish
+  final case class PublishZTopic[-RA, -RB, +EA, +EB, -A, +B](topic: ZTopic[RA, RB, EA, EB, A, B]) extends Publish[RA, EA, A] {
+    override def publish1(t: A): ZIO[RA, EA, Unit] = topic.publish(t)
   }
 
-  implicit def topicToPublish[F[+_], T](topic: Topic[F, T]): Publish[F, T] = PublishTopic(topic)
+  implicit def zTopicToPublish[RA, RB, EA, EB, A, B](topic: ZTopic[RA, RB, EA, EB, A, B]): Publish[RA, EA, A] =
+    PublishZTopic(topic)
 
-  def apply[F[+_], T](topic: Topic[F, T]): Publish[F, T] = topic
+  def apply[RA, RB, EA, EB, A, B](topic: ZTopic[RA, RB, EA, EB, A, B]): Publish[RA, EA, A] = zTopicToPublish(topic)
 
-  final case class PublishEnqueue[F[+_], -T, T1 >: T](queue: Enqueue[F, T1]) extends Publish[F, T] {
-    override def publish1(t: T): F[Unit] = queue.enqueue1(t)
-    override def publish: Pipe[F, T, Unit] = queue.enqueue
+  def fn[R, E, T](fn: T => ZIO[R, E, Unit]): Publish[R, E, T] = new Publish[R, E, T] {
+    override def publish1(t: T): ZIO[R, E, Unit] = fn(t)
   }
 
-  implicit def enqueueToPublish[F[+_], T, T1 <: T](enqueue: Enqueue[F, T]): Publish[F, T1] = PublishEnqueue(enqueue)
-
-  def apply[F[+_], T](enqueue: Enqueue[F, T]): Publish[F, T] = enqueue
-
-  def fn[F[+_], T](fn: T => F[Unit]): Publish[F, T] = new Publish[F, T] {
-    override def publish1(t: T): F[Unit] = fn(t)
+  final case class PublishZHub[-RA, -RB, +EA, +EB, -A, +B](hub: ZHub[RA, RB, EA, EB, A, B]) extends Publish[RA, EA, A] {
+    override def publish1(t: A): ZIO[RA, EA, Unit] = hub.publish(t).flip.retryUntilEquals(true).flip.unit
   }
 
-  final case class PublishZQueueTake[RA, EA, RB, EB, ET <: EA, A, B](queue: ZQueue[RA, RB, EA, EB, Take[ET, A], B]) extends Publish[ZIO[RA, EA, +?], A] {
+  def ignore[T]: Publish[Any, Nothing, T] = fn(_ => ZIO.unit)
+
+  final case class PublishZQueueTake[RA, EA, RB, EB, ET <: EA, A, B](queue: ZQueue[RA, RB, EA, EB, Take[ET, A], B]) extends Publish[RA, EA, A] {
     override def publish1(t: A): ZIO[RA, EA, Unit] = queue.offer(Take.single(t)).repeatUntil(identity).unit
   }
 
-  implicit def zqueueTakeToPublish[RA, RB, EA, EB, ET <: EA, A, B](queue: ZQueue[RA, RB, EA, EB, Take[ET, A], B]): Publish[ZIO[RA, EA, +?], A] = PublishZQueueTake(queue)
+  implicit def zqueueTakeToPublish[RA, RB, EA, EB, ET <: EA, A, B](queue: ZQueue[RA, RB, EA, EB, Take[ET, A], B]): Publish[RA, EA, A] = PublishZQueueTake(queue)
 
-  def apply[E, E1 <: E, A](queue: zio.Queue[Take[E1, A]])(implicit dummyImplicit: DummyImplicit): Publish[IO[E, +?], A] = PublishZQueueTake(queue)
+  def apply[E, E1 <: E, A](queue: zio.Queue[Take[E1, A]])(implicit dummyImplicit: DummyImplicit): Publish[Any, E1, A] = PublishZQueueTake(queue)
 }

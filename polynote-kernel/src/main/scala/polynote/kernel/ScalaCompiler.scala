@@ -3,15 +3,12 @@ package polynote.kernel
 import java.io.File
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
-import cats.syntax.traverse._
-import cats.instances.list._
 import polynote.kernel.environment.Config
 import polynote.kernel.util.{KernelReporter, LimitedSharingClassLoader, pathOf}
 import zio.blocking.Blocking
 import zio.system.{System, env}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.{Has, RIO, Task, UIO, ZIO}
-import zio.interop.catz._
 
 import scala.collection.mutable
 import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Position, SourceFile}
@@ -155,7 +152,7 @@ class ScalaCompiler private (
       ZIO.accessM[Class[_]](cls => ZIO(Option(cls.getDeclaredMethod(name).invoke(instance))) orElse ZIO.succeed(None))
 
     def getFields(names: List[String])(instance: AnyRef): RIO[Class[_], List[Option[AnyRef]]] =
-      names.map(getField(_)(instance)).sequence
+      ZIO.foreach(names)(getField(_)(instance))
 
     // first we'll try to get all of them at once.
     compileCell(CellCode(cellName, trees)).flatMap {
@@ -164,7 +161,7 @@ class ScalaCompiler private (
     }.catchAll {
       err =>
         // if that doesn't compile (i.e. some implicits are missing) we'll try to compile each individually
-        trees.zip(names).map {
+        ZIO.foreach(trees.zip(names)) {
           case (tree, name) =>
             compileCell(CellCode(cellName, List(tree))).flatMap {
               case Some(cls) => (construct >>= getField(name)).provide(cls)
@@ -172,9 +169,9 @@ class ScalaCompiler private (
             }.catchAllCause {
               cause =>
                 // TODO: log it?
-                ZIO.succeed(None)
+                ZIO.none
             }
-        }.sequence
+        }
     }
   }
 

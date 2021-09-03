@@ -2,14 +2,12 @@ package polynote
 package server
 
 import java.util.concurrent.atomic.AtomicInteger
-import cats.instances.list._
-import fs2.concurrent.Topic
-import polynote.kernel.util.{Publish, RefMap}
+import polynote.kernel.util.{Publish, RefMap, UPublish, ZTopic}
 import polynote.kernel.environment.{CurrentNotebook, PublishMessage, PublishResult, PublishStatus}
-import polynote.messages.{CellID, CellResult, ContentEdits, DeleteCell, Error, Insert, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
-import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, ExecutionInfo, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Output, Presence, PresenceSelection, PresenceUpdate, Result, ScalaCompiler, Signatures, StreamThrowableOps, TaskB, TaskG, TaskInfo}
+import polynote.messages.{CellID, CellResult, ContentEdits, Error, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
+import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Presence, PresenceSelection, PresenceUpdate, Result, Signatures, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
-import zio.{Fiber, Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, ULayer, URIO, ZIO, ZLayer}
+import zio.{ Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, ULayer, URIO, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.logging.Logging
@@ -25,10 +23,9 @@ import scala.collection.mutable.ListBuffer
 class KernelPublisher private (
   val versionedNotebook: NotebookRef,
   private[server] val updateQueue: Queue[(SubscriberId, NotebookUpdate)], // visible for testing
-  val broadcastUpdates: Topic[Task, Option[(SubscriberId, NotebookUpdate)]],
-  val status: Topic[Task, KernelStatusUpdate],
-  val cellResults: Topic[Task, Option[CellResult]],
-  val broadcastAll: Topic[Task, Option[Message]],
+  val broadcastUpdates: ZTopic.Of[(SubscriberId, NotebookUpdate)],
+  val status: ZTopic.Of[KernelStatusUpdate],
+  val cellResults: ZTopic.OfIO[Throwable, CellResult],
   val taskManager: TaskManager.Service,
   kernelRef: Ref[Option[Kernel]],
   interpreterState: InterpreterState.Service,
@@ -39,23 +36,24 @@ class KernelPublisher private (
   val closed: Promise[Throwable, Unit],
   subscribers: RefMap[Int, KernelSubscriber]
 ) {
-  val publishStatus: Publish[Task, KernelStatusUpdate] = status
+  val publishStatus: UPublish[KernelStatusUpdate] = status
 
   private val taskManagerLayer: ULayer[TaskManager] = ZLayer.succeed(taskManager)
 
   private val baseLayer: ZLayer[Any, Nothing, CurrentNotebook with TaskManager with PublishStatus] =
     ZLayer.succeedMany(Has(versionedNotebook) ++ Has(publishStatus)) ++ taskManagerLayer
 
-  private def cellLayer(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, PublishResult] = {
-    val publish = Publish(cellResults).contramap[Result](result => Some(CellResult(cellID, result)))
-    val env = tapResults.fold(publish)(fn => publish.tap(fn))
-    ZLayer.succeed(env)
+  private def cellLayer(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Logging, Nothing, PublishResult] =
+    ZLayer.fromService {
+      logging: Logging.Service =>
+        tapResults.foldLeft(Publish(cellResults).contramap[Result](result => CellResult(cellID, result)))(_ tap _)
+          .catchAll(logging.error(None, _))
   }
 
-  private def cellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Any, Nothing, CellEnv] =
+  private def cellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Logging, Nothing, CellEnv] =
     baseLayer ++ ZLayer.succeed(interpreterState) ++ cellLayer(cellID, tapResults)
 
-  private val kernelFactoryEnv: ZLayer[Any, Nothing, CellEnv] =
+  private val kernelFactoryEnv: ZLayer[BaseEnv, Nothing, CellEnv] =
     cellEnv(CellID(-1))
 
   private val nextSubscriberId = new AtomicInteger(0)
@@ -104,7 +102,7 @@ class KernelPublisher private (
             //       starting kernel.
         }
       }.tapError {
-        err => Logging.error("Error starting kernel; shutting it down", err) *> shutdownKernel() *> status.publish1(KernelError(err))
+        err => Logging.error("Error starting kernel; shutting it down", err) *> shutdownKernel() *> status.publish(KernelError(err))
       }
   }
 
@@ -164,7 +162,7 @@ class KernelPublisher private (
 
   def clearResults() = versionedNotebook.clearAllResults().flatMap {
     clearedCells =>
-      ZIO.foreach_(clearedCells)(id => cellResults.publish1(Option(CellResult(id, ClearResults()))))
+      ZIO.foreach_(clearedCells)(id => cellResults.publish(CellResult(id, ClearResults())))
   }
 
   def tasks(): TaskB[List[TaskInfo]] =
@@ -193,8 +191,8 @@ class KernelPublisher private (
       subscriber   <- KernelSubscriber(subscriberId, this)
       _            <- subscribers.put(subscriberId, subscriber)
       _            <- subscriber.closed.await.zipRight(removeSubscriber(subscriberId)).forkDaemon
-      _            <- status.publish1(PresenceUpdate(List(subscriber.presence), Nil))
-      _            <- subscriber.selections.through(status.publish).compile.drain.forkDaemon
+      _            <- status.publish(PresenceUpdate(List(subscriber.presence), Nil))
+      _            <- subscriber.selections.mapM(status.publish).runDrain.forkDaemon
     } yield subscriber
   }
 
@@ -212,7 +210,7 @@ class KernelPublisher private (
       subscriber <- subscribers.get(id).get.orElseFail(new NoSuchElementException(s"Subscriber $id does not exist"))
       _          <- ZIO.whenM(!subscriber.closed.isDone)(ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed.")))
       _          <- subscribers.remove(id)
-      _          <- status.publish1(PresenceUpdate(Nil, List(id)))
+      _          <- status.publish(PresenceUpdate(Nil, List(id)))
     } yield ()
   } *> closeIfNoSubscribers.delay(5.seconds).forkDaemon.unit
 
@@ -273,7 +271,7 @@ object KernelPublisher {
     versionRef: NotebookRef,
     interpState: InterpreterState.Service,
     versions: SubscriberUpdateBuffer,
-    publishUpdates: Publish[Task, (SubscriberId, NotebookUpdate)],
+    publishUpdates: UPublish[(SubscriberId, NotebookUpdate)],
     subscribers: RefMap[SubscriberId, KernelSubscriber],
     log: ListBuffer[(Long, String)])(
     subscriberId: SubscriberId,
@@ -341,15 +339,15 @@ object KernelPublisher {
   }
 
 
-  def apply(versionedRef: NotebookRef, broadcastMessage: Topic[Task, Option[Message]], log: ListBuffer[(Long, String)] = new ListBuffer[(Long, String)]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
+  def apply(versionedRef: NotebookRef, broadcastMessage: UPublish[Message], log: ListBuffer[(Long, String)] = new ListBuffer[(Long, String)]): RIO[BaseEnv with GlobalEnv, KernelPublisher] = for {
     kernelFactory    <- Kernel.Factory.access
     closed           <- Promise.make[Throwable, Unit]
     // TODO: need to close if the versionedRef closes, hook up e.g. TreeRepository so it cascades
     updates          <- Queue.unbounded[(SubscriberId, NotebookUpdate)]
                         // TODO: replace the following with ZTopic
-    broadcastUpdates <- Topic[Task, Option[(SubscriberId, NotebookUpdate)]](None)
-    broadcastStatus  <- Topic[Task, KernelStatusUpdate](KernelBusyState(busy = false, alive = false))
-    broadcastResults <- Topic[Task, Option[CellResult]](None)
+    broadcastUpdates <- ZTopic.unbounded[(SubscriberId, NotebookUpdate)]
+    broadcastStatus  <- ZTopic.unbounded[KernelStatusUpdate]
+    broadcastResults <- ZTopic.unbounded[CellResult]
     taskManager      <- TaskManager(broadcastStatus)
     versionBuffer     = new SubscriberUpdateBuffer()
     kernelStarting   <- Semaphore.make(1)
@@ -364,7 +362,6 @@ object KernelPublisher {
       broadcastUpdates,
       broadcastStatus,
       broadcastResults,
-      broadcastMessage,
       taskManager,
       kernel,
       interpState,
@@ -378,12 +375,13 @@ object KernelPublisher {
     env <- ZIO.environment[BaseEnv]
     // process the queued updates, rebasing as needed
     _   <- ZStream.fromQueue(updates)
-      .mapM((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates).some, subscribers, log) _).tupled)
+      .mapM((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates), subscribers, log) _).tupled)
       .runDrain
       .flatMap(_ => ZIO.effectTotal(println("STOPPED PROCESSING!")))
       .catchAll {
         err =>
-          broadcastMessage.publish1(Option(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook. Editing will now be disabled.", err)))) *> broadcastMessage.publish1(None) *> publisher.close().provide(env)
+          broadcastMessage.publish1(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook. Editing will now be disabled.", err))) *>
+            publisher.close().provide(env)
       }
       .forkDaemon
     _   <- cleanVersionBuffer(subscribers, versionBuffer, closed).forkDaemon

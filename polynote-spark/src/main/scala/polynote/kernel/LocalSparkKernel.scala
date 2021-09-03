@@ -4,10 +4,6 @@ import java.nio.file.{FileSystems, Files}
 import java.util.concurrent.{Executors, ThreadFactory}
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.regex.Pattern
-import cats.effect.concurrent.Ref
-import cats.instances.list._
-import cats.syntax.traverse._
-import fs2.concurrent.SignallingRef
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
@@ -24,8 +20,9 @@ import polynote.runtime.spark.reprs.SparkReprsOf
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.internal.Executor
-import zio.{Promise, RIO, Task, ZIO, ZLayer}
-import zio.interop.catz._
+import zio.{Promise, RIO, Task, URIO, ZIO, ZLayer}
+import zio.system.System
+import zio.stream.SubscriptionRef
 import zio.system.{env, property}
 
 import scala.collection.JavaConverters._
@@ -41,7 +38,7 @@ class LocalSparkKernel private[kernel] (
   sparkSession: SparkSession,
   interpreterState: InterpreterState.Service,
   interpreters: RefMap[String, Interpreter],
-  busyState: SignallingRef[Task, KernelBusyState],
+  busyState: SubscriptionRef[KernelBusyState],
   closed: Promise[Throwable, Unit]
 ) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState, closed) {
 
@@ -61,7 +58,7 @@ class LocalSparkKernel private[kernel] (
 class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
 
   // all the JARs in Spark's classpath. I don't think this is actually needed.
-  private def sparkDistClasspath = env("SPARK_DIST_CLASSPATH").orDie.get.flatMap {
+  private def sparkDistClasspath: URIO[Blocking with Config with System, List[File]] = env("SPARK_DIST_CLASSPATH").orDie.get.flatMap {
     cp =>
       Config.access.flatMap {
         config =>
@@ -71,7 +68,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
             case Some(pattern) => requiredFilter.or(pattern.asPredicate())
           }
 
-          cp.split(File.pathSeparator).toList.map {
+          ZIO.foreach(cp.split(File.pathSeparator).toList) {
             filepath =>
               val file = new File(filepath)
               file.getName match {
@@ -85,7 +82,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
                 case _ =>
                   effectBlocking(if (file.exists()) List(file) else Nil).orDie
               }
-          }.sequence.map(_.flatten).map {
+          }.map(_.flatten).map {
             expandedFiles =>
               expandedFiles.filter {
                 path =>
@@ -97,22 +94,23 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       }
   }.orElseSucceed(Nil)
 
-  private def sparkClasspath = env("SPARK_HOME").orDie.get.flatMap {
-    sparkHome =>
-      for {
-        fromSparkDist <- sparkDistClasspath
-        _             <- ZIO.when(fromSparkDist.nonEmpty)(Logging.info(s"Adding these paths from SPARK_DIST_CLASSPATH: $fromSparkDist"))
-        fromSparkJars <- effectBlocking {
-          val homeFile = new File(sparkHome)
-          if (homeFile.exists()) {
-            val jarsPath = homeFile.toPath.resolve("jars")
-            Files.newDirectoryStream(jarsPath, "*.jar").iterator().asScala.toList.map(_.toFile)
-          } else Nil
-        }.orDie
-      } yield (fromSparkDist ++ fromSparkJars).distinct
-  }
+  private def sparkClasspath: ZIO[Blocking with Logging with Config with System, Option[Nothing], List[File]] =
+    env("SPARK_HOME").orDie.get.flatMap {
+      sparkHome =>
+        for {
+          fromSparkDist <- sparkDistClasspath
+          _             <- ZIO.when(fromSparkDist.nonEmpty)(Logging.info(s"Adding these paths from SPARK_DIST_CLASSPATH: $fromSparkDist"))
+          fromSparkJars <- effectBlocking {
+            val homeFile = new File(sparkHome)
+            if (homeFile.exists()) {
+              val jarsPath = homeFile.toPath.resolve("jars")
+              Files.newDirectoryStream(jarsPath, "*.jar").iterator().asScala.toList.map(_.toFile)
+            } else Nil
+          }.orDie
+        } yield (fromSparkDist ++ fromSparkJars).distinct
+    }
 
-  private def systemClasspath =
+  private def systemClasspath: ZIO[System, Option[Nothing], List[File]] =
     property("java.class.path").orDie.get
       .map(_.split(File.pathSeparator).toList.map(new File(_)))
 
@@ -131,7 +129,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     compiler         <- ScalaCompiler(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3), sparkClasspath, updateSettings)
     classLoader       = compiler.classLoader
     session          <- startSparkSession(sparkJars, classLoader)
-    busyState        <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
+    busyState        <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
     scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
     interpState      <- InterpreterState.access
@@ -199,7 +197,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
         ZIO(session.sparkContext.addJar(jar))
           .catchAll(Logging.error(s"Unable to add dependency $jar to spark", _))
 
-      existingJars.diff(jars).toList.map(addJar).sequence.unit
+      ZIO.foreach_(existingJars.diff(jars))(addJar)
     }
 
     def attachListener(session: SparkSession): RIO[BaseEnv with TaskManager, Unit] = for {

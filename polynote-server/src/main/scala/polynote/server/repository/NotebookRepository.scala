@@ -187,7 +187,7 @@ class TreeRepository (
 
     override def awaitClosed: Task[Unit] = closed.await
 
-    override def updates: ZStream[Any, Nothing, NotebookUpdate] = updatesTopic.subscribeStream
+    override def updates: ZStream[Any, Throwable, NotebookUpdate] = updatesTopic.subscribeStream
 
   }
 

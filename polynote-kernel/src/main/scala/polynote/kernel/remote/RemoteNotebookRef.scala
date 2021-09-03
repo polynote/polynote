@@ -1,12 +1,11 @@
 package polynote.kernel.remote
 
 import polynote.kernel.interpreter.InterpreterState
-import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.kernel.logging.Logging
+import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages.{CellID, Notebook, NotebookUpdate}
-import zio.{IO, RIO, Ref, Task, UIO, URIO, ZIO}
-import zio.interop.catz._
 import zio.stream.ZStream
+import zio.{IO, RIO, Ref, Task, UIO, URIO, ZIO}
 
 /**
   * A NotebookRef implementation used on the remote client. Because its updates come only from the server, it doesn't
@@ -54,8 +53,8 @@ class RemoteNotebookRef private (
     case (initialVersion, _) =>
       transportClient.updates
         .dropWhile(_.globalVersion <= initialVersion)
-        .evalMap(update)
-        .compile.drain.forkDaemon.unit
+        .mapM(update)
+        .runDrain.forkDaemon.unit
   }
 
   // The remote doesn't need to do anything with the updates.

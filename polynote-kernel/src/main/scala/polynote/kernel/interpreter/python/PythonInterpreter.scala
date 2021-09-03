@@ -1,18 +1,9 @@
 package polynote.kernel.interpreter
 package python
-import java.io.{File, FileReader, PrintWriter, StringWriter}
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path, Paths, StandardOpenOption}
-import java.util
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.{Executors, ThreadFactory}
-import cats.effect.concurrent.Ref
-import cats.syntax.traverse._
 import cats.syntax.either._
-import cats.instances.list._
+import io.circe._
 import io.circe.generic.semiauto._
 import io.circe.syntax._
-import io.circe._
 import io.circe.yaml.syntax._
 import jep.python.{PyCallable, PyObject}
 import jep.{Jep, JepConfig, JepException, NamingConventionClassEnquirer, SharedInterpreter}
@@ -22,15 +13,19 @@ import polynote.kernel.dependency.noCacheSentinel
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.kernel.{BaseEnv, CompileErrors, Completion, CompletionType, GlobalEnv, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, ResultValue, ScalaCompiler, Signatures, TaskInfo}
+import polynote.kernel.{BaseEnv, CompileErrors, Completion, CompletionType, GlobalEnv, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
-import zio.internal.Executor
 import zio.blocking.{Blocking, effectBlocking}
-import zio.duration._
+import zio.internal.Executor
 import zio.{Has, RIO, Runtime, Semaphore, Task, UIO, ZIO}
-import zio.interop.catz._
 
+import java.io.{FileReader, PrintWriter, StringWriter}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path, Paths, StandardOpenOption}
+import java.util
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.{Executors, ThreadFactory}
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 import scala.reflect.{ClassTag, classTag}
@@ -1153,22 +1148,22 @@ object VirtualEnvFetcher {
           taskManager.runSubtask(s"Installing $dep") {
             // use semaphore to ensure only one `pip install` is happening at a time.
             val doInstall = installSemaphore.withPermit(for {
-              _ <- CurrentTask.access.flatMap(_.update(_.progress(0.1)))
-              _ <- parentTask.update(task => task.progress(task.progressFraction + depInitProgress, Some(s"Installing $dep")))
+              _ <- CurrentTask.update(_.progress(0.1))
+              _ <- parentTask.update(task => ZIO.succeed(task.progress(task.progressFraction + depInitProgress, Some(s"Installing $dep"))))
               _ <- pip("install", dep)
             } yield ())
 
             for {
               _ <- doInstall
-              _ <- CurrentTask.access.flatMap(_.update(_.progress(0.8).copy(label = s"Downloading $dep")))
-              _ <- parentTask.update(task => task.progress(task.progressFraction + depInstalledProgress))
+              _ <- CurrentTask.update(_.progress(0.8).copy(label = s"Downloading $dep"))
+              _ <- parentTask.update(task => ZIO.succeed(task.progress(task.progressFraction + depInstalledProgress)))
               _ <- pip("download", dep, List("--dest", s"$venv/deps/"))
-              _ <- CurrentTask.access.flatMap(_.update(_.progress(0.9)))
-              _ <- parentTask.update(task => task.progress(task.progressFraction + depDownloadedProgress))
+              _ <- CurrentTask.update(_.progress(0.9))
+              _ <- parentTask.update(task => ZIO.succeed(task.progress(task.progressFraction + depDownloadedProgress)))
             } yield ()
           }
       }
-      _ <- parentTask.update(task => task.progress(0.9, Some("finishing...")))
+      _ <- parentTask.update(task => ZIO.succeed(task.progress(0.9, Some("finishing..."))))
     } yield ()
   }
 

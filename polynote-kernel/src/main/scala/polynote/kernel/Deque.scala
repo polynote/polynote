@@ -2,10 +2,7 @@ package polynote.kernel
 
 import java.util.concurrent.ConcurrentLinkedDeque
 import scala.collection.JavaConverters._
-import cats.syntax.traverse._
-import cats.instances.list._
 import zio.{Task, ZIO, UIO}
-import zio.interop.catz._
 
 /**
   * Just a simple wrapper of [[ConcurrentLinkedDeque]] in a Scala/ZIO API.

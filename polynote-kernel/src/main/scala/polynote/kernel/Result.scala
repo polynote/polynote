@@ -2,8 +2,6 @@ package polynote.kernel
 
 import java.nio.charset.{Charset, StandardCharsets}
 
-import cats.data.Ior
-import cats.effect.IO
 import scodec.{Attempt, Codec, DecodeResult, Err}
 import scodec.codecs._
 import scodec.codecs.implicits._
@@ -12,11 +10,8 @@ import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import polynote.messages.{CellID, NotebookCell, ShortList, TinyList, TinyString, iorCodec, tinyListCodec, tinyStringCodec, truncateTinyString}
 import polynote.runtime.{CellRange, ValueRepr}
-import scodec.bits.BitVector
-
 import scala.collection.mutable.ListBuffer
 import scala.reflect.api.Universe
-import scala.tools.nsc.interactive.Global
 
 sealed abstract class ResultCompanion[T <: Result](msgId: Byte) {
   implicit val discriminator: Discriminator[Result, T, Byte] = Discriminator(msgId)
@@ -156,11 +151,6 @@ object ErrorResult {
     case e @ RuntimeError(_) => e
     case e => RuntimeError(e)
   }
-
-  def applyIO(err: Throwable): IO[Result] = IO.pure(apply(err))
-
-  import fs2.Stream
-  def toStream(err: Throwable): IO[Stream[IO, Result]] = IO.pure(Stream.emit(apply(err)))
 }
 
 

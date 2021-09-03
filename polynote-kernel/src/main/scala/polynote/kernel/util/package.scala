@@ -29,4 +29,8 @@ package object util {
       arr.toSeq
   }
 
+  type RPublish[R, A] = Publish[R, Throwable, A]
+  type TPublish[A] = Publish[Any, Throwable, A]
+  type UPublish[A] = Publish[Any, Nothing, A]
+  type URPublish[R, A] = Publish[R, Nothing, A]
 }

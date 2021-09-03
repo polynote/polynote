@@ -1,6 +1,5 @@
 package polynote
 
-import cats.effect.Effect
 import polynote.app.Environment
 import polynote.config.KernelIsolation
 import polynote.kernel.{BaseEnv, Kernel, LocalKernel}
@@ -12,12 +11,10 @@ import polynote.server.{AppEnv, Server}
 import polynote.app.{Args, MainArgs, globalEnv}
 import polynote.server.repository.NotebookRepository
 import polynote.server.repository.fs.FileSystems
-import zio.{Task, ULayer, ZIO, ZLayer}
+import zio.{ULayer, ZIO, ZLayer}
 
 abstract class Main
 object Main extends polynote.app.App {
-  private implicit val taskEffect: Effect[Task] = zio.interop.catz.taskEffectInstance
-
   val main: ZIO[AppEnv, Nothing, Int] =
     MainArgs.access.flatMap {
       args => args.command match {

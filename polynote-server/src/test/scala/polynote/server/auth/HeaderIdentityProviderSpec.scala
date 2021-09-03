@@ -1,17 +1,13 @@
 package polynote.server.auth
 
-import cats.syntax.traverse._
-import cats.instances.option._
-import io.circe.{Json, JsonObject}
 import io.circe.syntax.EncoderOps
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.config.{AuthProvider, PolynoteConfig, Security}
-import polynote.kernel.environment.{Config, Env}
+import polynote.kernel.environment.Config
 import polynote.testing.ZIOSpec
 import polynote.messages.CellID
-import uzhttp.{Request, Response, Status, HTTPError}
-import zio.{RIO, Task, ZIO, ZLayer}
-import zio.interop.catz._
+import uzhttp.{Request, Response, Status}
+import zio.{ZIO, ZLayer}
 
 class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
 
@@ -28,7 +24,8 @@ class HeaderIdentityProviderSpec extends FreeSpec with Matchers with ZIOSpec {
     provider = "header",
     config = createProvider(allowAnonymous).asJsonObject))))
 
-  def loadFrom(config: PolynoteConfig): Option[IdentityProvider.Service] = config.security.auth.map(IdentityProvider.find).sequence.runWithConfig(config)
+  def loadFrom(config: PolynoteConfig): Option[IdentityProvider.Service] =
+    ZIO.foreach(config.security.auth)(IdentityProvider.find).runWithConfig(config)
 
   "HeaderIdentityProvider" - {
 

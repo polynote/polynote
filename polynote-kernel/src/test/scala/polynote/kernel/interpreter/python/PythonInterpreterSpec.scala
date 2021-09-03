@@ -1,6 +1,5 @@
 package polynote.kernel.interpreter.python
 
-import jep.python.PyCallable
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.interpreter.State
 import polynote.kernel.{CompileErrors, Completion, CompletionType, Output, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
@@ -9,7 +8,6 @@ import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
 import polynote.testing.InterpreterSpec
 import polynote.testing.kernel.MockEnv
-import zio.interop.catz._
 
 class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 

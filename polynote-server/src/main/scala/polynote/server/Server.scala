@@ -1,12 +1,10 @@
 package polynote.server
 
 import java.io.File
-import java.net.URLEncoder
+import java.net.{URLConnection, URLEncoder}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import java.util.UUID
-
-import fs2.concurrent.Topic
 import polynote.buildinfo.BuildInfo
 import polynote.app.{Args, Environment, MainArgs}
 import polynote.config.PolynoteConfig
@@ -20,10 +18,10 @@ import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
 import polynote.kernel.interpreter.Interpreter
+import polynote.kernel.util.ZTopic
 import polynote.server.repository.NotebookRepository
 import zio.{Has, IO, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
-import sun.net.www.MimeTable
 
 class Server {
   private lazy val currentPath = new File(System.getProperty("user.dir")).toPath
@@ -179,7 +177,7 @@ class Server {
       for {
         _             <- initNotebookStorageDir().toManaged_
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
-        broadcastAll  <- Topic[Task, Option[Message]](None).toManaged_  // used to broadcast messages to all connected clients
+        broadcastAll  <- ZTopic.unbounded[Message].toManaged_  // used to broadcast messages to all connected clients
         _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with MainEnv with MainArgs](broadcastAll))
         authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_
         staticHandler <- staticFiles
@@ -218,7 +216,7 @@ object Server {
   type Routes = PartialFunction[Request, ZIO[BaseEnv with Config, HTTPError, Response]]
 
   object MimeTypes {
-    private val fromSystem = MimeTable.getDefaultTable
+    private val fromSystem = URLConnection.getFileNameMap
     private val explicit = Map(
       ".png" -> "image/png",
       ".js" -> "application/javascript",

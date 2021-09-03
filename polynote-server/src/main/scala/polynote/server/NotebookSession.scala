@@ -1,27 +1,26 @@
 package polynote.server
 
-import java.util.concurrent.atomic.AtomicInteger
-
-import cats.instances.list._
 import cats.syntax.either._
-import cats.syntax.traverse._
-import polynote.kernel.{BaseEnv, ClearResults, Complete, GlobalEnv, KernelBusyState, PresenceUpdate, Running, StreamThrowableOps, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
-import polynote.kernel.util.Publish
+import polynote.kernel.logging.Logging
+import polynote.kernel.util.{Publish, ZTopic}
+import polynote.kernel.{BaseEnv, Complete, GlobalEnv, PresenceUpdate, Running, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.messages._
 import polynote.server.auth.Permission
 import uzhttp.HTTPError
-import HTTPError.NotFound
-import fs2.concurrent.Topic
-import polynote.kernel.logging.Logging
+import uzhttp.HTTPError.NotFound
 import uzhttp.websocket.Frame
-import zio.stream.{Stream, Take}
-import zio.ZQueue
-import zio.stream.ZStream
-import zio.{Promise, RIO, Task, UIO, ZIO, ZLayer}
+import zio.stream.{Stream, Take, ZStream}
+import zio.{Promise, RIO, UIO, ZIO, ZLayer, ZQueue}
+
+import java.util.concurrent.atomic.AtomicInteger
 
 
-class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingHandles.Service, broadcastAll: Topic[Task, Option[Message]]) {
+class NotebookSession(
+  subscriber: KernelSubscriber,
+  streamingHandles: StreamingHandles.Service,
+  broadcastAll: ZTopic.Of[Message]
+) {
 
   private val streamingHandlesLayer = ZLayer.succeed(streamingHandles)
 
@@ -148,7 +147,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
   }
 
   private def sendRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, Unit]  =
-    SocketSession.getRunningKernels.flatMap(broadcastAll.publish1) *> broadcastAll.publish1(None)
+    SocketSession.getRunningKernels.flatMap(broadcastAll.publish)
 
   // First send the notebook without any results (because they're large) and then send the individual results
   // to make notebook loading more incremental.
@@ -171,11 +170,11 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
 object NotebookSession {
 
-  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: Topic[Task, Option[Message]]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: ZTopic.Of[Message]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
     for {
       _                <- NotebookManager.assertValidPath(path)
       output           <- ZQueue.unbounded[Take[Nothing, Message]]
-      _                <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
+      _                <- Env.add[SessionEnv with NotebookManager](Publish(output))
       subscriber       <- NotebookManager.subscribe(path).orElseFail(NotFound(path))
       sessionId        <- nextSessionId
       streamingHandles <- StreamingHandles.make(sessionId).orDie

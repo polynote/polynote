@@ -1,6 +1,5 @@
 package polynote.messages
 
-import cats.MonadError
 import cats.syntax.either._
 import io.circe.{Decoder, Encoder, ObjectEncoder}
 import polynote.kernel._
@@ -13,6 +12,7 @@ import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, Spa
 import polynote.data.Rope
 import polynote.runtime.{CellRange, StreamingDataRepr, TableOp}
 import shapeless.cachedImplicit
+import zio.{IO, ZIO}
 
 sealed trait Message
 
@@ -21,17 +21,17 @@ object Message {
 
   val codec: Codec[Message] = Codec[Message]
 
-  def decode[F[_]](bytes: ByteVector)(implicit F: MonadError[F, Throwable]): F[Message] = F.fromEither {
+  def decode(bytes: ByteVector): IO[CodecError, Message] = ZIO.fromEither {
     codec.decode(bytes.toBitVector).toEither
       .map(_.value)
       .leftMap {
-        err => new Exception(err.messageWithContext)
+        err => CodecError(err)
       }
   }
 
-  def encode[F[_]](msg: Message)(implicit F: MonadError[F, Throwable]): F[BitVector] = F.fromEither {
+  def encode(msg: Message): IO[CodecError, BitVector] = ZIO.fromEither {
     codec.encode(msg).toEither.leftMap {
-      err => new Exception(err.messageWithContext)
+      err => CodecError(err)
     }
   }
 }

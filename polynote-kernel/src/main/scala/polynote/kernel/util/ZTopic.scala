@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicLong
 import zio.stream.{Take, ZStream}
 import zio.{Cause, Exit, IO, Managed, Promise, Queue, Ref, Semaphore, UIO, UManaged, ZIO, ZQueue}
 
-sealed trait ZTopic[-RA, -RB, +EA, +EB, -A, +B] {
+trait ZTopic[-RA, -RB, +EA, +EB, -A, +B] {
   /**
     * Publish a value to all the subscribers of this topic. The returned effect will complete
     * once all subscribers have received the value. If the topic is closed, does nothing (as there are no subscribers)
@@ -36,9 +36,10 @@ sealed trait ZTopic[-RA, -RB, +EA, +EB, -A, +B] {
     * If the [[ZTopic.Subscriber]] handle isn't needed, subscribe directly to a stream of published elements. If the
     * topic has already been closed, this will be an empty stream.
     */
-  def subscribeStream: ZStream[RB, EB, B] = ZStream.fromEffect(subscribe).catchAll {
-    _ => ZStream.empty
-  }.flatMap(_.stream)
+  def subscribeStream(implicit ev: EB <:< Throwable): ZStream[RB, Throwable, B] = for {
+    subscriber <- ZStream.fromEffect(subscribe)
+    elems      <- subscriber.stream.mapError(ev).ensuring(subscriber.shutdown())
+  } yield elems
 
   /**
     * Return the current number of subscribers to this topic.
@@ -108,6 +109,7 @@ sealed trait ZTopic[-RA, -RB, +EA, +EB, -A, +B] {
 object ZTopic {
 
   type Of[A] = ZTopic[Any, Any, Nothing, Nothing, A, A]
+  type OfIO[E, A] = ZTopic[Any, Any, E, E, A, A]
 
   trait Subscriber[-R, +E, +A] {
 
@@ -192,7 +194,7 @@ object ZTopic {
         case true => ZIO.succeed(Take.end)
       }
 
-      override lazy val stream: ZStream[R, E, Out] = ZStream.fromQueueWithShutdown(queue).flattenTake
+      override lazy val stream: ZStream[R, E, Out] = ZStream.fromQueue(queue).flattenTake
       override def map[B](fn: Out => B): ZTopic.Subscriber[R, E, B] = new Subscriber(id, queue.map(_.map(fn)))
       override def mapM[R1 <: R, E1 >: E, B](fn: Out => ZIO[R1, E1, B]): ZTopic.Subscriber[R1, E1, B] = new Subscriber(
         id,
@@ -206,26 +208,17 @@ object ZTopic {
       override def shutdown(): UIO[Unit] = queue.shutdown *> removeSubscriber(id)
       override def isShutdown: UIO[Boolean] = queue.isShutdown
 
-//      override def closeAndDrain(): ZIO[R, E, List[A1]] = for {
-//        _         <- queue.offer(Take.End)
-//        remaining <- queue.takeAll
-//        _         <- queue.shutdown
-//      } yield remaining.takeWhile {
-//        case Take.Value(_) => true
-//        case _ => false
-//      }.collect {
-//        case Take.Value(a) => a
-//      }
     }
 
     private def publishTake(take: Take[Nothing, A]): UIO[Unit] = subscriberSet.get.flatMap {
       subscribers =>
         ZIO.foreachPar_(subscribers) {
-          case (_, subscriber) => subscriber.offer(take)
+          case (_, subscriber) => ZIO.unlessM(subscriber.isShutdown)(subscriber.offer(take))
         }
     }
 
-    def publish(value: A): UIO[Unit] = ifNotClosed(publishTake(Take.single(value)))
+    def publish(value: A): UIO[Unit] =
+      ZIO.unlessM(closed.isDone)(publishTake(Take.single(value)))
 
     private def mkSubscriber: UIO[Subscriber[Any, Nothing, A, A]] = for {
       queue <- mkQueue

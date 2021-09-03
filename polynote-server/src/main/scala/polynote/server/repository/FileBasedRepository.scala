@@ -1,31 +1,26 @@
 package polynote.server.repository
 
-import java.io.{FileNotFoundException, OutputStream}
+import polynote.kernel.NotebookRef.AlreadyClosed
+import polynote.kernel.environment.Config
+import polynote.kernel.logging.Logging
+import polynote.kernel.util.{LongRef, ZTopic}
+import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
+import polynote.messages._
+import polynote.server.repository.format.NotebookFormat
+import polynote.server.repository.fs.WAL.WALWriter
+import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem, WAL}
+import zio.ZIO.effectTotal
+import zio.clock.currentDateTime
+import zio.duration.Duration
+import zio.stream.{Take, ZStream}
+import zio.{Fiber, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO}
+
+import java.io.FileNotFoundException
 import java.net.URI
-import java.nio.channels.FileChannel
 import java.nio.file.{FileAlreadyExistsException, Path, Paths}
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import polynote.kernel.NotebookRef.AlreadyClosed
-import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
-import polynote.kernel.environment.Config
-import polynote.kernel.logging.Logging
-import polynote.kernel.util.{LongRef, ZTopic}
-import polynote.messages._
-import polynote.server.repository.format.NotebookFormat
-import polynote.server.repository.fs.{LocalFilesystem, NotebookFilesystem, WAL}
-import WAL.WALWriter
-import scodec.Codec
-import zio.{Fiber, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO}
-import zio.ZIO.effectTotal
-import zio.blocking.effectBlocking
-import zio.clock.currentDateTime
-import zio.duration.Duration
-import zio.stream.{Take, ZStream}
-import zio.interop.catz._
-
-
 
 class FileBasedRepository(
   val path: Path,
@@ -233,7 +228,7 @@ class FileBasedRepository(
         .forkDaemon.flatMap(process.succeed).unit
     }
 
-    override def updates: ZStream[Any, Nothing, NotebookUpdate] = updatesTopic.subscribeStream
+    override def updates: ZStream[Any, Throwable, NotebookUpdate] = updatesTopic.subscribeStream
   }
 
   private object FileNotebookRef {

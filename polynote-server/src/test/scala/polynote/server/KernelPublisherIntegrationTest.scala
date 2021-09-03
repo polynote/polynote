@@ -2,7 +2,6 @@ package polynote.server
 
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
-import fs2.concurrent.Topic
 import org.scalacheck.{Arbitrary, Gen, Shrink}
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
@@ -14,17 +13,15 @@ import polynote.kernel.remote.SocketTransport.DeploySubprocess
 import polynote.kernel.remote.{RemoteKernel, SocketTransport, SocketTransportServer}
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployJava
 import polynote.kernel.util.Publish
-import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, KernelStatusUpdate, LocalKernel, LocalKernelFactory, Output, StreamThrowableOps}
+import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, KernelStatusUpdate, LocalKernel, LocalKernelFactory, Output}
 import polynote.messages.{CellID, ContentEdit, ContentEdits, Delete, Insert, Message, Notebook, NotebookCell, NotebookUpdate, ShortList, UpdateCell}
 import polynote.server.auth.UserIdentity
 import polynote.testing.ExtConfiguredZIOSpec
 import polynote.testing.kernel.MockNotebookRef
-import polynote.util.VersionBuffer
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Chunk, Fiber, Has, Promise, Queue, RIO, Ref, Semaphore, Tag, Task, UIO, ULayer, URIO, ZIO, ZLayer}
-import zio.interop.catz.taskConcurrentInstance
+import zio.{Promise, Queue, RIO, Ref, Semaphore, Tag, Task, UIO, ULayer, URIO, ZIO, ZLayer}
 import zio.random
 import random.Random
 
@@ -46,7 +43,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
     stubKernel
   }
 
-  private val bq = mock[Topic[Task, Option[Message]]]
+  private val bq = Publish.ignore[Message]
 
   implicit override val generatorDrivenConfig: PropertyCheckConfiguration =
     PropertyCheckConfiguration(minSize = 10, sizeRange = 10, minSuccessful = 50)
@@ -83,7 +80,10 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val kernel          = kernelPublisher.kernel.runWith(kernelFactory).asInstanceOf[RemoteKernel[InetSocketAddress]]
       val process         = kernel.transport.asInstanceOf[SocketTransportServer].process
 
-      val collectStatus = kernelPublisher.status.subscribe(5).terminateAfterEquals(KernelBusyState(false, false)).compile.toList.forkDaemon.runIO()
+      val collectStatus = kernelPublisher.status.subscribeStream
+        .takeUntil(_ == KernelBusyState(false, false))
+        .runCollect.map(_.toList)
+        .forkDaemon.runIO()
 
       process.kill().runIO()
       assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty)
@@ -129,7 +129,10 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val ref             = MockNotebookRef(notebook).runIO()
       val kernelPublisher = KernelPublisher(ref, bq).runWith(failingKernelFactory)
       val stopStatus = Promise.make[Throwable, Unit].runIO()
-      val collectStatus = kernelPublisher.status.subscribe(5).interruptWhen(stopStatus.await.either).compile.toList.forkDaemon.runIO()
+      val collectStatus = kernelPublisher.status.subscribeStream
+        .interruptWhen(stopStatus.await.either)
+        .runCollect.map(_.toList)
+        .forkDaemon.runIO()
 
       a [FailedToStart] should be thrownBy {
         kernelPublisher.kernel.runWith(failingKernelFactory)
@@ -169,11 +172,11 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
         // listen to the canonical updates from the publisher
         val serverEdits = new ListBuffer[(Int, NotebookUpdate, Long)]
         val stopListening = Promise.make[Throwable, Unit].runIO()
-        val listener = kernelPublisher.broadcastUpdates.subscribe(128).unNone.terminateWhen(stopListening)(taskConcurrentInstance[Any]).evalMap {
+        val listener = kernelPublisher.broadcastUpdates.subscribeStream.haltWhen(stopListening).mapM {
           edit => zio.clock.currentTime(TimeUnit.MILLISECONDS).flatMap {
             time => ZIO.effectTotal(serverEdits += ((edit._1, edit._2, time)))
           }
-        }.compile.drain.forkDaemon.runIO()
+        }.runDrain.forkDaemon.runIO()
 
         val result = for {
           receive1 <- client1.receive.fork
