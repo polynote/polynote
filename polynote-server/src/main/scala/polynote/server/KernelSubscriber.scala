@@ -1,13 +1,14 @@
 package polynote.server
 
 import polynote.kernel.environment.PublishMessage
+import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, Presence, PresenceSelection}
 import polynote.messages.{CellID, KernelStatus, Notebook, NotebookUpdate, TinyString}
 import polynote.runtime.CellRange
 import polynote.server.KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.server.auth.{Identity, IdentityProvider, Permission, UserIdentity}
-import zio.stream.{SubscriptionRef, ZStream}
-import zio.{Fiber, Promise, RIO, Task, UIO, ZIO}
+import zio.stream.{SubscriptionRef, UStream, ZStream}
+import zio.{Dequeue, Fiber, Promise, RIO, Task, UIO, URIO, ZIO}
 
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.IntUnaryOperator
@@ -31,9 +32,9 @@ class KernelSubscriber private[server] (
     Presence(id, name, avatar.map(TinyString.apply))
   }
 
-  def close(): UIO[Unit] = closed.succeed(()).unit *> process.interrupt.unit
+  def close(): URIO[Logging, Unit] = closed.succeed(()).unit *> process.interrupt.unit
 
-  def update(update: NotebookUpdate): Task[Unit] = publisher.update(id, update)
+  def update(update: NotebookUpdate): UIO[Unit] = publisher.update(id, update)
 
   def notebook: Task[Notebook] = publisher.latestVersion.map(_._2)
   def currentPath: Task[String] = notebook.map(_.path)
@@ -60,11 +61,12 @@ object KernelSubscriber {
 
   def apply(
     id: SubscriberId,
+    broadcastUpdates: UStream[(SubscriberId, NotebookUpdate)],
     publisher: KernelPublisher
   ): RIO[BaseEnv with PublishMessage with UserIdentity, KernelSubscriber] = {
 
-    def foreignUpdates(local: AtomicInteger, global: AtomicInteger) =
-      publisher.broadcastUpdates.subscribeStream
+    def foreignUpdates(local: AtomicInteger, global: AtomicInteger, closed: Promise[Throwable, Unit]) =
+      broadcastUpdates
         .tap {
           case (`id`, update) => ZIO.effectTotal { local.set(update.localVersion) }
           case _              => ZIO.unit
@@ -84,10 +86,13 @@ object KernelSubscriber {
       publishMessage   <- PublishMessage.access
       currentSelection <- SubscriptionRef.make[Option[PresenceSelection]](None)
       updater          <- ZStream(
-          foreignUpdates(lastLocalVersion, lastGlobalVersion),
-          ZStream.fromEffect(publisher.kernelStatus().map(KernelStatus(_))) ++
-            publisher.status.subscribeStream.filter(_.isRelevant(id)).map(update => KernelStatus(update.forSubscriber(id))),
+          foreignUpdates(lastLocalVersion, lastGlobalVersion, closed).haltWhen(closed.await.run),
+          ZStream.fromEffect(publisher.kernelStatus().map(KernelStatus(_))) ++ publisher.status.subscribeStream
+            .filter(_.isRelevant(id))
+            .map(update => KernelStatus(update.forSubscriber(id)))
+            .interruptWhen(closed.await.run),
           publisher.cellResults.subscribeStream
+            .interruptWhen(closed.await.run)
         ).flattenParUnbounded().haltWhen(closed.await.run).mapM(publishMessage.publish1).runDrain.forkDaemon
     } yield new KernelSubscriber(
       id,

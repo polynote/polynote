@@ -241,6 +241,18 @@ object Env {
       zio(r).provideSomeLayer[RO](ZLayer.succeed(r))
   }
 
+  def addManaged[R0 <: Has[_]]: AddManagedPartial[R0] = addManagedPartialInstance.asInstanceOf[AddManagedPartial[R0]]
+
+  class AddManagedPartial[RO <: Has[_]] {
+    def apply[R](r: R): AddManaged[RO, R] = new AddManaged[RO, R](r)
+  }
+  private val addManagedPartialInstance: AddManagedPartial[Has[Any]] = new AddManagedPartial[Has[Any]]
+
+  class AddManaged[RO <: Has[_], R](val r: R) extends AnyVal {
+    def flatMap[E, A](managed: R => ZManaged[RO with Has[R], E, A])(implicit ev: Tag[Has[R]], ev1: Tag[R]): ZManaged[RO, E, A] =
+      managed(r).provideSomeLayer[RO](ZLayer.succeed(r))
+  }
+
   def addMany[RO <: Has[_]]: AddManyPartial[RO] = addManyPartialInstance.asInstanceOf[AddManyPartial[RO]]
 
   class AddManyPartial[RO <: Has[_]] {

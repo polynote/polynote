@@ -21,13 +21,16 @@ import polynote.testing.kernel.MockNotebookRef
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Promise, Queue, RIO, Ref, Semaphore, Tag, Task, UIO, ULayer, URIO, ZIO, ZLayer}
-import zio.random
+import zio.{Fiber, Promise, Queue, RIO, Ref, Semaphore, Tag, Task, UIO, ULayer, URIO, ZIO, ZLayer, ZManaged, random}
 import random.Random
 
 import scala.collection.mutable.ListBuffer
 import KernelPublisherIntegrationTest._
 import polynote.data.Rope
+import polynote.kernel.logging.Logging
+
+import java.util.concurrent.atomic.AtomicInteger
+import scala.util.control.NonFatal
 
 class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConfiguredZIOSpec[Interpreter.Factories] with MockFactory with ScalaCheckDrivenPropertyChecks {
   val tagged: Tag[Interpreter.Factories] = implicitly
@@ -46,7 +49,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
   private val bq = Publish.ignore[Message]
 
   implicit override val generatorDrivenConfig: PropertyCheckConfiguration =
-    PropertyCheckConfiguration(minSize = 10, sizeRange = 10, minSuccessful = 50)
+    PropertyCheckConfiguration(minSize = 2, sizeRange = 3, minSuccessful = 50)
 
   "KernelPublisher" - {
 
@@ -148,9 +151,9 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       statusUpdates should contain (KernelError(FailedToStart()))
 
     }
-
-    "handles concurrent edits" ignore forAll("Client 1 keystrokes", "Client 2 keystrokes") {
-      (client1Init: Init, client2Init: Init) =>
+    
+    "handles concurrent edits" - {
+      def check(client1Init: Init, client2Init: Init) = {
         // start up a KernelPublisher and two subscribers. Then, simulate keyboard-mashing from each subscriber
         // and track their local state using the same logic as the front-end. At the end, the server and both
         // clients should have the same state.
@@ -168,61 +171,98 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
         val client1 = new Client(Ref.make(notebook).runIO(), kernelPublisher, kernelFactory, client1Init)
         val client2 = new Client(Ref.make(notebook).runIO(), kernelPublisher, kernelFactory, client2Init)
-        val startTime = zio.clock.currentTime(TimeUnit.MILLISECONDS).runIO()
+
         // listen to the canonical updates from the publisher
         val serverEdits = new ListBuffer[(Int, NotebookUpdate, Long)]
-        val stopListening = Promise.make[Throwable, Unit].runIO()
-        val listener = kernelPublisher.broadcastUpdates.subscribeStream.haltWhen(stopListening).mapM {
-          edit => zio.clock.currentTime(TimeUnit.MILLISECONDS).flatMap {
-            time => ZIO.effectTotal(serverEdits += ((edit._1, edit._2, time)))
-          }
-        }.runDrain.forkDaemon.runIO()
+        val stopListening = Promise.make[Nothing, Unit].runIO()
+        val listener = kernelPublisher.subscribeUpdates.use {
+          _.mapM {
+            edit => zio.clock.currentTime(TimeUnit.MILLISECONDS).flatMap {
+              time => ZIO.effectTotal(serverEdits += ((edit._1, edit._2, time)))
+            }.uninterruptible
+          }.runDrain
+        }.forkDaemon.runIO()
 
-        val result = for {
-          receive1 <- client1.receive.fork
-          receive2 <- client2.receive.fork
-          send1    <- client1.send.fork
-          send2    <- client2.send.fork
-          _    <- send1.join
-          _    <- send2.join
-          _    <- (ZIO.sleep(Duration.fromMillis(100)) *> kernelPublisher.updateQueue.size).repeatUntil(_ <= 0)
-          _    <- client1.inbound.offer(Take.end)
-          _    <- client2.inbound.offer(Take.end)
-          _    <- receive1.join
-          _    <- receive2.join
-          res1 <- client1.results
-          res2 <- client2.results
-          serv <- kernelPublisher.versionedNotebook.get.map(_.cells.head.content.toString)
-          _    <- stopListening.succeed(())
-          _    <- listener.join
-        } yield (res1, res2, serv)
+        val expected1 = client1Init.ops.length
+        val expected2 = client2Init.ops.length
+        val maxRemaining = ZIO.mapN(
+          client1.receivedCount.map(expected2 - _),
+          client2.receivedCount.map(expected1 - _)
+        )(math.max)
+
+        val result = (client1.sendReceive <&> client2.sendReceive).use {
+          case ((send1, receive1), (send2, receive2)) =>
+            for {
+                _    <- send1.join
+                _    <- send2.join
+                _    <- maxRemaining.repeatUntilEquals(0)
+                _    <- client1.inbound.offer(Take.end)
+                _    <- client2.inbound.offer(Take.end)
+                _    <- receive1.join
+                _    <- receive2.join
+                res1 <- client1.results
+                res2 <- client2.results
+                serv <- kernelPublisher.versionedNotebook.get.map(_.cells.head.content.toString)
+                _    <- stopListening.succeed(())
+                _    <- kernelPublisher.close()
+                _    <- listener.join
+            } yield (res1, res2, serv)
+        }
 
 
         try {
-          val ((res1, edits1), (res2, edits2), serv) = (random.setSeed(0L) *> result).runIO()
-
-          if (res1 != serv || res2 != serv) {
-            println("===SHRINK===")
+          def showLogs(): Unit = {
             (client1.log ++ client2.log ++ serverLog).sortBy(_._1).foreach {
               case (t, log) => println(log)
             }
 
             println("\n===LOGS===")
             println(s"${client1.outLog.size} ${client2.inLog.size} ${client2.outLog.size} ${client1.inLog.size}")
-            client1.outLog.zipAll(client2.inLog, "", "").zipAll(client2.outLog, "", "").zipAll(client1.inLog, "", "").foreach {
-              case (((out1, in2), out2), in1) =>
-                println(s"< 1: $out1")
-                println(s"< 2: $out2")
-                println(s"> 1: $in1")
-                println(s"> 2: $in2")
-                println()
+            val c1Out = client1.outLog.iterator
+            val c2In  = client2.inLog.iterator
+            val c2Out = client2.outLog.iterator
+            val c1In  = client1.inLog.iterator
+
+            while (c1Out.hasNext || c2In.hasNext || c2Out.hasNext || c1In.hasNext) {
+              val out1 = if (c1Out.hasNext) c1Out.next() else ""
+              val in2  = if (c2In.hasNext) c2In.next() else ""
+              val out2 = if (c2Out.hasNext) c2Out.next() else ""
+              val in1  = if (c1In.hasNext) c1In.next() else ""
+              println(s"< 0: $out1")
+              println(s"< 1: $out2")
+              println(s"> 0: $in1")
+              println(s"> 1: $in2")
+              println()
             }
+          }
+
+          val ((res1, edits1), (res2, edits2), serv) = try {
+            (random.setSeed(0L) *> result).runWith(envLayer)
+          } catch {
+            case NonFatal(err) =>
+              println("===ERROR===")
+              showLogs()
+              throw err
+          }
+
+          if (res1 != serv || res2 != serv) {
+            println(s"0: $res1")
+            println(s"1: $res2")
+            println(s"S: $serv")
+            println("===SHRINK===")
+            showLogs()
+          } else {
           }
           res1 shouldEqual serv
           res2 shouldEqual serv
         } finally {
           //kernelPublisher.close().runIO()
         }
+      }
+      
+      "check" in forAll("Client 1 keystrokes", "Client 2 keystrokes") {
+        (client1Init: Init, client2Init: Init) => check(client1Init, client2Init)
+      }
     }
 
   }
@@ -234,11 +274,14 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
     init: Init
   ) {
     val inbound: Queue[Take[Nothing, Message]] = Queue.unbounded[Take[Nothing, Message]].runIO()
+    private val numReceived = new AtomicInteger(0)
     private val versionBuffer = new SubscriberUpdateBuffer()
     private val localVersionRef = Ref.make(0).runIO()
     private val globalVersionRef = Ref.make(0).runIO()
     private val currentOffset = Ref.make(init.initialOffset).runIO()
     private val Init(_, keypresses, inboundLatencies, outboundLatencies) = init
+
+    private val outbound = ZStream(keypresses: _*)
 
     // a semaphore to simulate JavaScript single-threadedness
     private val js = Semaphore.make(1L).runIO()
@@ -246,7 +289,6 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
     private val publishEnv: ULayer[PublishMessage] = ZLayer.succeed(inbound)
     private val identityEnv: ULayer[UserIdentity] = ZLayer.succeed(None)
     val env: ZLayer[Any, Nothing, Kernel.Factory with PublishMessage with UserIdentity] = ZLayer.succeed(kernelFactory) ++ publishEnv ++ identityEnv
-    val subscriber = publisher.subscribe().runWithLayer(env)
 
     private val edits = new ListBuffer[ContentEdit]
     private val allUpdates = new ListBuffer[ContentEdits]
@@ -255,17 +297,26 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
     val inLog = new ListBuffer[String]
     val globalVersions = new ListBuffer[(Int, String)]
 
+    def receivedCount: UIO[Int] = ZIO.effectTotal(numReceived.get())
+
     def content: String = notebook.get.runIO().cells.head.content.toString
 
     def results: UIO[(String, List[ContentEdits])] = notebook.get.map(_.cells.head.content.toString -> allUpdates.toList)
 
-    def receive: URIO[Random with Clock, Unit] = {
+    val sendReceive: ZManaged[BaseEnv with Config with Interpreter.Factories, Throwable, (Fiber[Nothing, Unit], Fiber[Nothing, Unit])] = publisher.subscribe().flatMap {
+      subscriber => sendTo(subscriber).forkManaged <&> receiveFrom(subscriber).forkManaged
+    }.provideSomeLayer[BaseEnv with Config with Interpreter.Factories](env)
+
+    private def receiveFrom(subscriber: KernelSubscriber): URIO[Random with Clock, Unit] = {
       // receive messages (with simulated latency) from the server and try to process them in the same fashion as the client
       val latencies = inboundLatencies.iterator
+      val nextLatency = ZIO(latencies.next()).orDie.map(Duration.fromMillis)
+      val simulateLatency = nextLatency.flatMap(l => ZIO.sleep(l))
+
       ZStream.fromQueue(inbound).flattenTake.mapM {
         case update: NotebookUpdate =>
-          var logStr = new StringBuilder
-          ZIO.sleep(Duration.fromMillis(latencies.next())) *> js.withPermit {
+          val logStr = new StringBuilder
+          simulateLatency *> js.withPermit {
             notebook.get.flatMap { prev =>
               ZIO.effectTotal(logStr ++= s"""> ${subscriber.id} $update "${prev.cells.head.content}"\n""") *>
               localVersionRef.get.flatMap {
@@ -274,18 +325,14 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
 
                   val rebased = if (update.localVersion < localVersion) {
                     logStr ++= s"""  rebasing $update from L${update.localVersion} to L$localVersion on "${prev.cells.head.content}"\n"""
-
-//                    versionBuffer.rebaseThrough(update.withVersions(update.localVersion, update.localVersion), 1, localVersion, Some(logStr), reverse = true, updateBuffer = false)
                     val rebaseOnto = versionBuffer.getRange(update.localVersion + 1, localVersion)
                     var content = prev.cells.head.content
                     rebaseOnto.foldLeft(update) {
                       case (accum, (_, next@UpdateCell(_, _, _, edits, _))) =>
                         val rebased = accum.rebase(next)
-                        val rebasedEdits = rebased.asInstanceOf[UpdateCell].edits
                         logStr ++= s"  ${next} => ${rebased}\n"
                         rebased
                     }
-                    //update.rebaseAll(rebaseOnto, Some(logStr))._1
                   } else {
                     update
                   }
@@ -332,71 +379,56 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
                     }
               }
             }.unit
-          }
+          }.ensuring(ZIO.effectTotal(numReceived.incrementAndGet()))
 
         case _ => ZIO.unit
       }.runDrain
     }
 
-    def send: URIO[Clock with zio.random.Random, Unit] = {
-      if (keypresses.isEmpty)
-        return ZIO.unit
-
+    private def sendTo(subscriber: KernelSubscriber): URIO[Random with Clock, Unit] = {
       val latencies = outboundLatencies.iterator
-      val ops       = keypresses.iterator
 
       val doBackspace = currentOffset.get.flatMap {
         case i if i <= 0 => ZIO.fail(())
         case i           => currentOffset.updateAndGet(_ - 1).map(offs => Delete(offs, 1))
       }
 
-      val keypress  = ZIO.effectTotal(ops.next()).flatMap {
-        case (delay, op)     => ZIO.sleep(Duration.fromMillis(delay)).as(op)
-      }.flatMap {
-        case Backspace       => doBackspace
-        case Keystroke(char) => currentOffset.getAndUpdate(_ + 1).map(i => Insert(i, char.toString))
+      val nextLatency = ZIO(latencies.next()).map(Duration.fromMillis)
+      val simulateLatency = nextLatency.flatMap(l => ZIO.sleep(l))
+
+      val sendKeypresses = outbound.foreach {
+        case (delay, op) =>
+          ZIO.sleep(Duration.fromMillis(delay)).as(op).flatMap {
+            case Backspace       => doBackspace
+            case Keystroke(char) => currentOffset.getAndUpdate(_ + 1).map(i => Insert(i, char.toString))
+          }.flatMap {
+            edit =>
+              js.withPermit {
+                for {
+                  prevContent <- notebook.get.map(_.cells.head.content.toString)
+                  localVersion <- localVersionRef.updateAndGet(_ + 1)
+                  globalVersion <- globalVersionRef.get
+                  _ = edits += edit
+                  ce = ContentEdits(edit)
+                  _ = allUpdates += ce
+                  update = UpdateCell(globalVersion, localVersion, CellID(0), ce, None)
+                  nb <- notebook.updateAndGet(update.applyTo)
+                  _ = versionBuffer.add(localVersion, (0, update))
+                  content = nb.cells.head.content.toString
+                  str = s"""< ${subscriber.id} $update "$prevContent" -> "$content""""
+                  _ = log += ((System.currentTimeMillis(), str))
+                  _ = outLog += edit.action(prevContent)
+                } yield update
+              }
+          }.flatMap {
+            update => simulateLatency.orDie *> subscriber.update(update)
+          }.foldCauseM(
+            failure => ZIO.effectTotal(System.err.println(s"Send error: $failure")),
+            _       => ZIO.unit
+          )
       }
 
-      val sendKeypress = js.withPermit {
-        for {
-          prevContent   <- notebook.get.map(_.cells.head.content.toString)
-          localVersion  <- localVersionRef.updateAndGet(_ + 1)
-          globalVersion <- globalVersionRef.get
-          edit          <- keypress
-          _              = edits += edit
-          ce             = ContentEdits(edit)
-          _              = allUpdates += ce
-          update         = UpdateCell(globalVersion, localVersion, CellID(0), ce, None)
-          nb            <- notebook.updateAndGet(update.applyTo)
-          _              = versionBuffer.add(localVersion, (0, update))
-          content        = nb.cells.head.content.toString
-          str = s"""< ${subscriber.id} $update "$prevContent" -> "$content""""
-          _              = log += ((System.currentTimeMillis(), str))
-          _ = outLog += edit.action(prevContent)
-          //_ = println(str)
-        } yield update
-      }.uninterruptible
-
-      val sendKeypresses = sendKeypress.flatMap {
-        update => ZIO.sleep(Duration.fromMillis(latencies.next())) *> subscriber.update(update).orDie
-      }.ignore.repeatWhile(_ => ops.hasNext).uninterruptible
-
-      val outbound: Queue[Take[Nothing, NotebookUpdate]] = Queue.unbounded[Take[Nothing, NotebookUpdate]].runIO()
-
-      // send all the requests in the queue to the subscriber (server), with specified latency
-      val outboundSender = ZStream.fromQueueWithShutdown(outbound)
-        .flattenTake
-        .mapM(msg => ZIO.sleep(Duration.fromMillis(latencies.next())).as(msg))
-        .foreach(subscriber.update)
-        .ensuring(outbound.shutdown)
-
-      for {
-        sending <- outboundSender.fork
-        keys    <- sendKeypresses
-        _       <- outbound.offer(Take.end)
-        _       <- sending.join.orDie
-      } yield ()
-
+      sendKeypresses
     }
   }
 
@@ -448,6 +480,20 @@ object KernelPublisherIntegrationTest {
     )
   }
 
+  final case class Wait(i: Int) extends AnyVal
+  implicit val arbWait: Arbitrary[Wait] = Arbitrary {
+    Gen.choose(10, 500).map(i => Wait(i))
+  }
+
+  implicit val shrinkWait: Shrink[Wait] = {
+    def shrink(wait: Wait): Stream[Wait] = wait match {
+      case Wait(i) if i >= 500 => Stream.empty
+      case Wait(i) =>
+        val next = Wait(math.min(500, math.ceil(i * 2).toInt))
+        next #:: shrink(next)
+    }
+    Shrink(shrink)
+  }
 
   implicit val arbInit: Arbitrary[Init] = Arbitrary {
     Gen.sized {

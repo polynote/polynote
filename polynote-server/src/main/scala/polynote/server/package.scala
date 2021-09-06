@@ -16,7 +16,7 @@ import zio.ZIO.not
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Fiber, Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Fiber, Has, Promise, Queue, RIO, RManaged, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
 
 import java.net.URI
 import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Paths}
@@ -109,7 +109,7 @@ package object server {
 
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
-    def subscribe(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = open(path).flatMap(_.subscribe())
+    def subscribe(path: String): RManaged[NotebookManager with BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = open(path).toManaged_.flatMap(_.subscribe())
     def fetchIfOpen(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[(String, String)]] = access.flatMap(_.fetchIfOpen(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
     def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())

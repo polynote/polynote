@@ -56,6 +56,10 @@ object Publish {
     override def publish1(t: A): ZIO[RA, EA, Unit] = hub.publish(t).flip.retryUntilEquals(true).flip.unit
   }
 
+  implicit def zHubToPublish[RA, RB, EA, EB, A, B](hub: ZHub[RA, RB, EA, EB, A, B]): Publish[RA, EA, A] = PublishZHub(hub)
+
+  def apply[RA, RB, EA, EB, A, B](hub: ZHub[RA, RB, EA, EB, A, B]): Publish[RA, EA, A] = PublishZHub(hub)
+
   def ignore[T]: Publish[Any, Nothing, T] = fn(_ => ZIO.unit)
 
   final case class PublishZQueueTake[RA, EA, RB, EB, ET <: EA, A, B](queue: ZQueue[RA, RB, EA, EB, Take[ET, A], B]) extends Publish[RA, EA, A] {

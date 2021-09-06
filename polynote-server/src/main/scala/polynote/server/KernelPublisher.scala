@@ -7,15 +7,15 @@ import polynote.kernel.environment.{CurrentNotebook, PublishMessage, PublishResu
 import polynote.messages.{CellID, CellResult, ContentEdits, Error, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Presence, PresenceSelection, PresenceUpdate, Result, Signatures, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
-import zio.{ Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, ULayer, URIO, ZIO, ZLayer}
+import zio.{Has, Hub, Promise, Queue, RIO, RManaged, Ref, Schedule, Semaphore, Task, UIO, ULayer, UManaged, URIO, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.server.auth.{BasicIdentity, UserIdentity}
+import polynote.server.auth.UserIdentity
 import zio.clock.Clock
 import zio.duration._
-import zio.stream.ZStream
+import zio.stream.{UStream, ZStream}
 
 import java.util.concurrent.TimeUnit
 import scala.collection.mutable.ListBuffer
@@ -23,7 +23,7 @@ import scala.collection.mutable.ListBuffer
 class KernelPublisher private (
   val versionedNotebook: NotebookRef,
   private[server] val updateQueue: Queue[(SubscriberId, NotebookUpdate)], // visible for testing
-  val broadcastUpdates: ZTopic.Of[(SubscriberId, NotebookUpdate)],
+  val broadcastUpdates: Hub[(SubscriberId, NotebookUpdate)],
   val status: ZTopic.Of[KernelStatusUpdate],
   val cellResults: ZTopic.OfIO[Throwable, CellResult],
   val taskManager: TaskManager.Service,
@@ -68,8 +68,12 @@ class KernelPublisher private (
     }
   }
 
-  def update(subscriberId: SubscriberId, update: NotebookUpdate): Task[Unit] =
+  def update(subscriberId: SubscriberId, update: NotebookUpdate): UIO[Unit] =
     updateQueue.offer((subscriberId, update)).unit //.repeatUntil(identity).unit
+
+  def subscribeUpdates: UManaged[UStream[(SubscriberId, NotebookUpdate)]] =
+    broadcastUpdates.subscribe.map(queue => ZStream.fromQueue(queue))
+
 
   private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
     kernel.awaitClosed.catchAllCause {
@@ -184,38 +188,39 @@ class KernelPublisher private (
       }
   })
 
-  def subscribe(): RIO[BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = subscribing.withPermit {
+  def subscribe(): RManaged[BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] =
     for {
-      _            <- ZIO.whenM(closed.isDone)(ZIO.fail(PublisherClosed))
-      subscriberId <- ZIO.effectTotal(nextSubscriberId.getAndIncrement())
-      subscriber   <- KernelSubscriber(subscriberId, this)
-      _            <- subscribers.put(subscriberId, subscriber)
-      _            <- subscriber.closed.await.zipRight(removeSubscriber(subscriberId)).forkDaemon
-      _            <- status.publish(PresenceUpdate(List(subscriber.presence), Nil))
-      _            <- subscriber.selections.mapM(status.publish).runDrain.forkDaemon
+      _            <- ZIO.whenM(closed.isDone)(ZIO.fail(PublisherClosed)).toManaged_
+      subscriberId <- ZIO.effectTotal(nextSubscriberId.getAndIncrement()).toManaged_
+      updates      <- subscribeUpdates
+      subscriber   <- KernelSubscriber(subscriberId, updates, this).toManaged(_.close())
+      _            <- subscribing.withPermit(subscribers.put(subscriberId, subscriber)).toManaged(_ => removeSubscriber(subscriberId))
+      _            <- status.publish(PresenceUpdate(List(subscriber.presence), Nil)).toManaged_
+      _            <- subscriber.selections.mapM(status.publish).runDrain.forkManaged
     } yield subscriber
-  }
 
   private def closeIfNoSubscribers: TaskB[Unit] =
     ZIO.whenM(kernelStarting.withPermit(kernelRef.get.map(_.isEmpty)) && subscribers.isEmpty) {
-      for {
-        path <- latestVersion.map(_._2.path)
-        _    <- Logging.info(s"Closing $path (idle with no more subscribers)")
-        _    <- close()
-      } yield ()
+      ZIO.unlessM(closed.isDone) {
+        for {
+          path <- latestVersion.map(_._2.path)
+            _ <- Logging.info(s"Closing $path (idle with no more subscribers)")
+            _ <- close()
+        } yield ()
+      }
     }
 
-  private def removeSubscriber(id: Int): RIO[BaseEnv with Clock, Unit] = subscribing.withPermit {
+  private def removeSubscriber(id: Int): URIO[BaseEnv with Clock, Unit] = subscribing.withPermit {
     for {
       subscriber <- subscribers.get(id).get.orElseFail(new NoSuchElementException(s"Subscriber $id does not exist"))
       _          <- ZIO.whenM(!subscriber.closed.isDone)(ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed.")))
       _          <- subscribers.remove(id)
       _          <- status.publish(PresenceUpdate(Nil, List(id)))
     } yield ()
-  } *> closeIfNoSubscribers.delay(5.seconds).forkDaemon.unit
+  }.catchAll(Logging.error) *> closeIfNoSubscribers.delay(5.seconds).forkDaemon.unit
 
   def close(): TaskB[Unit] = ZIO.unlessM(closed.isDone) {
-    closed.succeed(()).unit *>
+    broadcastUpdates.shutdown *> closed.succeed(()).unit *>
       subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
       shutdownKernel() *>
       taskManager.shutdown() *>
@@ -345,7 +350,7 @@ object KernelPublisher {
     // TODO: need to close if the versionedRef closes, hook up e.g. TreeRepository so it cascades
     updates          <- Queue.unbounded[(SubscriberId, NotebookUpdate)]
                         // TODO: replace the following with ZTopic
-    broadcastUpdates <- ZTopic.unbounded[(SubscriberId, NotebookUpdate)]
+    broadcastUpdates <- Hub.unbounded[(SubscriberId, NotebookUpdate)]
     broadcastStatus  <- ZTopic.unbounded[KernelStatusUpdate]
     broadcastResults <- ZTopic.unbounded[CellResult]
     taskManager      <- TaskManager(broadcastStatus)
@@ -376,8 +381,8 @@ object KernelPublisher {
     // process the queued updates, rebasing as needed
     _   <- ZStream.fromQueue(updates)
       .mapM((applyUpdate(versionedRef, interpState, versionBuffer, Publish(broadcastUpdates), subscribers, log) _).tupled)
+      .haltWhen(closed.await.run)
       .runDrain
-      .flatMap(_ => ZIO.effectTotal(println("STOPPED PROCESSING!")))
       .catchAll {
         err =>
           broadcastMessage.publish1(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook. Editing will now be disabled.", err))) *>

@@ -14,7 +14,7 @@ class MockNotebookRef private(
 ) extends NotebookRef {
   def set(versioned: (Int, Notebook)): UIO[Unit] = current.set(versioned)
   override def getVersioned: UIO[(Int, Notebook)] = current.get
-  override def update(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, Unit] = updateAndGet(update).unit <* updatesQueue.offer(update)
+  override def update(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, Unit] = updateAndGet(update).unit
 
   private def updateAndGetCurrent(update: ((Int, Notebook)) => (Int, Notebook)) =
     current.updateAndGet(update).tap(saveTo)
@@ -24,6 +24,8 @@ class MockNotebookRef private(
 
   override def updateAndGet(update: NotebookUpdate): IO[NotebookRef.AlreadyClosed, (Int, Notebook)] = updateAndGetCurrent {
     case (ver, nb) => (ver + 1) -> update.applyTo(nb)
+  }.tap {
+    case (newVer, _) => updatesQueue.offer(update.withVersions(newVer, update.localVersion))
   }
 
   override def addResult(cellID: CellID, result: Result): IO[NotebookRef.AlreadyClosed, Unit] = updateCurrent {

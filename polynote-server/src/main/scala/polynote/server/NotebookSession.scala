@@ -11,7 +11,7 @@ import uzhttp.HTTPError
 import uzhttp.HTTPError.NotFound
 import uzhttp.websocket.Frame
 import zio.stream.{Stream, Take, ZStream}
-import zio.{Promise, RIO, UIO, ZIO, ZLayer, ZQueue}
+import zio.{Promise, RIO, UIO, ZIO, ZLayer, ZManaged, ZQueue}
 
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -170,19 +170,19 @@ class NotebookSession(
 
 object NotebookSession {
 
-  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: ZTopic.Of[Message]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+  def stream1(path: String, input: Stream[Throwable, Frame], broadcastAll: ZTopic.Of[Message]): ZManaged[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
     for {
-      _                <- NotebookManager.assertValidPath(path)
-      output           <- ZQueue.unbounded[Take[Nothing, Message]]
-      _                <- Env.add[SessionEnv with NotebookManager](Publish(output))
+      _                <- NotebookManager.assertValidPath(path).toManaged_
+      output           <- ZQueue.unbounded[Take[Nothing, Message]].toManaged_ // TODO: finalizer instead of close
+      _                <- Env.addManaged[SessionEnv with NotebookManager](Publish(output))
       subscriber       <- NotebookManager.subscribe(path).orElseFail(NotFound(path))
-      sessionId        <- nextSessionId
-      streamingHandles <- StreamingHandles.make(sessionId).orDie
-      closed           <- Promise.make[Throwable, Unit]
+      sessionId        <- nextSessionId.toManaged_
+      streamingHandles <- StreamingHandles.make(sessionId).orDie.toManaged_
+      closed           <- Promise.make[Throwable, Unit].toManaged_
       handler           = new NotebookSession(subscriber, streamingHandles, broadcastAll)
-      env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
-      close             = closeQueueIf(closed, output) *> subscriber.close()
-      _                <- handler.sendNotebook
+      env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage].toManaged_
+      close             = closeQueueIf(closed, output) *> subscriber.close().provide(env)
+      _                <- handler.sendNotebook.toManaged_
     } yield parallelStreams(
       toFrames(ZStream.fromQueue(output).flattenTake),
       input.handleMessages(close) {
@@ -193,9 +193,36 @@ object NotebookSession {
       keepaliveStream(closed)
     ).provide(env)
   }.catchAll {
-    case err: HTTPError => ZIO.fail(err)
-    case err => Logging.error(err) *> ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
+    case err: HTTPError => ZManaged.fail(err)
+    case err => Logging.error(err).toManaged_ *> ZManaged.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
   }
+
+//  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: ZTopic.Of[Message]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+//    for {
+//      _                <- NotebookManager.assertValidPath(path)
+//      output           <- ZQueue.unbounded[Take[Nothing, Message]]
+//      _                <- Env.add[SessionEnv with NotebookManager](Publish(output))
+//      subscriber       <- NotebookManager.subscribe(path).orElseFail(NotFound(path))
+//      sessionId        <- nextSessionId
+//      streamingHandles <- StreamingHandles.make(sessionId).orDie
+//      closed           <- Promise.make[Throwable, Unit]
+//      handler           = new NotebookSession(subscriber, streamingHandles, broadcastAll)
+//      env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
+//      close             = closeQueueIf(closed, output) *> subscriber.close()
+//      _                <- handler.sendNotebook
+//    } yield parallelStreams(
+//      toFrames(ZStream.fromQueue(output).flattenTake),
+//      input.handleMessages(close) {
+//        msg => handler.handleMessage(msg).catchAll {
+//          err => Logging.error(err) *> output.offer(Take.single(Error(0, err)))
+//        }.fork.as(None)
+//      },
+//      keepaliveStream(closed)
+//    ).provide(env)
+//  }.catchAll {
+//    case err: HTTPError => ZIO.fail(err)
+//    case err => Logging.error(err) *> ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
+//  }
 
   private val sessionId = new AtomicInteger(0)
   def nextSessionId: UIO[Int] = ZIO.effectTotal(sessionId.getAndIncrement())
