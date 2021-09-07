@@ -45,7 +45,7 @@ lazy val scalaBinaryVersions = scalaVersions.map {
 }.distinct
 
 val commonSettings = Seq(
-  scalaVersion := "2.12.12",
+  scalaVersion := "2.11.12",
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
@@ -239,7 +239,7 @@ val sparkSettings = Seq(
   sparkInstallLocation := {
     sys.env.get("SPARK_INSTALL_LOCATION")
       //.orElse(sys.env.get("SPARK_HOME").map(file).map(_.getParent))
-      .getOrElse((file(".").getAbsoluteFile / "target" / "spark").toString)
+      .getOrElse((file("target") / "spark").toString)
   },
   Test / testOptions += Tests.Setup { () =>
     import sys.process._
