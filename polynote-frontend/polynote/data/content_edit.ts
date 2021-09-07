@@ -39,7 +39,9 @@ export abstract class ContentEdit extends CodecContainer {
                     return [[a], [new Insert(b.pos - a.length, b.content)]];
                 }
             } else { // (Delete, Delete)
-                if (a.pos + a.length <= b.pos) {
+                if (a.pos === b.pos && a.length === b.length) {
+                    return [[a], [a]]
+                } else if (a.pos + a.length <= b.pos) {
                     return [[a], [new Delete(b.pos - a.length, b.length)]];
                 } else if (b.pos + b.length <= a.pos) {
                     return [[new Delete(a.pos - b.length, a.length)], [b]];

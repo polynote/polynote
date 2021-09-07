@@ -260,6 +260,16 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
           //kernelPublisher.close().runIO()
         }
       }
+
+      "repeatedly adding and deleting in the same place" in {
+        val ops1 = List.fill(3)(List((scala.util.Random.nextInt(2).toLong + 3,Keystroke("e")), (scala.util.Random.nextInt(2).toLong + 3,Backspace))).flatten
+        val ops2 = List.fill(3)(List((scala.util.Random.nextInt(2).toLong + 3,Keystroke("u")), (scala.util.Random.nextInt(2).toLong + 3,Backspace))).flatten
+        def lats = List.fill(math.max(ops1.size, ops2.size))(scala.util.Random.nextInt(8).toLong + 4)
+        check(
+          Init(18, ops1, lats, lats),
+          Init(18, ops2, lats, lats)
+        )
+      }
       
       "check" in forAll("Client 1 keystrokes", "Client 2 keystrokes") {
         (client1Init: Init, client2Init: Init) => check(client1Init, client2Init)
@@ -330,7 +340,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
                     var content = prev.cells.head.content
                     rebaseOnto.foldLeft(update) {
                       case (accum, (_, next@UpdateCell(_, _, _, edits, _))) =>
-                        val rebased = accum.rebase(next)
+                        val rebased = accum.rebase(next, client = true)
                         logStr ++= s"  ${next} => ${rebased}\n"
                         rebased
                     }
