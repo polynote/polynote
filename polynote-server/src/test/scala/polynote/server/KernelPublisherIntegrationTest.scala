@@ -26,6 +26,7 @@ import random.Random
 
 import scala.collection.mutable.ListBuffer
 import KernelPublisherIntegrationTest._
+import org.scalactic.anyvals.PosInt
 import polynote.data.Rope
 import polynote.kernel.logging.Logging
 
@@ -49,7 +50,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
   private val bq = Publish.ignore[Message]
 
   implicit override val generatorDrivenConfig: PropertyCheckConfiguration =
-    PropertyCheckConfiguration(minSize = 2, sizeRange = 3, minSuccessful = 50)
+    PropertyCheckConfiguration(minSize = 10, sizeRange = 10, minSuccessful = 50)
 
   "KernelPublisher" - {
 
