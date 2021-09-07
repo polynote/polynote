@@ -448,8 +448,8 @@ object KernelPublisherIntegrationTest {
   case class Init(
     initialOffset: Int,
     ops: List[(Long, Op)],
-    inboundLatencies: Stream[Long],
-    outboundLatencies: Stream[Long]
+    inboundLatencies: Seq[Long],
+    outboundLatencies: Seq[Long]
   )
 
   val genKeypress: Gen[(Long, Op)] = delay(Gen.alphaLowerChar.map(_.toString).map(Keystroke))
@@ -503,7 +503,7 @@ object KernelPublisherIntegrationTest {
         ops           <- genKeypressesFor(initialOffset, size)
         inbound       <- genLatencies
         outbound      <- genLatencies
-      } yield Init(initialOffset, ops, inbound, outbound)
+      } yield Init(initialOffset, ops, inbound.take(ops.size).toList, outbound.take(ops.size).toList)
     }
   }
 
