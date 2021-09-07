@@ -3,7 +3,7 @@ package polynote
 import polynote.app.MainArgs
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.logging.Logging
-import polynote.kernel.util.{RefMap, ZTopic}
+import polynote.kernel.util.{RefMap, UPublish}
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
 import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
@@ -136,7 +136,7 @@ package object server {
 
     object Service {
 
-      def apply(broadcastAll: ZTopic.Of[Message]): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Service] =
+      def apply(broadcastAll: UPublish[Message]): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Service] =
         ZIO.access[Has[NotebookRepository]](_.get[NotebookRepository]).flatMap {
           repository =>
             repository.initStorage() *> ZIO.mapN(RefMap.empty[String, KernelPublisher], Semaphore.make(1L)) {
@@ -151,7 +151,7 @@ package object server {
       private class Impl(
         openNotebooks: RefMap[String, KernelPublisher],
         repository: NotebookRepository,
-        broadcastAll: ZTopic.Of[Message],
+        broadcastAll: UPublish[Message],
         moveLock: Semaphore
       ) extends Service {
 
@@ -193,7 +193,7 @@ package object server {
           * Broadcast a [[Message]] to *all* active clients connected to this server. Used for messages that are NOT specific
           * to a given notebook or kernel.
           */
-        private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish(m)
+        private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish1(m)
 
         override def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
           for {
@@ -241,10 +241,10 @@ package object server {
       }
     }
 
-    def apply(broadcastAll: ZTopic.Of[Message]): RIO[BaseEnv with GlobalEnv, NotebookManager.Service] =
+    def apply(broadcastAll: UPublish[Message]): RIO[BaseEnv with GlobalEnv, NotebookManager.Service] =
       Service(broadcastAll).provideSomeLayer[BaseEnv with GlobalEnv](ZLayer.identity[Config] ++ FileSystems.live >>> NotebookRepository.live)
 
-    def layer[R <: BaseEnv with GlobalEnv](broadcastAll: ZTopic.Of[Message]): ZLayer[R, Throwable, NotebookManager] =
+    def layer[R <: BaseEnv with GlobalEnv](broadcastAll: UPublish[Message]): ZLayer[R, Throwable, NotebookManager] =
       ZLayer.fromManaged(apply(broadcastAll).toManaged(_.close().orDie))
   }
 

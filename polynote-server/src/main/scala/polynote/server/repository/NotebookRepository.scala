@@ -7,12 +7,11 @@ import cats.implicits._
 import polynote.config.{Mount, PolynoteConfig, Wal}
 import polynote.kernel.NotebookRef.AlreadyClosed
 import polynote.kernel.environment.Config
-import polynote.kernel.util.ZTopic
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages._
 import polynote.server.repository.fs.FileSystems
 import zio.stream.ZStream
-import zio.{Has, IO, Promise, RIO, Ref, Semaphore, Task, UIO, URIO, URLayer, ZIO, ZLayer}
+import zio.{Has, Hub, IO, Promise, RIO, Ref, Semaphore, Task, UIO, URIO, URLayer, ZIO, ZLayer}
 
 
 /**
@@ -112,7 +111,7 @@ class TreeRepository (
     currentRef: Ref[TreeNotebookRef.State],
     renameLock: Semaphore,
     closed: Promise[Throwable, Unit],
-    updatesTopic: ZTopic.Of[NotebookUpdate]
+    updatesTopic: Hub[NotebookUpdate]
   ) extends NotebookRef {
     import TreeNotebookRef.State
     import renameLock.withPermit
@@ -187,7 +186,7 @@ class TreeRepository (
 
     override def awaitClosed: Task[Unit] = closed.await
 
-    override def updates: ZStream[Any, Throwable, NotebookUpdate] = updatesTopic.subscribeStream
+    override def updates: ZStream[Any, Throwable, NotebookUpdate] = ZStream.fromHub(updatesTopic)
 
   }
 
@@ -214,7 +213,7 @@ class TreeRepository (
     }
 
     def apply(repo: NotebookRepository, underlying: NotebookRef, basePath: Option[String], relativePath: String): RIO[BaseEnv with GlobalEnv, TreeNotebookRef] = for {
-      updates    <- ZTopic.unbounded[NotebookUpdate]
+      updates    <- Hub.unbounded[NotebookUpdate]
       _          <- underlying.updates.foreach(updates.publish).forkDaemon
       closed     <- Promise.make[Throwable, Unit]
       state      <- State(repo, underlying, basePath, relativePath, closed)

@@ -3,7 +3,7 @@ package polynote.server.repository
 import polynote.kernel.NotebookRef.AlreadyClosed
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
-import polynote.kernel.util.{LongRef, ZTopic}
+import polynote.kernel.util.LongRef
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
 import polynote.messages._
 import polynote.server.repository.format.NotebookFormat
@@ -13,7 +13,7 @@ import zio.ZIO.effectTotal
 import zio.clock.currentDateTime
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Fiber, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO}
+import zio.{Fiber, Hub, IO, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZHub, ZIO}
 
 import java.io.FileNotFoundException
 import java.net.URI
@@ -33,7 +33,7 @@ class FileBasedRepository(
   private final class FileNotebookRef private (
     current: Ref[(Int, Notebook)],
     pending: Queue[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]],
-    updatesTopic: ZTopic.Of[NotebookUpdate],
+    updatesTopic: Hub[NotebookUpdate],
     closed: Promise[Throwable, Unit],
     log: Logging.Service,
     renameLock: Semaphore,
@@ -131,7 +131,7 @@ class FileBasedRepository(
       closed.succeed(()) *>
         pending.offer(Take.end) *>
         pending.awaitShutdown *>
-        updatesTopic.close() *>
+        updatesTopic.shutdown *>
         process.await.flatMap(_.join) *>
         closed.await
 
@@ -228,7 +228,7 @@ class FileBasedRepository(
         .forkDaemon.flatMap(process.succeed).unit
     }
 
-    override def updates: ZStream[Any, Throwable, NotebookUpdate] = updatesTopic.subscribeStream
+    override def updates: ZStream[Any, Throwable, NotebookUpdate] = ZStream.fromHub(updatesTopic)
   }
 
   private object FileNotebookRef {
@@ -247,7 +247,7 @@ class FileBasedRepository(
     def apply(notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
       log          <- Logging.access
       current      <- Ref.make(version -> notebook)
-      updatesTopic <- ZTopic.unbounded[NotebookUpdate]
+      updatesTopic <- ZHub.unbounded[NotebookUpdate]
       closed       <- Promise.make[Throwable, Unit]
       pending      <- Queue.unbounded[Take[Nothing, (NotebookUpdate, Option[Promise[Nothing, (Int, Notebook)]])]]
       renameLock   <- Semaphore.make(1L)

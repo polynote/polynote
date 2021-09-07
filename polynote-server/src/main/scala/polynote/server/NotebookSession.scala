@@ -3,7 +3,7 @@ package polynote.server
 import cats.syntax.either._
 import polynote.kernel.environment.{Env, PublishMessage}
 import polynote.kernel.logging.Logging
-import polynote.kernel.util.{Publish, ZTopic}
+import polynote.kernel.util.{Publish, UPublish}
 import polynote.kernel.{BaseEnv, Complete, GlobalEnv, PresenceUpdate, Running, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.messages._
 import polynote.server.auth.Permission
@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class NotebookSession(
   subscriber: KernelSubscriber,
   streamingHandles: StreamingHandles.Service,
-  broadcastAll: ZTopic.Of[Message]
+  broadcastAll: UPublish[Message]
 ) {
 
   private val streamingHandlesLayer = ZLayer.succeed(streamingHandles)
@@ -147,7 +147,7 @@ class NotebookSession(
   }
 
   private def sendRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, Unit]  =
-    SocketSession.getRunningKernels.flatMap(broadcastAll.publish)
+    SocketSession.getRunningKernels.flatMap(broadcastAll.publish1)
 
   // First send the notebook without any results (because they're large) and then send the individual results
   // to make notebook loading more incremental.
@@ -170,7 +170,7 @@ class NotebookSession(
 
 object NotebookSession {
 
-  def stream1(path: String, input: Stream[Throwable, Frame], broadcastAll: ZTopic.Of[Message]): ZManaged[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: UPublish[Message]): ZManaged[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
     for {
       _                <- NotebookManager.assertValidPath(path).toManaged_
       output           <- ZQueue.unbounded[Take[Nothing, Message]].toManaged_ // TODO: finalizer instead of close
@@ -196,33 +196,6 @@ object NotebookSession {
     case err: HTTPError => ZManaged.fail(err)
     case err => Logging.error(err).toManaged_ *> ZManaged.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
   }
-
-//  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: ZTopic.Of[Message]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
-//    for {
-//      _                <- NotebookManager.assertValidPath(path)
-//      output           <- ZQueue.unbounded[Take[Nothing, Message]]
-//      _                <- Env.add[SessionEnv with NotebookManager](Publish(output))
-//      subscriber       <- NotebookManager.subscribe(path).orElseFail(NotFound(path))
-//      sessionId        <- nextSessionId
-//      streamingHandles <- StreamingHandles.make(sessionId).orDie
-//      closed           <- Promise.make[Throwable, Unit]
-//      handler           = new NotebookSession(subscriber, streamingHandles, broadcastAll)
-//      env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
-//      close             = closeQueueIf(closed, output) *> subscriber.close()
-//      _                <- handler.sendNotebook
-//    } yield parallelStreams(
-//      toFrames(ZStream.fromQueue(output).flattenTake),
-//      input.handleMessages(close) {
-//        msg => handler.handleMessage(msg).catchAll {
-//          err => Logging.error(err) *> output.offer(Take.single(Error(0, err)))
-//        }.fork.as(None)
-//      },
-//      keepaliveStream(closed)
-//    ).provide(env)
-//  }.catchAll {
-//    case err: HTTPError => ZIO.fail(err)
-//    case err => Logging.error(err) *> ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
-//  }
 
   private val sessionId = new AtomicInteger(0)
   def nextSessionId: UIO[Int] = ZIO.effectTotal(sessionId.getAndIncrement())

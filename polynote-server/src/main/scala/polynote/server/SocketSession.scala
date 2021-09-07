@@ -3,7 +3,7 @@ package polynote.server
 import cats.instances.list._
 import cats.syntax.traverse._
 import polynote.buildinfo.BuildInfo
-import polynote.kernel.util.{Publish, ZTopic}
+import polynote.kernel.util.Publish
 import polynote.kernel.BaseEnv
 import polynote.kernel.environment.{Config, Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
@@ -12,8 +12,7 @@ import polynote.messages._
 import polynote.server.auth.IdentityProvider.checkPermission
 import polynote.server.auth.{IdentityProvider, Permission, UserIdentity}
 import uzhttp.websocket.Frame
-import zio.stream.ZStream
-import zio.stream.{Stream, Take}
+import zio.stream.{Stream, Take, UStream, ZStream}
 import zio.Queue
 import zio.{Promise, RIO, Task, URIO, ZIO}
 
@@ -21,13 +20,13 @@ import scala.collection.immutable.SortedMap
 
 object SocketSession {
 
-  def apply(in: Stream[Throwable, Frame], broadcastAll: ZTopic.Of[Message]): URIO[SessionEnv with NotebookManager, Stream[Throwable, Frame]] =
+  def apply(in: Stream[Throwable, Frame], broadcastMessages: UStream[Message]): URIO[SessionEnv with NotebookManager, Stream[Throwable, Frame]] =
     for {
       output          <- Queue.unbounded[Take[Nothing, Message]]
       publishMessage  <- Env.add[SessionEnv with NotebookManager](Publish(output))
       env             <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
       closed          <- Promise.make[Throwable, Unit]
-      _               <- broadcastAll.subscribeStream.interruptWhen(closed.await.run).mapM(publishMessage.publish1).runDrain.forkDaemon
+      _               <- broadcastMessages.interruptWhen(closed.await.run).foreach(publishMessage.publish1).forkDaemon
       close            = closeQueueIf(closed, output)
     } yield parallelStreams(
         toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueue(output).flattenTake),

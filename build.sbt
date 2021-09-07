@@ -14,6 +14,7 @@ val sparkVersion: SettingKey[String] = settingKey("Spark version")
 val circeVersion: SettingKey[String] = settingKey("circe version")
 val circeYamlVersion: SettingKey[String] = settingKey("circe-yaml version")
 val sparkInstallLocation: SettingKey[String] = settingKey("Location of Spark installation(s)")
+val sparkHome: SettingKey[String] = settingKey("Location of specific Spark installation to use for SPARK_HOME during tests")
 
 
 val versions = new {
@@ -45,7 +46,7 @@ lazy val scalaBinaryVersions = scalaVersions.map {
 }.distinct
 
 val commonSettings = Seq(
-  scalaVersion := "2.11.12",
+  scalaVersion := "2.13.6",
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
@@ -238,8 +239,10 @@ val sparkSettings = Seq(
   ),
   sparkInstallLocation := {
     sys.env.get("SPARK_INSTALL_LOCATION")
-      //.orElse(sys.env.get("SPARK_HOME").map(file).map(_.getParent))
-      .getOrElse((file("target") / "spark").toString)
+      .getOrElse((file(".").getAbsoluteFile / "target" / "spark").getCanonicalPath)
+  },
+  sparkHome := {
+    (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
   },
   Test / testOptions += Tests.Setup { () =>
     import sys.process._
@@ -262,9 +265,8 @@ val sparkSettings = Seq(
     }
   },
   Test / envVars ++= {
-    val sparkHome = (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
     Map(
-      "SPARK_HOME" -> sparkHome,
+      "SPARK_HOME" -> sparkHome.value,
       "PATH" -> Seq(sparkHome, sys.env("PATH")).mkString(File.pathSeparator)
     )
   }

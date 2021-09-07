@@ -39,14 +39,6 @@ trait Publish[-R, +E, -T] {
 
 object Publish {
 
-  final case class PublishZTopic[-RA, -RB, +EA, +EB, -A, +B](topic: ZTopic[RA, RB, EA, EB, A, B]) extends Publish[RA, EA, A] {
-    override def publish1(t: A): ZIO[RA, EA, Unit] = topic.publish(t)
-  }
-
-  implicit def zTopicToPublish[RA, RB, EA, EB, A, B](topic: ZTopic[RA, RB, EA, EB, A, B]): Publish[RA, EA, A] =
-    PublishZTopic(topic)
-
-  def apply[RA, RB, EA, EB, A, B](topic: ZTopic[RA, RB, EA, EB, A, B]): Publish[RA, EA, A] = zTopicToPublish(topic)
 
   def fn[R, E, T](fn: T => ZIO[R, E, Unit]): Publish[R, E, T] = new Publish[R, E, T] {
     override def publish1(t: T): ZIO[R, E, Unit] = fn(t)

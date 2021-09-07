@@ -2,12 +2,12 @@ package polynote
 package server
 
 import java.util.concurrent.atomic.AtomicInteger
-import polynote.kernel.util.{Publish, RefMap, UPublish, ZTopic}
+import polynote.kernel.util.{Publish, RefMap, UPublish}
 import polynote.kernel.environment.{CurrentNotebook, PublishMessage, PublishResult, PublishStatus}
 import polynote.messages.{CellID, CellResult, ContentEdits, Error, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Presence, PresenceSelection, PresenceUpdate, Result, Signatures, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
-import zio.{Has, Hub, Promise, Queue, RIO, RManaged, Ref, Schedule, Semaphore, Task, UIO, ULayer, UManaged, URIO, ZIO, ZLayer}
+import zio.{Has, Hub, Promise, Queue, RIO, RManaged, Ref, Schedule, Semaphore, Task, UIO, ULayer, UManaged, URIO, ZHub, ZIO, ZLayer}
 import KernelPublisher.{GlobalVersion, SubscriberId}
 import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.logging.Logging
@@ -24,8 +24,8 @@ class KernelPublisher private (
   val versionedNotebook: NotebookRef,
   private[server] val updateQueue: Queue[(SubscriberId, NotebookUpdate)], // visible for testing
   val broadcastUpdates: Hub[(SubscriberId, NotebookUpdate)],
-  val status: ZTopic.Of[KernelStatusUpdate],
-  val cellResults: ZTopic.OfIO[Throwable, CellResult],
+  val status: Hub[KernelStatusUpdate],
+  val cellResults: ZHub[Any, Any, Throwable, Throwable, CellResult, CellResult],
   val taskManager: TaskManager.Service,
   kernelRef: Ref[Option[Kernel]],
   interpreterState: InterpreterState.Service,
@@ -351,8 +351,8 @@ object KernelPublisher {
     updates          <- Queue.unbounded[(SubscriberId, NotebookUpdate)]
                         // TODO: replace the following with ZTopic
     broadcastUpdates <- Hub.unbounded[(SubscriberId, NotebookUpdate)]
-    broadcastStatus  <- ZTopic.unbounded[KernelStatusUpdate]
-    broadcastResults <- ZTopic.unbounded[CellResult]
+    broadcastStatus  <- Hub.unbounded[KernelStatusUpdate]
+    broadcastResults <- Hub.unbounded[CellResult]
     taskManager      <- TaskManager(broadcastStatus)
     versionBuffer     = new SubscriberUpdateBuffer()
     kernelStarting   <- Semaphore.make(1)

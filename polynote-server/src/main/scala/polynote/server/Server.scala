@@ -17,11 +17,10 @@ import polynote.server.auth.IdentityProvider
 import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
-import polynote.kernel.interpreter.Interpreter
-import polynote.kernel.util.ZTopic
 import polynote.server.repository.NotebookRepository
-import zio.{Has, IO, Task, URIO, ZIO, ZLayer, ZManaged}
+import zio.{Has, Hub, IO, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
+import zio.stream.ZStream
 
 class Server {
   private lazy val currentPath = new File(System.getProperty("user.dir")).toPath
@@ -177,7 +176,7 @@ class Server {
       for {
         _             <- initNotebookStorageDir().toManaged_
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
-        broadcastAll  <- ZTopic.unbounded[Message].toManaged_  // used to broadcast messages to all connected clients
+        broadcastAll  <- Hub.unbounded[Message].toManaged(_.shutdown)  // used to broadcast messages to all connected clients
         _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with MainEnv with MainArgs](broadcastAll))
         authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_
         staticHandler <- staticFiles
@@ -189,8 +188,8 @@ class Server {
             val query = uri.getQuery
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
-                case "" => authorize(req, SocketSession(inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output)))
-                case rest => authorize(req, NotebookSession.stream1(rest, inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output).toManaged_).useForever)
+                case "" => authorize(req, SocketSession(inputFrames, ZStream.fromHub(broadcastAll)).flatMap(output => Response.websocket(req, output)))
+                case rest => authorize(req, NotebookSession.stream(rest, inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output).toManaged_).useForever)
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {

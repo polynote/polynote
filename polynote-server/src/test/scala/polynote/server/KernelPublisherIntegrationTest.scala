@@ -83,7 +83,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val kernel          = kernelPublisher.kernel.runWith(kernelFactory).asInstanceOf[RemoteKernel[InetSocketAddress]]
       val process         = kernel.transport.asInstanceOf[SocketTransportServer].process
 
-      val collectStatus = kernelPublisher.status.subscribeStream
+      val collectStatus = ZStream.fromHub(kernelPublisher.status)
         .takeUntil(_ == KernelBusyState(false, false))
         .runCollect.map(_.toList)
         .forkDaemon.runIO()
@@ -132,7 +132,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val ref             = MockNotebookRef(notebook).runIO()
       val kernelPublisher = KernelPublisher(ref, bq).runWith(failingKernelFactory)
       val stopStatus = Promise.make[Throwable, Unit].runIO()
-      val collectStatus = kernelPublisher.status.subscribeStream
+      val collectStatus = ZStream.fromHub(kernelPublisher.status)
         .interruptWhen(stopStatus.await.either)
         .runCollect.map(_.toList)
         .forkDaemon.runIO()
