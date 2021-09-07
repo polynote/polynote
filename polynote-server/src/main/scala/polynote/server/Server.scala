@@ -13,7 +13,7 @@ import Env.LayerOps
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel}
 import polynote.messages.Message
-import polynote.server.auth.IdentityProvider
+import polynote.server.auth.{IdentityProvider, UserIdentity}
 import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
@@ -189,7 +189,10 @@ class Server {
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
                 case "" => authorize(req, SocketSession(inputFrames, ZStream.fromHub(broadcastAll)).flatMap(output => Response.websocket(req, output)))
-                case rest => authorize(req, NotebookSession.stream(rest, inputFrames, broadcastAll).flatMap(output => Response.websocket(req, output).toManaged_).useForever)
+                case rest => authorize(
+                  req,
+                  ZIO.environment[RequestEnv with UserIdentity].flatMap(
+                    env => Response.websocket(req, ZStream.managed(NotebookSession.stream(rest, inputFrames, broadcastAll).provide(env)).flatten)))
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {
