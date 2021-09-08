@@ -1,26 +1,35 @@
-import {NotebookUpdate} from "./messages";
+import {NotebookUpdate, UpdateCell} from "./messages";
+import * as messages from "./messages";
+import {ContentEdit} from "./content_edit";
 
 interface Version {
     version: number,
-    edits: NotebookUpdate[]
+    edit: NotebookUpdate
 }
 
 // An immutable holder of edits.
 // The old EditBuffer used to be mutable, maybe this deserves a better name now that it is immutable.
 export class EditBuffer {
 
-    constructor(readonly versions: Version[] = []) {}
+    constructor(private _versions: Version[] = []) {}
+
+    get versions(): Version[] {
+        return [...this._versions]
+    }
+
+    get duplicate(): EditBuffer {
+        const copies = this._versions.map(ver => ({version: ver.version, edit: ver.edit}))
+        return new EditBuffer(copies)
+    }
 
     /**
-     * Add edits corresponding to a version. The version should always increase.
+     * Add an edit corresponding to a version. The version should always increase.
      * @param version The version corresponding to the edits
-     * @param edits   The edits
+     * @param edit    The edit
      */
-    push(version: number, edits: NotebookUpdate[] | NotebookUpdate) {
-        if (! (edits instanceof Array)) {
-            edits = [edits]
-        }
-        return new EditBuffer([...this.versions, {version, edits}]);
+    push(version: number, edit: NotebookUpdate) {
+        this._versions.push({version, edit})
+        return this;
     }
 
     /**
@@ -28,11 +37,10 @@ export class EditBuffer {
      * @param until The earliest version to keep
      */
     discard(until: number) {
-        const versions = [...this.versions];
-        while (versions.length > 0 && versions[0].version < until) {
-            versions.shift();
+        while (this._versions.length > 0 && this._versions[0].version < until) {
+            this._versions.shift();
         }
-        return new EditBuffer(versions)
+        return this;
     }
 
     /**
@@ -42,16 +50,39 @@ export class EditBuffer {
      * @param to   The end version, inclusive
      * @returns {Array}
      */
-    range(from: number, to: number): NotebookUpdate[] {
+    private rawRange(from: number, to: number): Version[] {
         let i = 0;
-        while (i < this.versions.length && this.versions[i].version <= from) {
+        while (i < this._versions.length && this._versions[i].version <= from) {
             i++;
         }
-        const edits = [];
-        while (i < this.versions.length && this.versions[i].version <= to) {
-            edits.push(...this.versions[i].edits);
+        const versions = [];
+        while (i < this._versions.length && this._versions[i].version <= to) {
+            versions.push(this._versions[i]);
             i++;
         }
-        return edits;
+        return versions;
+    }
+
+    range(from: number, to: number): NotebookUpdate[] {
+        return this.rawRange(from, to).map(ver => ver.edit)
+    }
+
+    rebaseThrough(update: NotebookUpdate, targetVersion: number): NotebookUpdate {
+        if (update instanceof UpdateCell) {
+            const versions = this.rawRange(update.localVersion, targetVersion);
+            let rebased = update;
+            let rebasedEdits = update.edits;
+            for (let version of versions) {
+                const nextUpdate = version.edit;
+                if (nextUpdate instanceof UpdateCell && nextUpdate.id === update.id) {
+                    const [sourceRebased, targetRebased] = ContentEdit.rebaseBoth(rebasedEdits, nextUpdate.edits)
+                    rebasedEdits = sourceRebased;
+                    version.edit = new UpdateCell(nextUpdate.globalVersion, nextUpdate.localVersion, nextUpdate.id, targetRebased, nextUpdate.metadata);
+                }
+            }
+            return new UpdateCell(update.globalVersion, update.localVersion, update.id, rebasedEdits, update.metadata);
+        } else {
+            return messages.NotebookUpdate.rebase(update, this.range(update.localVersion, targetVersion))
+        }
     }
 }
