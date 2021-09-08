@@ -26,9 +26,7 @@ import random.Random
 
 import scala.collection.mutable.ListBuffer
 import KernelPublisherIntegrationTest._
-import org.scalactic.anyvals.PosInt
-import polynote.data.Rope
-import polynote.kernel.logging.Logging
+import polynote.util.VersionBuffer
 
 import java.util.concurrent.atomic.AtomicInteger
 import scala.util.control.NonFatal
@@ -262,8 +260,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       }
 
       "repeatedly adding and deleting in the same place" in {
-        val ops1 = List.fill(3)(List((scala.util.Random.nextInt(2).toLong + 3,Keystroke("e")), (scala.util.Random.nextInt(2).toLong + 3,Backspace))).flatten
-        val ops2 = List.fill(3)(List((scala.util.Random.nextInt(2).toLong + 3,Keystroke("u")), (scala.util.Random.nextInt(2).toLong + 3,Backspace))).flatten
+        val ops1 = List.fill(10)(List((scala.util.Random.nextInt(2).toLong + 3,Keystroke("e")), (scala.util.Random.nextInt(2).toLong + 3,Backspace))).flatten
+        val ops2 = List.fill(10)(List((scala.util.Random.nextInt(2).toLong + 3,Keystroke("u")), (scala.util.Random.nextInt(2).toLong + 3,Backspace))).flatten
         def lats = List.fill(math.max(ops1.size, ops2.size))(scala.util.Random.nextInt(8).toLong + 4)
         check(
           Init(18, ops1, lats, lats),
@@ -286,7 +284,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
   ) {
     val inbound: Queue[Take[Nothing, Message]] = Queue.unbounded[Take[Nothing, Message]].runIO()
     private val numReceived = new AtomicInteger(0)
-    private val versionBuffer = new SubscriberUpdateBuffer()
+    private val versionBuffer = new ClientUpdateBuffer()
     private val localVersionRef = Ref.make(0).runIO()
     private val globalVersionRef = Ref.make(0).runIO()
     private val currentOffset = Ref.make(init.initialOffset).runIO()
@@ -333,17 +331,9 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
               localVersionRef.get.flatMap {
                 localVersion =>
                   val currentTime = System.currentTimeMillis()
-
                   val rebased = if (update.localVersion < localVersion) {
                     logStr ++= s"""  rebasing $update from L${update.localVersion} to L$localVersion on "${prev.cells.head.content}"\n"""
-                    val rebaseOnto = versionBuffer.getRange(update.localVersion + 1, localVersion)
-                    var content = prev.cells.head.content
-                    rebaseOnto.foldLeft(update) {
-                      case (accum, (_, next@UpdateCell(_, _, _, edits, _))) =>
-                        val rebased = accum.rebase(next, client = true)
-                        logStr ++= s"  ${next} => ${rebased}\n"
-                        rebased
-                    }
+                    versionBuffer.rebaseThrough(update, localVersion)
                   } else {
                     update
                   }
@@ -424,7 +414,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
                   _ = allUpdates += ce
                   update = UpdateCell(globalVersion, localVersion, CellID(0), ce, None)
                   nb <- notebook.updateAndGet(update.applyTo)
-                  _ = versionBuffer.add(localVersion, (0, update))
+                  _ = versionBuffer.add(localVersion, update)
                   content = nb.cells.head.content.toString
                   str = s"""< ${subscriber.id} $update "$prevContent" -> "$content""""
                   _ = log += ((System.currentTimeMillis(), str))
@@ -462,10 +452,10 @@ object KernelPublisherIntegrationTest {
     outboundLatencies: Seq[Long]
   )
 
-  val genKeypress: Gen[(Long, Op)] = delay(Gen.alphaLowerChar.map(_.toString).map(Keystroke))
+  val genKeypress: Gen[(Long, Keystroke)] = delay(Gen.alphaLowerChar.map(_.toString).map(Keystroke))
   val genBackspace: Gen[(Long, Op)] = delay(Gen.const(Backspace))
-  val genPaste: Gen[(Long, Op)] = delay(Gen.alphaLowerStr.map(Keystroke))
-  def genDelete(len: Int): Gen[(Long, Op)] = delay {
+  val genPaste: Gen[(Long, Keystroke)] = delay(Gen.alphaLowerStr.map(Keystroke))
+  def genDelete(len: Int): Gen[(Long, HighlightAndDelete)] = delay {
     for {
       a <- Gen.choose(0, len - 1)
       b <- Gen.choose(0, len - 1)
@@ -478,13 +468,13 @@ object KernelPublisherIntegrationTest {
   val genLatency: Gen[Long] = Gen.choose(8L, 12L)
   val genLatencies: Gen[Stream[Long]] = Gen.infiniteStream(genLatency)
 
-  def delay[T](genKeypress: Gen[Op]): Gen[(Long, Op)] = for {
+  def delay[T <: Op](genOp: Gen[T]): Gen[(Long, T)] = for {
     delay <- Gen.choose(3, 5)
-    op    <- genKeypress
+    op    <- genOp
   } yield (delay, op)
 
   def genKeypressesFor(offset: Int, n: Int): Gen[List[(Long, Op)]] = if (n == 0) Gen.const(List.empty) else offset match {
-    case 0 => genKeypress.flatMap(op => genKeypressesFor(offset + 1, n - 1).map(rest => op :: rest))
+    case 0 => genKeypress.flatMap(op => genKeypressesFor(offset + op._2.char.length, n - 1).map(rest => op :: rest))
     case _ => Gen.frequency(
       9 -> genKeypress.flatMap(op => genKeypressesFor(offset + 1, n - 1).map(rest => op :: rest)),
       2 -> genBackspace.flatMap(op => genKeypressesFor(offset - 1, n - 1).map(rest => op :: rest))
@@ -520,12 +510,67 @@ object KernelPublisherIntegrationTest {
   implicit val shrinkInit: Shrink[Init] = {
     def shrink(init: Init): Stream[Init] = init match {
       case Init(_, Nil, _, _)      => Stream.empty
-      // case Init(_, _ :: Nil, _, _) => init.copy(ops = Nil) #:: Stream.empty
       case Init(_, ops, _, _) =>
         val smaller = init.copy(ops = ops.take(ops.size - 1))
         smaller #:: shrink(smaller)
     }
     Shrink(shrink)
+  }
+
+  /**
+    * A simulation of the update buffer on the client.
+    * TODO: the client code should be updated to do this as well – rebaseThrough and update the buffer with the leftovers from the rebase
+    */
+  class ClientUpdateBuffer extends VersionBuffer[NotebookUpdate] {
+
+    /**
+      * Rebase the update through the given version, excluding updates from the given subscriber. Each version that's
+      * rebased through will also be mutated to account for the given update with respect to future updates which
+      * go through that version.
+      * @return
+      */
+    def rebaseThrough(update: NotebookUpdate, targetVersion: Int, log: Option[StringBuilder] = None, updateBuffer: Boolean = true): NotebookUpdate = update match {
+      case update@UpdateCell(_, sourceVersion, cellId, sourceEdits, _) =>
+        synchronized {
+          var index = versionIndex(sourceVersion + 1)
+          if (index < 0) {
+            log.foreach(_ ++= s"  No version ${sourceVersion + 1}")
+            return update
+          };
+
+          val size = numVersions
+          var currentVersion = versionedValueAt(index)._1
+          var rebasedEdits = sourceEdits
+          try {
+            if (!(currentVersion <= targetVersion && index < size)) {
+              log.foreach(_ ++= s"  No updates")
+            }
+            while (currentVersion <= targetVersion && index < size) {
+              val elem = versionedValueAt(index)
+              currentVersion = elem._1
+              val prevUpdate= elem._2
+              prevUpdate match {
+                case prevUpdate@UpdateCell(_, _, `cellId`, targetEdits, _) =>
+                  val (sourceRebased, targetRebased) = rebasedEdits.rebaseBoth(targetEdits)
+                  rebasedEdits = sourceRebased
+                  log.foreach(_ ++= s"  $prevUpdate => $sourceRebased\n")
+                  if (updateBuffer) {
+                    setValueAt(index, prevUpdate.copy(edits = ContentEdits(targetRebased)))
+                  }
+                case _ =>
+              }
+              index += 1
+            }
+          } catch {
+            case err: Throwable => err.printStackTrace()
+          }
+          update.copy(edits = rebasedEdits)
+        }
+      case update => getRange(update.localVersion + 1, targetVersion).foldLeft(update) {
+        case (accum, next) => accum.rebase(next)
+      }
+    }
+
   }
 
 }

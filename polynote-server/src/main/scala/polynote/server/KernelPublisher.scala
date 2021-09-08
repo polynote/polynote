@@ -4,7 +4,7 @@ package server
 import java.util.concurrent.atomic.AtomicInteger
 import polynote.kernel.util.{Publish, RefMap, UPublish}
 import polynote.kernel.environment.{CurrentNotebook, PublishMessage, PublishResult, PublishStatus}
-import polynote.messages.{CellID, CellResult, ContentEdits, Error, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
+import polynote.messages.{CellID, CellResult, ContentEdit, ContentEdits, Error, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Presence, PresenceSelection, PresenceUpdate, Result, Signatures, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
 import zio.{Has, Hub, Promise, Queue, RIO, RManaged, Ref, Schedule, Semaphore, Task, UIO, ULayer, UManaged, URIO, ZHub, ZIO, ZLayer}
@@ -403,7 +403,7 @@ final class SubscriberUpdateBuffer extends VersionBuffer[(SubscriberId, Notebook
     * go through that version.
     * @return
     */
-  def rebaseThrough(update: NotebookUpdate, subscriberId: SubscriberId, targetVersion: GlobalVersion, log: Option[StringBuilder] = None, reverse: Boolean = false, updateBuffer: Boolean = true): NotebookUpdate = update match {
+  def rebaseThrough(update: NotebookUpdate, subscriberId: SubscriberId, targetVersion: GlobalVersion, log: Option[StringBuilder] = None, updateBuffer: Boolean = true): NotebookUpdate = update match {
     case update@UpdateCell(sourceVersion, _, cellId, sourceEdits, _) =>
       synchronized {
         var index = versionIndex(sourceVersion + 1)
@@ -426,7 +426,7 @@ final class SubscriberUpdateBuffer extends VersionBuffer[(SubscriberId, Notebook
               val prevUpdateTuple@(_, prevUpdate) = elem._2
               prevUpdate match {
                 case prevUpdate@UpdateCell(_, _, `cellId`, targetEdits, _) =>
-                  val (sourceRebased, targetRebased) = rebasedEdits.rebaseBoth(targetEdits, reverse)
+                  val (sourceRebased, targetRebased) = rebasedEdits.rebaseBoth(targetEdits)
                   rebasedEdits = sourceRebased
                   log.foreach(_ ++= s"  $prevUpdate => $sourceRebased\n")
                   if (updateBuffer) {
