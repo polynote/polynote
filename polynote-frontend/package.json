@@ -30,7 +30,6 @@
     "@types/jest": "26.0.19",
     "@types/node": "14.14.20",
     "babel-jest": "26.6.3",
-    "canvas": "2.6.1",
     "copy-webpack-plugin": "7.0.0",
     "css-loader": "3.4.2",
     "fake-indexeddb": "3.1.2",
