@@ -10,7 +10,7 @@ class MockPublish[A]() extends Publish[Any, Nothing, A] {
   private val published = new ConcurrentLinkedQueue[A]()
   @volatile private var publishCount = 0
 
-  def publish1(a: A): UIO[Unit] = {
+  def publish(a: A): UIO[Unit] = {
     publishCount += 1
     ZIO.effectTotal {
       published.add(a)

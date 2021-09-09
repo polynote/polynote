@@ -147,7 +147,7 @@ class NotebookSession(
   }
 
   private def sendRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, Unit]  =
-    SocketSession.getRunningKernels.flatMap(broadcastAll.publish1)
+    SocketSession.getRunningKernels.flatMap(broadcastAll.publish)
 
   // First send the notebook without any results (because they're large) and then send the individual results
   // to make notebook loading more incremental.

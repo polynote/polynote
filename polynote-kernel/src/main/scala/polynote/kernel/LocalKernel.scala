@@ -33,8 +33,8 @@ class LocalKernel private[kernel] (
 
   override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = PublishStatus.access.flatMap {
     publishStatus =>
-      val notifyCancelled = publishStatus.publish1(CellStatusUpdate(id, Complete))
-      val notifyErrored   = publishStatus.publish1(CellStatusUpdate(id, ErrorStatus))
+      val notifyCancelled = publishStatus.publish(CellStatusUpdate(id, Complete))
+      val notifyErrored   = publishStatus.publish(CellStatusUpdate(id, ErrorStatus))
       val queueTask: RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
         currentTime.flatMap {
           startTime =>
@@ -81,7 +81,7 @@ class LocalKernel private[kernel] (
 
       for {
         inner <- queueTask
-        _     <- publishStatus.publish1(CellStatusUpdate(id, Queued))
+        _     <- publishStatus.publish(CellStatusUpdate(id, Queued))
       } yield inner.onInterrupt(notifyCancelled)
   }
 
@@ -120,7 +120,7 @@ class LocalKernel private[kernel] (
   override def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
     for {
       publishStatus <- PublishStatus.access
-      busyUpdater   <- busyState.changes.foreachWhile(s => publishStatus.publish1(s).as(s.alive)).forkDaemon
+      busyUpdater   <- busyState.changes.foreachWhile(s => publishStatus.publish(s).as(s.alive)).forkDaemon
       initialState  <- initScala().onError(err => (PublishResult(ErrorResult(err.squash)) *> busyState.ref.update(s => ZIO.succeed(s.setIdle))).orDie)
       _             <- ZIO.foreach_(initialState.values)(PublishResult.apply)
       _             <- busyState.ref.update(s => ZIO.succeed(s.setIdle))

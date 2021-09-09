@@ -77,9 +77,9 @@ class KernelPublisher private (
 
   private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
     kernel.awaitClosed.catchAllCause {
-      err => publishStatus.publish1(KernelError(err.squash)) *> Logging.error(s"Kernel closed with error", err)
+      err => publishStatus.publish(KernelError(err.squash)) *> Logging.error(s"Kernel closed with error", err)
     } *>
-      publishStatus.publish1(KernelBusyState(busy = false, alive = false)) *>
+      publishStatus.publish(KernelBusyState(busy = false, alive = false)) *>
       Logging.info("Kernel closed") *>
       kernelRef.set(None) *>
       closeIfNoSubscribers
@@ -99,7 +99,7 @@ class KernelPublisher private (
                 _      <- kernelRef.set(Some(kernel))
                 _      <- handleKernelClosed(kernel).forkDaemon
                 _      <- kernel.init().provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
-                _      <- kernel.info() >>= publishStatus.publish1
+                _      <- kernel.info() >>= publishStatus.publish
               } yield kernel
             }.forkDaemon.flatMap(_.join)
             // Note: this forkDaemon is so that interruptions coming from client disconnect won't interrupt the
@@ -282,29 +282,10 @@ object KernelPublisher {
     subscriberId: SubscriberId,
     update: NotebookUpdate
   ): TaskG[Unit] = interpState.updateStateWith(update) &> versionRef.getVersioned.flatMap {
-    case (globalVersion, notebook) =>
+    case (globalVersion, _) =>
       subscribers.get(subscriberId).someOrFail(new NoSuchElementException(s"No such subscriber $subscriberId")).flatMap {
         subscriber =>
-            val from = update.globalVersion
           val time = System.currentTimeMillis()
-//            def rebaseOnto(updates: List[(SubscriberId, NotebookUpdate)], from: Int, to: Int) = {
-//              rebaseAllUpdates(update, updates)
-//            }
-//
-//            val (rebased, updateBuffer) = if (from < globalVersion) {
-//              val (rebasedUpdate, updatedPrev) = rebaseOnto(
-//                versions.getRange(from + 1, globalVersion).collect {
-//                  case tup@(source, update) if source != subscriberId => tup
-//                },
-//                from, globalVersion
-//              )
-//              val updateBuffer = ZIO.effectTotal {
-//                versions.updateRange(updatedPrev.map {
-//                  case tup@(_, update) => (update.globalVersion, tup)
-//                })
-//              }
-//              rebasedUpdate -> updateBuffer
-//            } else update -> ZIO.unit
           val logStr = new StringBuilder
           logStr ++= s"> S $update (from $subscriberId)\n"
           val rebased = if (update.globalVersion < globalVersion) {
@@ -317,12 +298,11 @@ object KernelPublisher {
               val newUpdate = (subscriberId, rebased.withVersions(nextVer, rebased.localVersion))
               subscriber.setLastGlobalVersion(nextVer) *>
                 ZIO(versions.add(nextVer, newUpdate)) *>
-                publishUpdates.publish1(newUpdate) *>
+                publishUpdates.publish(newUpdate) *>
                 ZIO.effectTotal {
                   logStr ++= s"""  $newUpdate "${notebook.cells.head.content}""""
                   log += ((time, logStr.result()))
                 }
-              //updateBuffer
           }
 
       }
@@ -385,10 +365,9 @@ object KernelPublisher {
       .runDrain
       .catchAll {
         err =>
-          broadcastMessage.publish1(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook. Editing will now be disabled.", err))) *>
+          broadcastMessage.publish(Error(0, new Exception(s"Catastrophe! An error occurred updating notebook. Editing will now be disabled.", err))) *>
             publisher.close().provide(env)
-      }
-      .forkDaemon
+      }.forkDaemon
     _   <- cleanVersionBuffer(subscribers, versionBuffer, closed).forkDaemon
   } yield publisher
 }

@@ -26,7 +26,7 @@ object SocketSession {
       publishMessage  <- Env.add[SessionEnv with NotebookManager](Publish(output))
       env             <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
       closed          <- Promise.make[Throwable, Unit]
-      _               <- broadcastMessages.interruptWhen(closed.await.run).foreach(publishMessage.publish1).forkDaemon
+      _               <- broadcastMessages.interruptWhen(closed.await.run).foreach(publishMessage.publish).forkDaemon
       close            = closeQueueIf(closed, output)
     } yield parallelStreams(
         toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueue(output).flattenTake),

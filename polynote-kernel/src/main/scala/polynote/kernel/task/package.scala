@@ -145,7 +145,7 @@ package object task {
           imDone        <- Promise.make[Throwable, Unit]
           fail           = (err: Cause[Throwable]) => statusRef.update(t => ZIO.succeed(errorWith(err)(t))).ensuring(remove &> imDone.interrupt).uninterruptible
           complete       = statusRef.update(t => ZIO.succeed(t.completed)).ensuring(remove).uninterruptible
-          updater       <- statusSubRef.changes.foreachWhile(t => updates.publish1(t).as(!t.status.isDone)).uninterruptible.forkDaemon
+          updater       <- statusSubRef.changes.foreachWhile(t => updates.publish(t).as(!t.status.isDone)).uninterruptible.forkDaemon
           taskBody       = ZIO.absolve {
             task.provideSomeLayer[R1](ZLayer.succeed[TaskRef](statusRef))
               .either
@@ -156,7 +156,7 @@ package object task {
           runTask        = (wait *> statusRef.update(t => ZIO.succeed(t.running)) *> taskBody)
             .onTermination(fail)
             .ensuring(imDone.succeed(()))
-          _             <- statusRef.get >>= updates.publish1
+          _             <- statusRef.get >>= updates.publish
           taskFiber     <- runTask.ensuring(remove).forkDaemon
           descriptor     = TaskDescriptor(id, statusRef, taskFiber, taskCounter.getAndIncrement(), Some(myTurn))
           _             <- Option(tasks.put(id, descriptor)).map(_.cancel).getOrElse(ZIO.unit)
@@ -175,13 +175,13 @@ package object task {
         statusRef      = statusSubRef.ref
         remove         = ZIO.effectTotal(tasks.remove(id))
         updater       <- statusSubRef.changes
-          .foreachWhile(t => updates.publish1(t).as(!t.status.isDone))
+          .foreachWhile(t => updates.publish(t).as(!t.status.isDone))
           .uninterruptible
           .ensuring(remove).fork
         taskBody       = task
           .onInterrupt(fibers => statusRef.update(t => ZIO.succeed(errorWith(Cause.interrupt(fibers.headOption.getOrElse(Fiber.Id.None)))(t))).ignore.unit)
           .provideSomeLayer[R](CurrentTask.layer(statusRef))
-        _             <- statusRef.get >>= updates.publish1
+        _             <- statusRef.get >>= updates.publish
         taskFiber     <- (taskBody <* statusRef.update(t => ZIO.succeed(t.completed)) <* updater.join)
           .onError(cause => statusRef.update(t => ZIO.succeed(errorWith(cause)(t))))
           .onInterrupt(fibers => statusRef.update(t => ZIO.succeed(errorWith(Cause.interrupt(fibers.head))(t))))
@@ -208,7 +208,7 @@ package object task {
           updateTasks  <- Queue.unbounded[TaskInfo => TaskInfo]
           completed     = new AtomicBoolean(false)
           updater      <- statusSubRef.changes
-            .foreachWhile(t => updates.publish1(t).as(!t.status.isDone))
+            .foreachWhile(t => updates.publish(t).as(!t.status.isDone))
             .uninterruptible
             .ensuring(ZIO.effectTotal(completed.set(true)))
             .forkDaemon

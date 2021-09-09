@@ -231,7 +231,7 @@ class RemoteKernelClient(
       .map(handleRequest)
       .map(z => ZStream.fromEffect(z))
       .flattenParUnbounded()
-      .tap(publishResponse.publish1)
+      .tap(publishResponse.publish)
       .mapM(closeOnShutdown)
       .haltWhen(closed)
       .runDrain.uninterruptible.as(0)
@@ -247,8 +247,8 @@ class RemoteKernelClient(
         case QueueCellRequest(reqId, cellID)              => kernel.queueCell(cellID).flatMap {
           completed =>
             completed
-              .catchAll(err => publishResponse.publish1(ResultResponse(reqId, ErrorResult(err))))
-              .ensuring(publishResponse.publish1(RunCompleteResponse(reqId)).catchAll(Logging.error))
+              .catchAll(err => publishResponse.publish(ResultResponse(reqId, ErrorResult(err))))
+              .ensuring(publishResponse.publish(RunCompleteResponse(reqId)).catchAll(Logging.error))
               .forkDaemon
         }.as(UnitResponse(reqId))
         case ListTasksRequest(reqId)                      => kernel.tasks().map(ListTasksResponse(reqId, _))
@@ -322,7 +322,7 @@ object RemoteKernelClient extends polynote.app.App {
     client           = new RemoteKernelClient(kernel, requests, publishResponse, transport.close(), closed, notebookRef)
     _               <- tapClient.fold(ZIO.unit)(_.set(client))
     _               <- kernel.init()
-    _               <- publishResponse.publish1(Announce(initial.reqId, localAddress))
+    _               <- publishResponse.publish(Announce(initial.reqId, localAddress))
     exitCode        <- client.run().ensuring(client.close())
   } yield exitCode
 

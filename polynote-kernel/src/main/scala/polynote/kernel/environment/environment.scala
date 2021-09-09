@@ -33,7 +33,7 @@ object Config {
 object PublishStatus {
   def access: RIO[PublishStatus, UPublish[KernelStatusUpdate]] = ZIO.access[PublishStatus](_.get)
   def apply(statusUpdate: KernelStatusUpdate): RIO[PublishStatus, Unit] =
-   access.flatMap(_.publish1(statusUpdate))
+   access.flatMap(_.publish(statusUpdate))
 
   def layer(publishStatus: UPublish[KernelStatusUpdate]): ULayer[PublishStatus] = ZLayer.succeed(publishStatus)
 }
@@ -44,11 +44,11 @@ object PublishStatus {
 object PublishResult {
   def access: RIO[PublishResult, UPublish[Result]] = ZIO.access[PublishResult](_.get)
   def apply(result: Result): RIO[PublishResult, Unit] =
-    access.flatMap(_.publish1(result))
+    access.flatMap(_.publish(result))
 
   def apply(results: List[Result]): RIO[PublishResult, Unit] =
     access.flatMap {
-      pr => ZIO.foreach_(results)(pr.publish1)
+      pr => ZIO.foreach_(results)(pr.publish)
     }
 
   def layer(publishResult: UPublish[Result]): ULayer[PublishResult] = ZLayer.succeed(publishResult)
@@ -61,7 +61,7 @@ object PublishResult {
 object PublishMessage extends (Message => RIO[PublishMessage, Unit]) {
   def access: RIO[PublishMessage, UPublish[Message]] = ZIO.access[PublishMessage](_.get)
   def apply(message: Message): RIO[PublishMessage, Unit] =
-    access.flatMap(_.publish1(message))
+    access.flatMap(_.publish(message))
 
   def of(publish: UPublish[Message]): PublishMessage = Has(publish)
   def ignore: PublishMessage = Has[UPublish[Message]](Publish.ignore)
@@ -123,10 +123,10 @@ object CurrentRuntime {
       runtime =>
         new KernelRuntime(
           new KernelRuntime.Display {
-            def content(contentType: String, content: String): Unit = runtime.unsafeRunSync(publishResult.publish1(Output(contentType, content)))
+            def content(contentType: String, content: String): Unit = runtime.unsafeRunSync(publishResult.publish(Output(contentType, content)))
           },
           (frac, detail) => runtime.unsafeRunAsync_(taskRef.update(t => ZIO.succeed(t.progress(frac, Option(detail).filter(_.nonEmpty))))),
-          posOpt => runtime.unsafeRunAsync_(publishStatus.publish1(ExecutionStatus(cellID, posOpt.map(boxed => (boxed._1.intValue(), boxed._2.intValue())))))
+          posOpt => runtime.unsafeRunAsync_(publishStatus.publish(ExecutionStatus(cellID, posOpt.map(boxed => (boxed._1.intValue(), boxed._2.intValue())))))
         )
     }
 

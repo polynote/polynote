@@ -93,7 +93,7 @@ object KernelSubscriber {
             .interruptWhen(closed.await.run),
           ZStream.fromHub(publisher.cellResults)
             .interruptWhen(closed.await.run)
-        ).flattenParUnbounded().mapM(publishMessage.publish1).runDrain.forkDaemon
+        ).flattenParUnbounded().mapM(publishMessage.publish).runDrain.forkDaemon
     } yield new KernelSubscriber(
       id,
       identity,

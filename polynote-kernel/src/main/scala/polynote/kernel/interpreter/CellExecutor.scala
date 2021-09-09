@@ -63,7 +63,7 @@ object CellExecutor {
             new Blocking.Service {
               override def blockingExecutor: Executor =
                 new CellExecutor(
-                  result => runtime.unsafeRun(publish.publish1(result)),
+                  result => runtime.unsafeRun(publish.publish(result)),
                   classLoader,
                   hasBlocking.get.blockingExecutor)
             }

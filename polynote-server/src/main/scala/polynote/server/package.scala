@@ -193,7 +193,7 @@ package object server {
           * Broadcast a [[Message]] to *all* active clients connected to this server. Used for messages that are NOT specific
           * to a given notebook or kernel.
           */
-        private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish1(m)
+        private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish(m)
 
         override def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
           for {
