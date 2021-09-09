@@ -18,7 +18,7 @@ import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
 import polynote.server.repository.NotebookRepository
-import zio.{Has, Hub, IO, Task, URIO, ZIO, ZLayer, ZManaged}
+import zio.{Has, Hub, IO, Promise, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
 
@@ -78,27 +78,12 @@ class Server {
       |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
       |this software insecurely.""".stripMargin
 
-  private val banner: String =
-    raw"""|
-          |  _____      _                   _
-          | |  __ \    | |                 | |
-          | | |__) |__ | |_   _ _ __   ___ | |_ ___
-          | |  ___/ _ \| | | | | '_ \ / _ \| __/ _ \
-          | | |  | (_) | | |_| | | | | (_) | ||  __/
-          | |_|   \___/|_|\__, |_| |_|\___/ \__\___|
-          |                __/ |
-          |               |___/
-          |
-          |""".stripMargin
-
-
   def main: ZIO[AppEnv, String, Int] = {
     for {
       config       <- ZIO.access[Config](_.get[PolynoteConfig])
       _            <- Logging.info(s"Loaded configuration: $config")
       wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
       _            <- Logging.warn(securityWarning)
-      _            <- Logging.info(banner)
       _            <- Logging.info(s"Polynote version ${BuildInfo.version}")
       _            <- serve(wsKey).orDie
     } yield 0
@@ -189,10 +174,17 @@ class Server {
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
                 case "" => authorize(req, SocketSession(inputFrames, ZStream.fromHub(broadcastAll)).flatMap(output => Response.websocket(req, output)))
-                case rest => authorize(
-                  req,
-                  ZIO.environment[RequestEnv with UserIdentity].flatMap(
-                    env => Response.websocket(req, ZStream.managed(NotebookSession.stream(rest, inputFrames, broadcastAll).provide(env)).flatten)))
+                case rest =>
+                    authorize(
+                      req,
+                      ZIO.environment[RequestEnv with UserIdentity].flatMap {
+                        env =>
+                          val frames = ZStream.managed(NotebookSession.stream(rest, inputFrames, broadcastAll).provide(env))
+                            .flatten
+                          Response.websocket(req, frames)
+                      }
+                    )
+
               }
             } else ZIO.fail(Forbidden("Missing or incorrect key"))
         }.handleSome {

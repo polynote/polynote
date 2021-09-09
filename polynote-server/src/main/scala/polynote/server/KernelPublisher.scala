@@ -213,7 +213,7 @@ class KernelPublisher private (
   private def removeSubscriber(id: Int): URIO[BaseEnv with Clock, Unit] = subscribing.withPermit {
     for {
       subscriber <- subscribers.get(id).get.orElseFail(new NoSuchElementException(s"Subscriber $id does not exist"))
-      _          <- ZIO.whenM(!subscriber.closed.isDone)(ZIO.fail(new IllegalStateException(s"Attempting to remove subscriber $id, which is not closed.")))
+      _          <- ZIO.unlessM(subscriber.closed.isDone)(subscriber.close())
       _          <- subscribers.remove(id)
       _          <- status.publish(PresenceUpdate(Nil, List(id)))
     } yield ()

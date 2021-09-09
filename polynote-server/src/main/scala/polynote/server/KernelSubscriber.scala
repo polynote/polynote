@@ -86,14 +86,14 @@ object KernelSubscriber {
       publishMessage   <- PublishMessage.access
       currentSelection <- SubscriptionRef.make[Option[PresenceSelection]](None)
       updater          <- ZStream(
-          foreignUpdates(lastLocalVersion, lastGlobalVersion, closed).haltWhen(closed.await.run),
+          foreignUpdates(lastLocalVersion, lastGlobalVersion, closed).interruptWhen(closed.await.run),
           ZStream.fromEffect(publisher.kernelStatus().map(KernelStatus(_))) ++ ZStream.fromHub(publisher.status)
             .filter(_.isRelevant(id))
             .map(update => KernelStatus(update.forSubscriber(id)))
             .interruptWhen(closed.await.run),
           ZStream.fromHub(publisher.cellResults)
             .interruptWhen(closed.await.run)
-        ).flattenParUnbounded().haltWhen(closed.await.run).mapM(publishMessage.publish1).runDrain.forkDaemon
+        ).flattenParUnbounded().mapM(publishMessage.publish1).runDrain.forkDaemon
     } yield new KernelSubscriber(
       id,
       identity,

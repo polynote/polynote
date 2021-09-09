@@ -10,7 +10,7 @@ import polynote.server.auth.Permission
 import uzhttp.HTTPError
 import uzhttp.HTTPError.NotFound
 import uzhttp.websocket.Frame
-import zio.stream.{Stream, Take, ZStream}
+import zio.stream.{Stream, Take, UStream, ZStream}
 import zio.{Promise, RIO, UIO, ZIO, ZLayer, ZManaged, ZQueue}
 
 import java.util.concurrent.atomic.AtomicInteger
@@ -170,7 +170,7 @@ class NotebookSession(
 
 object NotebookSession {
 
-  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: UPublish[Message]): ZManaged[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: UPublish[Message]): ZManaged[SessionEnv with NotebookManager, HTTPError, UStream[Frame]] = {
     for {
       _                <- NotebookManager.assertValidPath(path).toManaged_
       output           <- ZQueue.unbounded[Take[Nothing, Message]].toManaged_ // TODO: finalizer instead of close
@@ -181,20 +181,21 @@ object NotebookSession {
       closed           <- Promise.make[Throwable, Unit].toManaged_
       handler           = new NotebookSession(subscriber, streamingHandles, broadcastAll)
       env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage].toManaged_
-      close             = closeQueueIf(closed, output) *> subscriber.close().provide(env)
       _                <- handler.sendNotebook.toManaged_
     } yield parallelStreams(
       toFrames(ZStream.fromQueue(output).flattenTake),
-      input.handleMessages(close) {
+      input.handleMessages(closeQueueIf(closed, output)) {
         msg => handler.handleMessage(msg).catchAll {
           err => Logging.error(err) *> output.offer(Take.single(Error(0, err)))
         }.fork.as(None)
       },
       keepaliveStream(closed)
-    ).provide(env)
+    ).catchAll {
+      err => ZStream.fromEffect(Logging.error("Notebook session is closing due to error", err)).drain
+    }.provide(env)
   }.catchAll {
     case err: HTTPError => ZManaged.fail(err)
-    case err => Logging.error(err).toManaged_ *> ZManaged.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
+    case err => Logging.error(err).toManaged_ *> ZManaged.succeed(ZStream.empty)
   }
 
   private val sessionId = new AtomicInteger(0)
