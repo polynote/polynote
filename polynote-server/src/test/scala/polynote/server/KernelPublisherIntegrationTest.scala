@@ -20,7 +20,7 @@ import polynote.testing.ExtConfiguredZIOSpec
 import polynote.testing.kernel.MockNotebookRef
 import zio.clock.Clock
 import zio.duration.Duration
-import zio.stream.{Take, ZStream}
+import zio.stream.{Take, ZStream, ZTransducer}
 import zio.{Fiber, Promise, Queue, RIO, Ref, Semaphore, Tag, Task, UIO, ULayer, URIO, ZIO, ZLayer, ZManaged, random}
 import random.Random
 
@@ -83,9 +83,13 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val process         = kernel.transport.asInstanceOf[SocketTransportServer].process
 
       val collectStatus = ZStream.fromHub(kernelPublisher.status)
-        .takeUntil(_ == KernelBusyState(false, false))
-        .runCollect.map(_.toList)
-        .forkDaemon.runIO()
+        .mapAccum((false, false)) {
+          case ((_, sawError), update@KernelBusyState(false, false)) => ((true, sawError), (true, sawError) -> update)
+          case ((sawBusyState, _), update@KernelError(_)) => ((sawBusyState, true), (sawBusyState, true) -> update)
+          case (saw, update) => (saw, saw -> update)
+        }.takeUntil {
+          case ((sawBusyState, sawError), _) => sawBusyState && sawError
+        }.map(_._2).runCollect.map(_.toList).forkDaemon.runIO()
 
       process.kill().runIO()
       assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty)
@@ -96,7 +100,7 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
         .someOrFail(new Exception("Kernel should have changed; didn't change after 5 seconds"))
         .runWith(kernelFactory)
 
-      assert(!(kernel2 eq kernel), "Kernel should have changed")
+      assert(kernel2 ne kernel, "Kernel should have changed")
       kernelPublisher.close().runIO()
       val statusUpdates = collectStatus.join
         .timeout(Duration(5, TimeUnit.SECONDS))
