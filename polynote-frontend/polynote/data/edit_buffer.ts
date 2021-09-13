@@ -67,6 +67,23 @@ export class EditBuffer {
         return this.rawRange(from, to).map(ver => ver.edit)
     }
 
+    /**
+     * Rebase the given update from its localVersion through the target localVersion.
+     *
+     * At each buffered local version, the given update will be rebased onto that local version, and the local version
+     * will also be rebased on to the given update. Then, the stored local version will be replaced with the "leftovers"
+     * of that rebase. This is because any future update received from the server is already on top of the given update,
+     * even if its localVersion hasn't been updated. Note that this logic only affects edits to cell content where the
+     * same cell was edited by both the server update and a subsequent local version (of which the server was unaware).
+     *
+     * This is the same logic as the server's `SubscriberUpdateBuffer` (see `KernelPublisher.scala` in polynote-server),
+     * except that the rebasing logic for equal updates are opposite: on the server side, equal updates cancel each other
+     * out, while on the client side, equal updates are preserved. Equal updates can't be preserved on the server, because
+     * that would result in duplicate edits affecting the final state – but equal edits must be preserved on the client,
+     * because the client's edit has already affected the client's state. This has been experimentally verified to be
+     * the only behavior under which concurrent editing reliably operates (see `KernelPublisherIntegrationTest` in
+     * polynote-server, which simulates "keyboard-mashing" clients using the client-side logic replicated here)
+     */
     rebaseThrough(update: NotebookUpdate, targetVersion: number): NotebookUpdate {
         if (update instanceof UpdateCell) {
             const versions = this.rawRange(update.localVersion, targetVersion);

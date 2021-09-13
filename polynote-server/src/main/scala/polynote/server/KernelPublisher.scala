@@ -379,10 +379,27 @@ case object PublisherClosed extends Throwable
 final class SubscriberUpdateBuffer extends VersionBuffer[(SubscriberId, NotebookUpdate)] {
 
   /**
-    * Rebase the update through the given version, excluding updates from the given subscriber. Each version that's
-    * rebased through will also be mutated to account for the given update with respect to future updates which
-    * go through that version.
-    * @return
+    * Rebase the given update from its globalVersion through the target globalVersion.
+    *
+    * At each buffered global version, the given update will be rebased onto that global version, and the global version
+    * will also be rebased on to the given update. Then, the stored global version will be replaced with the "leftovers"
+    * of that rebase. This is because any future update received from the this client is already on top of the given
+    * update, even if its globalVersion hasn't been updated. Note that this logic only affects edits to cell content
+    * where the same cell was edited by both the client update and a subsequent global version (of which the client was
+    * unaware).
+    *
+    * This is the same logic as the client's `EditBuffer` (see `edit_buffer.ts` in polynote-frontend), except that the
+    * rebasing logic for equal updates are opposite: on the server side, equal updates cancel each other out, while on
+    * the client side, equal updates are preserved. Equal updates can't be preserved on the server, because that would
+    * result in duplicate edits affecting the final state – but equal edits must be preserved on the client, because the
+    * client's edit has already affected the client's state. This has been experimentally verified to be the only
+    * behavior under which concurrent editing reliably operates (see `KernelPublisherIntegrationTest` in which simulates
+    * "keyboard-mashing" clients using the client-side logic replicated in the polynote-frontend's `EditBuffer`)
+    *
+    * The server-side logic also has additional filtering to ensure that it's not rebasing through the client's own
+    * edits, and it has some optional debug logging (TODO: remove the debug logging)
+    *
+    * @return the rebased edit
     */
   def rebaseThrough(update: NotebookUpdate, subscriberId: SubscriberId, targetVersion: GlobalVersion, log: Option[StringBuilder] = None, updateBuffer: Boolean = true): NotebookUpdate = update match {
     case update@UpdateCell(sourceVersion, _, cellId, sourceEdits, _) =>
