@@ -78,12 +78,25 @@ class Server {
       |before running Polynote. You are solely responsible for any breach, loss, or damage caused by running
       |this software insecurely.""".stripMargin
 
+  private val banner: String = Seq(
+    "",
+    "  _____      _                   _",
+    " |  __ \\    | |                 | |",
+    " | |__) |__ | |_   _ _ __   ___ | |_ ___",
+    " |  ___/ _ \\| | | | | '_ \\ / _ \\| __/ _ \\",
+    " | |  | (_) | | |_| | | | | (_) | ||  __/",
+    " |_|   \\___/|_|\\__, |_| |_|\\___/ \\__\\___|",
+    "                __/ |",
+    "               |___/",
+    "").mkString(sys.props("line.separator"))
+
   def main: ZIO[AppEnv, String, Int] = {
     for {
       config       <- ZIO.access[Config](_.get[PolynoteConfig])
       _            <- Logging.info(s"Loaded configuration: $config")
       wsKey         = config.security.websocketKey.getOrElse(UUID.randomUUID().toString)
       _            <- Logging.warn(securityWarning)
+      _            <- Logging.info(banner)
       _            <- Logging.info(s"Polynote version ${BuildInfo.version}")
       _            <- serve(wsKey).orDie
     } yield 0
