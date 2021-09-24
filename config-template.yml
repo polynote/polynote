@@ -57,6 +57,8 @@
 #  kernel_isolation: always
 #  shared_packages:
 #    - com.esoteric.kryo
+#  default_notebook: examples/template.ipynb
+
 
 ########## Notebook Creation Configuration #######################################################
 ###

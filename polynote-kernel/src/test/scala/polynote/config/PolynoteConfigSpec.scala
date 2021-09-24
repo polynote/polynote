@@ -211,4 +211,15 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     val parsed = PolynoteConfig.parse(yamlStr)
     parsed.right.value.spark.get.properties("spark.some.decimal") shouldEqual "1.523432422343"
   }
+
+  it should "parse default notebook properly" in {
+    val yamlStr =
+      """
+        |behavior:
+        |  default_notebook: notebooks/template.ipynb
+        |""".stripMargin
+    val parsed = PolynoteConfig.parse(yamlStr)
+    parsed.right.value.behavior.defaultNotebook shouldEqual "notebooks/template.ipynb"
+  }
 }
+

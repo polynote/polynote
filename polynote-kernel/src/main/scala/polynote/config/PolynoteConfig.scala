@@ -110,7 +110,8 @@ object KernelIsolation {
 final case class Behavior(
   dependencyIsolation: Boolean = true,
   kernelIsolation: KernelIsolation = KernelIsolation.Always,  // TODO: Should move this to KernelConfig now?
-  sharedPackages: List[String] = Nil
+  sharedPackages: List[String] = Nil,
+  defaultNotebook: String = ""
 ) {
   private final val defaultShares = "scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j"
 

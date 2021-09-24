@@ -353,6 +353,15 @@ class FileBasedRepository(
       nb      <- maybeContent.map(content => fmt.decodeNotebook(noExtPath, content)).getOrElse {
         val defaultTitle = noExtPath.split('/').last.replaceAll("[\\s\\-_]+", " ").trim()
         emptyNotebook(path, defaultTitle)
+        Config.access.map {
+          config => {
+            config.behavior.defaultNotebook.isEmpty match {
+              case true => emptyNotebook(path, defaultTitle)
+              case false => loadNotebook(config.behavior.defaultNotebook)
+            }
+          }
+        }
+        loadNotebook(path)
       }
       name    <- findUniqueName(nb.path)
       _       <- saveNotebook(nb.copy(path = name))
