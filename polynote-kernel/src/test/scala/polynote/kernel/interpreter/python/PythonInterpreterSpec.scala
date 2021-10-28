@@ -447,6 +447,20 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       }
     }
 
+    "should properly handle common Python stdout APIs" in {
+      val code =
+        """
+          |import sys
+          |kernel_output = sys.stdout # prove it's not the normal python sys.stdout
+          |sys.stdout.flush() # should not fail
+          |is_tty = sys.stdout.isatty()
+          |""".stripMargin
+      assertOutput(code) { case (vars, output) =>
+        vars("is_tty") shouldEqual false
+        vars("kernel_output").toString should startWith("polynote.kernel.environment.CurrentRuntime")
+      }
+    }
+
 
   }
 

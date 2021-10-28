@@ -10,6 +10,7 @@ public class KernelRuntime implements Serializable {
         default void write(String str) { content("text/plain; rel=stdout", str); }
         default void flush() {} // So python doesn't error on sys.stdout.flush().
         default void text(String str) { content("text/plain", str); }
+        default Boolean isatty() { return false; } // so python doesn't error when checking isatty(), as some libs seem to do.
     }
 
     transient public final Display display;
