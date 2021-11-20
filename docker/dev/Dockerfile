@@ -1,5 +1,5 @@
-# Set this to match your JDK version compiled with.
-FROM openjdk:8-slim-buster
+# Set to match the JDK version you compile with.
+FROM openjdk:11-slim-buster
 
 WORKDIR /opt
 
@@ -16,7 +16,6 @@ ENV PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 COPY requirements.txt /tmp/
 RUN pip3 install -r /tmp/requirements.txt
 
-
 # Before starting, double check your JVM version
 # and make sure it matches the version in the FROM line.
 # Once you've got that sorted out, compile the website with npm
@@ -29,6 +28,7 @@ RUN pip3 install -r /tmp/requirements.txt
 COPY target/polynote-dist.tar.gz .
 RUN tar xfzp polynote-dist.tar.gz && \
     rm polynote-dist.tar.gz
+
 
 # to wrap up, we create (safe)user
 ENV UID 1000
