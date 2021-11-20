@@ -1,5 +1,16 @@
 # Unreleased
 
+# O.4.3 (Nov 19, 2021)
+* Initial support for Scala 2.13 (with Spark 3)
+* Fix an issue which sometimes caused Polynote to reject all updates, "freezing" the notebook in an old state.
+* Safety and performance improvements to `ReprsOf` solving OOMs when handling huge collections.
+* Fix some concurrent editing bugs. 
+* Fix a crash when insanely long lines are printed to console.
+* Improve Python performance (in some cases running in Polynote was ~10x slower than the REPL) 
+* Implement `isatty()` to work around some issues where Python libraries check for this.. 
+* Some Dockerfile improvements and documentation fixes (Thanks @holdenk !) 
+* Fixed a docs typo! (Thanks @kuckjwi0928 !) 
+
 # 0.4.2 (June 25, 2021)
 * PySpark dependencies now configurable. #1175
   
