@@ -529,7 +529,8 @@ class PythonInterpreter private[python] (
       |        had some serious performance degradations.
       |        '''
       |        try:
-      |            sys.stdout = kernel.display
+      |            sys.stdout = kernel.stdout
+      |            sys.stderr = kernel.stderr
       |
       |            # These names already exist in globals, so we keep track of them in case they might be reassignments
       |            # This is needed for proper attribution of declarations to cells, otherwise a shadowed variable could
