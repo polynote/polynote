@@ -417,7 +417,7 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
 
     "completions" in {
       val completions = interpreter.completionsAt("dela", 4, State.id(1)).runIO()
-      completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("o", ""), ("name", "str"))))), "", CompletionType.Method))
+      completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("obj", ""), ("name", "str"))))), "", CompletionType.Method))
       val keywordCompletion = interpreter.completionsAt("d={'foo': 'bar'}; d['']", 21, State.id(1)).runIO()
       keywordCompletion shouldEqual List(Completion("'foo", Nil, Nil, "", CompletionType.Unknown, None))
     }
@@ -425,8 +425,8 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
     "parameters" in {
       val params = interpreter.parametersAt("delattr(", 8, State.id(1)).runIO()
       params shouldEqual Option(Signatures(List(
-        ParameterHints("delattr(o, name: str)", Option("Deletes the named attribute from the given object."),
-          List(ParameterHint("o", "", None), ParameterHint("name", "str", None)))),0,0))
+        ParameterHints("delattr(obj, name: str)", Option("Deletes the named attribute from the given object."),
+          List(ParameterHint("obj", "", None), ParameterHint("name", "str", None)))),0,0))
     }
 
 
