@@ -347,6 +347,20 @@ class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
       }
     }
 
+    "capture printing to stderr too" in {
+      val code =
+        """
+          |Console.out.println("stdout")
+          |Console.err.println("stderr")
+      """.stripMargin
+      assertOutput(code) {
+        (vars, output) =>
+          vars shouldBe empty
+          stdOut(output) shouldEqual "stdout\n"
+          stdErr(output) shouldEqual "stderr\n"
+      }
+    }
+
     "support destructured assignment" in {
       val code =
         """

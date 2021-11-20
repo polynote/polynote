@@ -81,4 +81,9 @@ trait InterpreterSpec extends ZIOSpec {
     case (accum, _) => accum
   }
 
+  def stdErr(results: Seq[Result]): String = results.foldLeft("") {
+    case (accum, Output("text/plain; rel=stderr", next)) => accum + next.mkString
+    case (accum, _) => accum
+  }
+
 }

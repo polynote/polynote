@@ -25,14 +25,18 @@ class CellExecutor(publishSync: Result => Unit, classLoader: ClassLoader, blocki
     blockingExecutor.submit {
       new Runnable {
         def run(): Unit = {
-          val console = new ResultPrintStream(publishSync)()
+          val stdout = new ResultPrintStream(publishSync)()
+          val stderr = new ResultPrintStream(publishSync, rel = "stderr")()
           withContextClassLoader(classLoader) {
             try {
-              Console.withOut(console) {
-                runnable.run()
+              Console.withOut(stdout) {
+                Console.withErr(stderr) {
+                  runnable.run()
+                }
               }
             } finally {
-              console.close()
+              stdout.close()
+              stderr.close()
             }
           }
         }

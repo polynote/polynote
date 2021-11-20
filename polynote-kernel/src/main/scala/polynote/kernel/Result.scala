@@ -223,18 +223,18 @@ object Result {
     result match {
       case ClearResults() => _.copy(results = ShortList(Nil))
       case execInfo@ExecutionInfo(_, _) => cell => cell.copy(results = ShortList(cell.results :+ execInfo), metadata = cell.metadata.copy(executionInfo = Some(execInfo)))
-      case Output("text/plain; rel=stdout", lines) if lines.nonEmpty =>
+      case Output(contentType, lines) if contentType.startsWith("text/plain") && lines.nonEmpty =>
         val processedTail = lines.tail.map(collapseCrs)
 
         cell => {
           val updatedResults = cell.results.lastOption match {
-            case Some(Output("text/plain; rel=stdout", linesPrev)) =>
+            case Some(Output(`contentType`, linesPrev)) =>
               val combinedLines = if (linesPrev.nonEmpty && !linesPrev.last.endsWith("\n")) {
                 linesPrev.dropRight(1) ++ (collapseCrs(linesPrev.last + lines.head) +: processedTail)
               } else {
                 linesPrev ++ (collapseCrs(lines.head) +: processedTail)
               }
-              cell.results.dropRight(1) :+ Output("text/plain; rel=stdout", combinedLines)
+              cell.results.dropRight(1) :+ Output(contentType, combinedLines)
             case _ => cell.results :+ result
           }
           cell.copy(results = ShortList.fromRight(updatedResults))

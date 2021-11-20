@@ -447,17 +447,34 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       }
     }
 
-    "should properly handle common Python stdout APIs" in {
+    "should properly handle common Python stdout/stderr APIs" in {
       val code =
         """
           |import sys
-          |kernel_output = sys.stdout # prove it's not the normal python sys.stdout
-          |sys.stdout.flush() # should not fail
-          |is_tty = sys.stdout.isatty()
+          |kernel_stdout = sys.stdout
+          |kernel_stderr = sys.stderr
+          |for o in [kernel_stdout, kernel_stderr]:
+          |    o.flush() # should not fail
+          |    assert o.isatty() == False, "Something went horribly wrong!"
+          |
+          |kernel_stdout.write("write!out!\n")
+          |kernel_stderr.write("write!err!\n")
+          |
+          |print("print!out!")
+          |print("print!err!", file=sys.stderr)
           |""".stripMargin
       assertOutput(code) { case (vars, output) =>
-        vars("is_tty") shouldEqual false
-        vars("kernel_output").toString should startWith("polynote.kernel.environment.CurrentRuntime")
+        vars("kernel_stdout").toString should include("polynote")
+        vars("kernel_stderr").toString should include("polynote")
+
+        output should contain theSameElementsInOrderAs(Seq(
+          Output("text/plain; rel=stdout", Vector("write!out!\n")),
+          Output("text/plain; rel=stderr", Vector("write!err!\n")),
+          Output("text/plain; rel=stdout", Vector("print!out!")),
+          Output("text/plain; rel=stdout", Vector("\n")),
+          Output("text/plain; rel=stderr", Vector("print!err!")),
+          Output("text/plain; rel=stderr", Vector("\n"))
+        ))
       }
     }
 
