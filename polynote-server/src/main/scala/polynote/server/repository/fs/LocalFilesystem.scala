@@ -5,23 +5,23 @@ import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.{AtomicMoveNotSupportedException, FileAlreadyExistsException, FileVisitOption, Files, Path, StandardCopyOption, StandardOpenOption}
 import java.util.concurrent.atomic.AtomicBoolean
-import fs2.Chunk
 import polynote.kernel.BaseEnv
 import zio.blocking.{Blocking, effectBlocking}
-import zio.interop.catz._
-import zio.{RIO, Semaphore, Task, ZIO}
+import zio.{Chunk, RIO, Semaphore, ZIO, ZManaged}
 import zio.ZIO.effect
 
 import scala.collection.JavaConverters._
 import LocalFilesystem.FileChannelWALWriter
-import cats.effect.Blocker
+import zio.stream.ZStream
 
 class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
 
-  override def readPathAsString(path: Path): RIO[BaseEnv, String] = for {
-    is      <- effectBlocking(Files.newInputStream(path))
-    content <- readBytes(is).ensuring(ZIO.effectTotal(is.close()))
-  } yield new String(content.toArray, StandardCharsets.UTF_8)
+  override def readPathAsString(path: Path): RIO[BaseEnv, String] =
+    ZManaged.fromAutoCloseable(effectBlocking(Files.newInputStream(path))).use {
+      is => readBytes(is)
+    }.map {
+      bytes => new String(bytes.toArray, StandardCharsets.UTF_8)
+    }
 
   /**
     * Writes the content to the given path "atomically" – at least, in a way where the existing file at that path (if
@@ -76,13 +76,8 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
   override def createLog(path: Path): RIO[BaseEnv, WAL.WALWriter] =
     effectBlocking(path.getParent.toFile.mkdirs()) *> FileChannelWALWriter(path)
 
-  private def readBytes(is: => InputStream): RIO[BaseEnv, Chunk.Bytes] = {
-    for {
-      env    <- ZIO.environment[BaseEnv]
-      ec      = env.get[Blocking.Service].blockingExecutor.asEC
-      chunks <- fs2.io.readInputStream[Task](effectBlocking(is).provide(env), 8192, Blocker.liftExecutionContext(ec), closeAfterUse = true).compile.toChunk.map(_.toBytes)
-    } yield chunks
-  }
+  private def readBytes(is: => InputStream): RIO[BaseEnv, Chunk[Byte]] =
+    ZStream.fromInputStream(is).runCollect
 
   override def list(path: Path): RIO[BaseEnv, List[Path]] =
     effectBlocking(Files.walk(path, maxDepth, FileVisitOption.FOLLOW_LINKS).iterator().asScala.drop(1).toList)

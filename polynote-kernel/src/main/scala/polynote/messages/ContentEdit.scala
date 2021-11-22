@@ -137,7 +137,7 @@ object ContentEdit {
   }
 
   // rebase edit onto all of edits, and all of edits onto edit
-  def rebaseAll(edit: ContentEdit, edits: Seq[ContentEdit], reverse: Boolean = false): (List[ContentEdit], List[ContentEdit]) = {
+  def rebaseAll(edit: ContentEdit, edits: Seq[ContentEdit], client: Boolean = false): (List[ContentEdit], List[ContentEdit]) = {
     val rebasedOther = ListBuffer[ContentEdit]()
     val rebasedEdit = edits.foldLeft(List(edit)) {
       (as, b) =>
@@ -147,11 +147,11 @@ object ContentEdit {
             bs match {
               case Nil => List(a)
               case one :: Nil =>
-                val rebased = rebase(a, one)
+                val rebased = rebase(a, one, client)
                 bs = rebased._2
                 rebased._1
               case more =>
-                val rebased = rebaseAll(a, more, reverse)
+                val rebased = rebaseAll(a, more, client)
                 bs = rebased._1
                 rebased._1
             }
@@ -174,7 +174,7 @@ final case class ContentEdits(edits: ShortList[ContentEdit]) extends AnyVal {
     * Given another set of edits which would act upon the same content as this set of edits, produce a new set of edits
     * which would have the same effect as this set of edits but are based upon the given edits.
     */
-  def rebase(other: ContentEdits, reverse: Boolean = false): ContentEdits = {
+  def rebase(other: ContentEdits, client: Boolean = false): ContentEdits = {
     // each edit in this set must be rebased to all the edits in the other set.
     // but we also have to track how the other edits are affected by each subsequent edit in this set, so that
     // the edits after it know how to rebase.
@@ -184,7 +184,7 @@ final case class ContentEdits(edits: ShortList[ContentEdit]) extends AnyVal {
 
     while (iter.hasNext) {
       val edit = iter.next()
-      val (rebasedEdit, rebasedOther) = ContentEdit.rebaseAll(edit, otherEdits, reverse)
+      val (rebasedEdit, rebasedOther) = ContentEdit.rebaseAll(edit, otherEdits, client)
       result ++= rebasedEdit
       otherEdits = rebasedOther
     }
@@ -192,7 +192,7 @@ final case class ContentEdits(edits: ShortList[ContentEdit]) extends AnyVal {
     //    ContentEdits(ShortList(edits.flatMap(_.rebase(other).edits)))
   }
 
-  def rebaseBoth(other: ContentEdits, reverse: Boolean = false): (ContentEdits, List[ContentEdit]) = {
+  def rebaseBoth(other: ContentEdits, client: Boolean = false): (ContentEdits, List[ContentEdit]) = {
     // each edit in this set must be rebased to all the edits in the other set.
     // but we also have to track how the other edits are affected by each subsequent edit in this set, so that
     // the edits after it know how to rebase.
@@ -202,7 +202,7 @@ final case class ContentEdits(edits: ShortList[ContentEdit]) extends AnyVal {
 
     while (iter.hasNext) {
       val edit = iter.next()
-      val (rebasedEdit, rebasedOther) = ContentEdit.rebaseAll(edit, otherEdits, reverse)
+      val (rebasedEdit, rebasedOther) = ContentEdit.rebaseAll(edit, otherEdits, client)
       result ++= rebasedEdit
       otherEdits = rebasedOther
     }

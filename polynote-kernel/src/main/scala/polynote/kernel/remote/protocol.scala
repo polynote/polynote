@@ -36,10 +36,6 @@ object IdentifyChannel {
   def encode(value: IdentifyChannel): Task[BitVector] = ZIO.fromEither(codec.encode(value).toEither).mapError(err => new RuntimeException(err.message))
 }
 
-object Update {
-  implicit val notebookUpdateCodec: Codec[NotebookUpdate] = NotebookUpdate.codec
-}
-
 sealed trait RemoteRequest {
   val reqId: Int
 }

@@ -1,27 +1,26 @@
 package polynote.server
 
-import java.util.concurrent.atomic.AtomicInteger
-
-import cats.instances.list._
 import cats.syntax.either._
-import cats.syntax.traverse._
-import polynote.kernel.{BaseEnv, ClearResults, Complete, GlobalEnv, KernelBusyState, PresenceUpdate, Running, StreamThrowableOps, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.kernel.environment.{Env, PublishMessage}
-import polynote.kernel.util.Publish
+import polynote.kernel.logging.Logging
+import polynote.kernel.util.{Publish, UPublish}
+import polynote.kernel.{BaseEnv, Complete, GlobalEnv, PresenceUpdate, Running, StreamingHandles, TaskInfo, UpdatedTasks}
 import polynote.messages._
 import polynote.server.auth.Permission
 import uzhttp.HTTPError
-import HTTPError.NotFound
-import fs2.concurrent.Topic
-import polynote.kernel.logging.Logging
+import uzhttp.HTTPError.NotFound
 import uzhttp.websocket.Frame
-import zio.stream.{Stream, Take}
-import zio.ZQueue
-import zio.stream.ZStream
-import zio.{Promise, RIO, Task, UIO, ZIO, ZLayer}
+import zio.stream.{Stream, Take, UStream, ZStream}
+import zio.{Promise, RIO, UIO, ZIO, ZLayer, ZManaged, ZQueue}
+
+import java.util.concurrent.atomic.AtomicInteger
 
 
-class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingHandles.Service, broadcastAll: Topic[Task, Option[Message]]) {
+class NotebookSession(
+  subscriber: KernelSubscriber,
+  streamingHandles: StreamingHandles.Service,
+  broadcastAll: UPublish[Message]
+) {
 
   private val streamingHandlesLayer = ZLayer.succeed(streamingHandles)
 
@@ -148,7 +147,7 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
   }
 
   private def sendRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, Unit]  =
-    SocketSession.getRunningKernels.flatMap(broadcastAll.publish1) *> broadcastAll.publish1(None)
+    SocketSession.getRunningKernels.flatMap(broadcastAll.publish)
 
   // First send the notebook without any results (because they're large) and then send the individual results
   // to make notebook loading more incremental.
@@ -171,31 +170,32 @@ class NotebookSession(subscriber: KernelSubscriber, streamingHandles: StreamingH
 
 object NotebookSession {
 
-  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: Topic[Task, Option[Message]]): ZIO[SessionEnv with NotebookManager, HTTPError, Stream[Throwable, Frame]] = {
+  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: UPublish[Message]): ZManaged[SessionEnv with NotebookManager, HTTPError, UStream[Frame]] = {
     for {
-      _                <- NotebookManager.assertValidPath(path)
-      output           <- ZQueue.unbounded[Take[Nothing, Message]]
-      _                <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
+      _                <- NotebookManager.assertValidPath(path).toManaged_
+      output           <- ZQueue.unbounded[Take[Nothing, Message]].toManaged_ // TODO: finalizer instead of close
+      _                <- Env.addManaged[SessionEnv with NotebookManager](Publish(output))
       subscriber       <- NotebookManager.subscribe(path).orElseFail(NotFound(path))
-      sessionId        <- nextSessionId
-      streamingHandles <- StreamingHandles.make(sessionId).orDie
-      closed           <- Promise.make[Throwable, Unit]
+      sessionId        <- nextSessionId.toManaged_
+      streamingHandles <- StreamingHandles.make(sessionId).orDie.toManaged_
+      closed           <- Promise.make[Throwable, Unit].toManaged_
       handler           = new NotebookSession(subscriber, streamingHandles, broadcastAll)
-      env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
-      close             = closeQueueIf(closed, output) *> subscriber.close()
-      _                <- handler.sendNotebook
+      env              <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage].toManaged_
+      _                <- handler.sendNotebook.toManaged_
     } yield parallelStreams(
       toFrames(ZStream.fromQueue(output).flattenTake),
-      input.handleMessages(close) {
+      input.handleMessages(closeQueueIf(closed, output)) {
         msg => handler.handleMessage(msg).catchAll {
           err => Logging.error(err) *> output.offer(Take.single(Error(0, err)))
         }.fork.as(None)
       },
       keepaliveStream(closed)
-    ).provide(env)
+    ).catchAll {
+      err => ZStream.fromEffect(Logging.error("Notebook session is closing due to error", err)).drain
+    }.provide(env)
   }.catchAll {
-    case err: HTTPError => ZIO.fail(err)
-    case err => Logging.error(err) *> ZIO.fail(HTTPError.InternalServerError(err.getMessage, Some(err)))
+    case err: HTTPError => ZManaged.fail(err)
+    case err => Logging.error(err).toManaged_ *> ZManaged.succeed(ZStream.empty)
   }
 
   private val sessionId = new AtomicInteger(0)

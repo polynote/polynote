@@ -14,14 +14,12 @@ val sparkVersion: SettingKey[String] = settingKey("Spark version")
 val circeVersion: SettingKey[String] = settingKey("circe version")
 val circeYamlVersion: SettingKey[String] = settingKey("circe-yaml version")
 val sparkInstallLocation: SettingKey[String] = settingKey("Location of Spark installation(s)")
+val sparkHome: SettingKey[String] = settingKey("Location of specific Spark installation to use for SPARK_HOME during tests")
 
 
 val versions = new {
-  val fs2        = "2.0.0"
-  val catsEffect = "2.0.0"
   val coursier   = "2.0.0-RC5-6"
-  val zio        = "1.0.5"
-  val zioInterop = "2.0.0.0-RC12"
+  val zio        = "1.0.11"
 }
 
 
@@ -174,13 +172,9 @@ val `polynote-kernel` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
-    "org.typelevel" %% "cats-effect" % versions.catsEffect,
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
-    //"dev.zio" %% "zio-interop-cats" % versions.zioInterop,
-    "co.fs2" %% "fs2-io" % versions.fs2,
     "org.scodec" %% "scodec-core" % "1.11.4",
-    "org.scodec" %% "scodec-stream" % "2.0.0",
     "io.get-coursier" %% "coursier" % versions.coursier,
     "io.get-coursier" %% "coursier-cache" % versions.coursier,
     "io.github.classgraph" % "classgraph" % "4.8.47",
@@ -203,7 +197,7 @@ val `polynote-server` = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
-    "org.polynote" %% "uzhttp" % "0.2.6",
+    "org.polynote" %% "uzhttp" % "0.2.8",
     "com.vladsch.flexmark" % "flexmark" % "0.34.32",
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
@@ -213,7 +207,8 @@ val `polynote-server` = project.settings(
     val _ = distUI.value
     (packageBin in Compile).value
   },
-  distFiles := Seq(assembly.value)
+  distFiles := Seq(assembly.value),
+  testOptions in Test += Tests.Argument("-oF")
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
 val sparkVersions = Map(
@@ -245,8 +240,10 @@ val sparkSettings = Seq(
   ),
   sparkInstallLocation := {
     sys.env.get("SPARK_INSTALL_LOCATION")
-      //.orElse(sys.env.get("SPARK_HOME").map(file).map(_.getParent))
-      .getOrElse((file(".").getAbsoluteFile / "target" / "spark").toString)
+      .getOrElse((file(".").getAbsoluteFile / "target" / "spark").getCanonicalPath)
+  },
+  sparkHome := {
+    (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
   },
   Test / testOptions += Tests.Setup { () =>
     import sys.process._
@@ -269,9 +266,8 @@ val sparkSettings = Seq(
     }
   },
   Test / envVars ++= {
-    val sparkHome = (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
     Map(
-      "SPARK_HOME" -> sparkHome,
+      "SPARK_HOME" -> sparkHome.value,
       "PATH" -> Seq(sparkHome, sys.env("PATH")).mkString(File.pathSeparator)
     )
   }

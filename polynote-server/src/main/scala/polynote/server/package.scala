@@ -1,55 +1,34 @@
 package polynote
 
-import java.io.File
-import java.net.URI
-import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Paths}
-import java.util.concurrent.TimeUnit
-
-import cats.{Applicative, MonadError}
-import cats.effect.{Concurrent, ConcurrentEffect, ContextShift, Timer}
-import fs2.concurrent.Topic
 import polynote.app.MainArgs
-import polynote.config.{Mount, PolynoteConfig}
 import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.logging.Logging
-import polynote.kernel.util.RefMap
-import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState, NotebookRef, TaskB, TaskG}
-import polynote.messages.{CreateNotebook, DeleteNotebook, Error, Message, RenameNotebook, ShortString}
+import polynote.kernel.util.{RefMap, UPublish}
+import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
+import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
+import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.FileSystems
-import polynote.server.repository.{FileBasedRepository, NotebookContent, NotebookRepository, TreeRepository}
+import polynote.server.repository.{NotebookContent, NotebookRepository}
 import scodec.bits.ByteVector
-import uzhttp.websocket.{Binary, Close, Continuation, Frame, Ping, Pong}
-import zio.blocking.effectBlocking
+import uzhttp.websocket._
+import zio.ZIO.not
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.{Take, ZStream}
-import zio.{Chunk, Fiber, Has, Promise, Queue, RIO, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
-import polynote.server.repository.format.NotebookFormat
-import zio.ZIO.not
+import zio.{Fiber, Has, Promise, Queue, RIO, RManaged, Ref, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
 
-import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.{DurationInt, SECONDS}
+import java.net.URI
+import java.nio.file.{AccessDeniedException, FileAlreadyExistsException, Paths}
+import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.SECONDS
 
 package object server {
   type SessionEnv = BaseEnv with GlobalEnv with UserIdentity with IdentityProvider
   type AppEnv = BaseEnv with GlobalEnv with MainArgs with FileSystems with Has[NotebookRepository]
 
-  // some cached typeclass instances
-  import zio.interop.{catz => interop}
-  implicit val taskTimer: Timer[Task] = interop.implicits.ioTimer[Throwable]
-  implicit val taskMonadError: MonadError[Task, Throwable] = interop.monadErrorInstance[Any, Throwable]
-  implicit val taskConcurrent: Concurrent[Task] = interop.taskConcurrentInstance[Any]
-  implicit val taskBConcurrent: Concurrent[TaskB] = interop.taskConcurrentInstance[BaseEnv]
-  implicit val taskGConcurrent: Concurrent[TaskG] = interop.taskConcurrentInstance[BaseEnv with GlobalEnv]
-  implicit val sessionConcurrent: Concurrent[RIO[SessionEnv, ?]] = interop.taskConcurrentInstance[SessionEnv]
-  implicit val contextShiftTask: ContextShift[Task] = interop.zioContextShift[Any, Throwable]
-  implicit val uioConcurrent: Concurrent[UIO] = interop.taskConcurrentInstance[Any].asInstanceOf[Concurrent[UIO]]
-  implicit val rioApplicativeGlobal: Applicative[TaskG] = interop.taskConcurrentInstance[BaseEnv with GlobalEnv]
-  implicit val rioApplicativePublishMessage: Applicative[RIO[PublishMessage, ?]] = interop.taskConcurrentInstance[PublishMessage]
-
   def toFrame(message: Message): ZIO[Logging, Throwable, Binary] =
-    Message.encode[Task](message).map(bits => Binary(bits.toByteArray)).onError {
+    Message.encode(message).map(bits => Binary(bits.toByteArray)).onError {
       err => Logging.error(err)
     }
 
@@ -74,7 +53,7 @@ package object server {
         buf =>
           self.mapM {
             case Binary(data, true) =>
-              Message.decode[Task](ByteVector(data))
+              Message.decode(ByteVector(data))
                 .flatMap(fn).flatMap {
                 case Some(msg) => toFrame(msg).asSome
                 case None => ZIO.none
@@ -83,7 +62,7 @@ package object server {
             case Continuation(data, false) => buf.update(_ ++ ByteVector(data)).as(None)
             case Continuation(data, true) =>
               buf.getAndSet(ByteVector.empty).flatMap {
-                buffered => Message.decode[Task](buffered ++ ByteVector(data)).flatMap(fn).flatMap {
+                buffered => Message.decode(buffered ++ ByteVector(data)).flatMap(fn).flatMap {
                   case Some(msg) => toFrame(msg).asSome
                   case None => ZIO.none
                 }
@@ -130,7 +109,7 @@ package object server {
 
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelPublisher] = access.flatMap(_.open(path))
-    def subscribe(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = open(path).flatMap(_.subscribe())
+    def subscribe(path: String): RManaged[NotebookManager with BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = open(path).toManaged_.flatMap(_.subscribe())
     def fetchIfOpen(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[(String, String)]] = access.flatMap(_.fetchIfOpen(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
     def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
@@ -157,7 +136,7 @@ package object server {
 
     object Service {
 
-      def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Service] =
+      def apply(broadcastAll: UPublish[Message]): RIO[BaseEnv with GlobalEnv with Has[NotebookRepository], Service] =
         ZIO.access[Has[NotebookRepository]](_.get[NotebookRepository]).flatMap {
           repository =>
             repository.initStorage() *> ZIO.mapN(RefMap.empty[String, KernelPublisher], Semaphore.make(1L)) {
@@ -172,7 +151,7 @@ package object server {
       private class Impl(
         openNotebooks: RefMap[String, KernelPublisher],
         repository: NotebookRepository,
-        broadcastAll: Topic[Task, Option[Message]],
+        broadcastAll: UPublish[Message],
         moveLock: Semaphore
       ) extends Service {
 
@@ -214,7 +193,7 @@ package object server {
           * Broadcast a [[Message]] to *all* active clients connected to this server. Used for messages that are NOT specific
           * to a given notebook or kernel.
           */
-        private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish1(Some(m)) *> broadcastAll.publish1(None)
+        private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish(m)
 
         override def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
           for {
@@ -262,10 +241,10 @@ package object server {
       }
     }
 
-    def apply(broadcastAll: Topic[Task, Option[Message]]): RIO[BaseEnv with GlobalEnv, NotebookManager.Service] =
+    def apply(broadcastAll: UPublish[Message]): RIO[BaseEnv with GlobalEnv, NotebookManager.Service] =
       Service(broadcastAll).provideSomeLayer[BaseEnv with GlobalEnv](ZLayer.identity[Config] ++ FileSystems.live >>> NotebookRepository.live)
 
-    def layer[R <: BaseEnv with GlobalEnv](broadcastAll: Topic[Task, Option[Message]]): ZLayer[R, Throwable, NotebookManager] =
+    def layer[R <: BaseEnv with GlobalEnv](broadcastAll: UPublish[Message]): ZLayer[R, Throwable, NotebookManager] =
       ZLayer.fromManaged(apply(broadcastAll).toManaged(_.close().orDie))
   }
 

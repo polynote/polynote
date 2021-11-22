@@ -2,19 +2,17 @@ package polynote.server
 
 import cats.instances.list._
 import cats.syntax.traverse._
-import fs2.concurrent.Topic
 import polynote.buildinfo.BuildInfo
 import polynote.kernel.util.Publish
-import polynote.kernel.{BaseEnv, StreamThrowableOps}
-import polynote.kernel.environment.{Env, PublishMessage, Config}
+import polynote.kernel.BaseEnv
+import polynote.kernel.environment.{Config, Env, PublishMessage}
 import polynote.kernel.interpreter.Interpreter
 import polynote.kernel.logging.Logging
 import polynote.messages._
 import polynote.server.auth.IdentityProvider.checkPermission
 import polynote.server.auth.{IdentityProvider, Permission, UserIdentity}
 import uzhttp.websocket.Frame
-import zio.stream.ZStream
-import zio.stream.{Stream, Take}
+import zio.stream.{Stream, Take, UStream, ZStream}
 import zio.Queue
 import zio.{Promise, RIO, Task, URIO, ZIO}
 
@@ -22,13 +20,13 @@ import scala.collection.immutable.SortedMap
 
 object SocketSession {
 
-  def apply(in: Stream[Throwable, Frame], broadcastAll: Topic[Task, Option[Message]]): URIO[SessionEnv with NotebookManager, Stream[Throwable, Frame]] =
+  def apply(in: Stream[Throwable, Frame], broadcastMessages: UStream[Message]): URIO[SessionEnv with NotebookManager, Stream[Throwable, Frame]] =
     for {
       output          <- Queue.unbounded[Take[Nothing, Message]]
-      publishMessage  <- Env.add[SessionEnv with NotebookManager](Publish(output): Publish[Task, Message])
+      publishMessage  <- Env.add[SessionEnv with NotebookManager](Publish(output))
       env             <- ZIO.environment[SessionEnv with NotebookManager with PublishMessage]
       closed          <- Promise.make[Throwable, Unit]
-      _               <- broadcastAll.subscribe(32).unNone.interruptAndIgnoreWhen(closed).through(publishMessage.publish).compile.drain.forkDaemon
+      _               <- broadcastMessages.interruptWhen(closed.await.run).foreach(publishMessage.publish).forkDaemon
       close            = closeQueueIf(closed, output)
     } yield parallelStreams(
         toFrames(ZStream.fromEffect(handshake) ++ Stream.fromQueue(output).flattenTake),
@@ -62,7 +60,7 @@ object SocketSession {
       NotebookManager.assertValidPath(path) *>
         checkPermission(Permission.DeleteNotebook(path)) *> NotebookManager.delete(path).as(None)
 
-    case RunningKernels(_) => getRunningKernels
+    case RunningKernels(_) => getRunningKernels.asSome
 
     case KeepAlive(payload) =>
       // echo received KeepAlive message back to client.
@@ -90,9 +88,9 @@ object SocketSession {
       sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil)
     )
 
-  def getRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, Option[RunningKernels]] = for {
+  def getRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, RunningKernels] = for {
     paths          <- NotebookManager.listRunning()
     statuses       <- ZIO.collectAllPar(paths.map(NotebookManager.status))
     kernelStatuses  = paths.zip(statuses).map { case (p, s) => ShortString(p) -> s }
-  } yield Some(RunningKernels(kernelStatuses))
+  } yield RunningKernels(kernelStatuses)
 }

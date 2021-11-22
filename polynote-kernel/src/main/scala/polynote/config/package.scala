@@ -6,7 +6,7 @@ import java.nio.file.{Path, Paths}
 import java.util.regex.Pattern
 
 import cats.data.{NonEmptyList, Validated, ValidatedNel}
-import io.circe.{CursorOp, Decoder, DecodingFailure, Encoder, HCursor, Json, ObjectEncoder}
+import io.circe.{CursorOp, Decoder, DecodingFailure, Encoder, HCursor, Json}
 import polynote.messages.{TinyList, TinyMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import io.circe.generic.extras.{Configuration, JsonKey}
@@ -64,7 +64,7 @@ package object config {
   object RepositoryConfig {
 
     implicit val discriminated: Discriminated[RepositoryConfig, Byte] = Discriminated(byte)
-    implicit val encoder: ObjectEncoder[RepositoryConfig] = deriveEncoder
+    implicit val encoder: Encoder.AsObject[RepositoryConfig] = deriveEncoder
     implicit val decoder: Decoder[RepositoryConfig] = deriveDecoder
   }
 

@@ -1,22 +1,21 @@
 package polynote.kernel
 
-import cats.effect.concurrent.Ref
-import fs2.Stream
 import polynote.app.{Args, MainArgs}
 import polynote.config.PolynoteConfig
-import polynote.kernel.util.Publish
+import polynote.kernel.util.{Publish, UPublish}
 import polynote.messages.{Message, Notebook, NotebookUpdate}
 import polynote.runtime.KernelRuntime
-import zio.{Has, Task, ZLayer}
+import zio.{Has, RefM, Task, ZLayer, ZRefM}
 
 package object environment {
 
   type Config = Has[PolynoteConfig]
-  type PublishStatus = Has[Publish[Task, KernelStatusUpdate]]
-  type PublishResult = Has[Publish[Task, Result]]
-  type PublishMessage = Has[Publish[Task, Message]]
+  type PublishStatus = Has[UPublish[KernelStatusUpdate]]
+  type PublishResult = Has[UPublish[Result]]
+  type PublishMessage = Has[UPublish[Message]]
   type CurrentRuntime = Has[KernelRuntime]
   type CurrentNotebook = Has[NotebookRef]
 
-  type CurrentTask = Has[Ref[Task, TaskInfo]]
+  type TaskRef = RefM[TaskInfo] //ZRefM[Any, Any, Unit, Nothing, TaskInfo, TaskInfo]
+  type CurrentTask = Has[TaskRef]
 }

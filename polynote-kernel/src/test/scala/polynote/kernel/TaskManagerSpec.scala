@@ -1,18 +1,11 @@
 package polynote.kernel
 
 import java.time.Instant
-import java.util.concurrent.ConcurrentLinkedQueue
-
-import cats.effect.concurrent.Ref
-import fs2.Pipe
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.task.TaskManager
-import polynote.kernel.util.Publish
 import polynote.messages.TinyList
 import polynote.testing.{MockPublish, ZIOSpec}
-import zio.{Semaphore, Task, ZIO}
-
-import scala.collection.JavaConverters._
+import zio.ZIO
 
 class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
   import runtime.unsafeRunAsync_

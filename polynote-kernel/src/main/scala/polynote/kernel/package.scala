@@ -2,21 +2,19 @@ package polynote
 
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-import cats.effect.Concurrent
-import cats.effect.concurrent.Ref
-import fs2.Stream
-import polynote.config.PolynoteConfig
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.{Interpreter, InterpreterState}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.messages.{ByteVector32, Notebook}
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import scodec.bits.ByteVector
-import zio.{Has, Promise, RIO, Semaphore, Task, UIO, ZIO}
+import scodec.{Attempt, Codec, DecodeResult, Err}
+import scodec.bits.{BitVector, ByteVector}
+import zio.{Chunk, Has, Promise, RIO, Semaphore, Task, UIO, ZIO}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.random.Random
+import zio.stream.{Take, ZStream}
 import zio.system.System
 
 package object kernel {
@@ -35,33 +33,6 @@ package object kernel {
 
   // InterpreterEnv is provided to the interpreter by the Kernel when running cells
   type InterpreterEnv = Blocking with PublishResult with PublishStatus with CurrentTask with CurrentRuntime
-
-  final implicit class StreamThrowableOps[R, A](val stream: Stream[RIO[R, ?], A]) {
-
-    /**
-      * Convenience method to terminate (rather than interrupt) a stream after a given predicate is met. In contrast to
-      * [[Stream.interruptWhen]], this allows the stream to finish processing all elements up to and including the
-      * element that satisfied the predicate, whereas interruptWhen ungracefully terminates it at once.
-      */
-    def terminateAfter(fn: A => Boolean): Stream[RIO[R, ?], A] = stream.flatMap {
-      case end if fn(end) => Stream.emits(List(Some(end), None))
-      case notEnd         => Stream.emit(Some(notEnd))
-    }.unNoneTerminate
-
-    def terminateAfterEquals(value: A): Stream[RIO[R, ?], A] = terminateAfter(_ == value)
-
-    def interruptAndIgnoreWhen(signal: Promise[Throwable, Unit])(implicit concurrent: Concurrent[RIO[R, ?]]): Stream[RIO[R, ?], A] =
-      stream.interruptWhen(signal.await.either.as(Right(()): Either[Throwable, Unit]))
-
-    def terminateWhen[E <: Throwable, A1](signal: Promise[E, A1])(implicit concurrent: Concurrent[RIO[R, ?]]): Stream[RIO[R, ?], A] =
-      Stream(stream.map(Some(_)), Stream.eval(signal.await: RIO[R, A1]).map(_ => None)).parJoinUnbounded.unNoneTerminate
-  }
-
-  final implicit class StreamUIOps[A](val stream: Stream[UIO, A]) {
-
-    def interruptAndIgnoreWhen(signal: Promise[Throwable, Unit])(implicit concurrent: Concurrent[UIO]): Stream[UIO, A] =
-      stream.interruptWhen(signal.await.either.as(Right(()): Either[Throwable, Unit]))
-  }
 
   /**
     * Filter syntax for ZIO[R, Unit, A] – basically it's OptionT
@@ -97,6 +68,18 @@ package object kernel {
       thread.setContextClassLoader(prevCL)
     }
   }
+
+
+
+  def streamCodec[R, E, A](codec: Codec[A]): ZStream[R, Throwable, BitVector] => ZStream[R, Throwable, A] = _.mapAccumM(BitVector.empty) {
+    (leftoverBits, newBits) =>
+      val allTogetherNow = leftoverBits ++ newBits
+      codec.decode(allTogetherNow) match {
+        case Attempt.Successful(DecodeResult(value, remainder)) => ZIO.succeed((remainder, Some(value)))
+        case Attempt.Failure(_: Err.InsufficientBits)           => ZIO.succeed((allTogetherNow, None))
+        case Attempt.Failure(err)                               => ZIO.fail(CodecError(err))
+      }
+  }.collectSome
 
   type StreamingHandles = Has[StreamingHandles.Service]
 

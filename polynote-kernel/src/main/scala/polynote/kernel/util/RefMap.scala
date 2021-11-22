@@ -1,13 +1,10 @@
 package polynote.kernel.util
 
-import java.util.concurrent.ConcurrentHashMap
+import zio.stm.TReentrantLock
+import zio.{Promise, RIO, Ref, UIO, ZIO}
 
+import java.util.concurrent.ConcurrentHashMap
 import scala.collection.JavaConverters._
-import cats.syntax.traverse._
-import cats.instances.list._
-import zio.interop.catz._
-import zio.stm.{TReentrantLock, ZSTM}
-import zio.{Promise, RIO, Ref, Semaphore, Task, UIO, ZIO}
 
 
 /**

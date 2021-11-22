@@ -1,28 +1,25 @@
 package polynote
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path, Paths}
-import java.time.{Instant, LocalDate, OffsetDateTime, ZoneId, ZoneOffset}
-import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
 import polynote.app.MainArgs
-import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelStatusUpdate}
 import polynote.kernel.environment.{CurrentNotebook, PublishResult, PublishStatus}
+import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
+import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelStatusUpdate}
 import polynote.messages.{CellID, Notebook, NotebookCell}
 import polynote.server.AppEnv
-import polynote.server.repository.{NotebookContent, NotebookRepository}
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.FileSystems
+import polynote.server.repository.{NotebookContent, NotebookRepository}
+import zio.ZIO.effect
 import zio.blocking.{Blocking, effectBlocking}
-import zio.{Has, IO, Queue, RIO, Ref, Task, UIO, URIO, URLayer, ZIO, ZLayer}
-import ZIO.{effect, effectTotal}
-import zio.clock
-import clock.Clock
-import polynote.kernel.interpreter.InterpreterState
-import zio.interop.catz._
+import zio.clock.Clock
 import zio.stream.Take
+import zio.{Queue, RIO, Ref, ZIO, clock}
 
+import java.nio.file.{Path, Paths}
+import java.time.format.DateTimeFormatterBuilder
+import java.time.{Instant, ZoneId, ZoneOffset}
 import scala.annotation.tailrec
 
 object NotebookRunner {
@@ -188,7 +185,7 @@ object NotebookRunner {
         .mapError(errStr => s"$usage\n\nError:$errStr")
   }
 
-  import java.time.temporal.ChronoField.{YEAR, MONTH_OF_YEAR, DAY_OF_MONTH, HOUR_OF_DAY, MINUTE_OF_HOUR, SECOND_OF_MINUTE}
+  import java.time.temporal.ChronoField._
 
   def datestampBuilder: DateTimeFormatterBuilder = new DateTimeFormatterBuilder()
     .appendValue(YEAR)

@@ -3,15 +3,13 @@ package polynote.kernel.util
 import java.io.{File, FileInputStream, InputStream}
 import java.net.{HttpURLConnection, URI}
 import java.util.ServiceLoader
-
 import scala.collection.JavaConverters._
-import cats.effect.IO
-import zio.{RIO, ZIO}
+import zio.{RIO, RManaged, ZIO, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
 
 trait DownloadableFile {
-  def openStream: IO[InputStream]
-  def size: IO[Long]
+  def openStream: RManaged[Blocking, InputStream]
+  def size: RIO[Blocking, Long]
 }
 
 trait DownloadableFileProvider {
@@ -35,7 +33,7 @@ object DownloadableFileProvider {
     Option(uri.getScheme).exists(providers.flatMap(_.protocols).contains)
   }
 
-  def getFile(uri: URI): ZIO[Blocking, Throwable, DownloadableFile] = {
+  def getFile(uri: URI): RIO[Blocking, DownloadableFile] = {
     effectBlocking(unsafeLoad).map {
       providers =>
         for {
@@ -56,14 +54,17 @@ class HttpFileProvider extends DownloadableFileProvider {
 }
 
 case class HTTPFile(uri: URI) extends DownloadableFile {
-  override def openStream: IO[InputStream] = IO(uri.toURL.openStream())
+  override def openStream: RManaged[Blocking, InputStream] = ZManaged.fromAutoCloseable(effectBlocking(uri.toURL.openStream()))
 
-  override def size: IO[Long] = IO(uri.toURL.openConnection().asInstanceOf[HttpURLConnection]).bracket { conn =>
-    IO {
-      conn.setRequestMethod("HEAD")
-      conn.getContentLengthLong
-    }
-  } { conn => IO(conn.disconnect())}
+  override def size: RIO[Blocking, Long] =
+    effectBlocking(uri.toURL.openConnection().asInstanceOf[HttpURLConnection])
+      .toManaged(conn => ZIO(conn.disconnect()).orDie)
+      .use { conn =>
+        effectBlocking {
+          conn.setRequestMethod("HEAD")
+          conn.getContentLengthLong
+        }
+      }
 }
 
 class LocalFileProvider extends DownloadableFileProvider {
@@ -76,7 +77,7 @@ class LocalFileProvider extends DownloadableFileProvider {
 
 case class LocalFile(uri: URI) extends DownloadableFile {
   lazy val file = new File(uri)
-  override def openStream: IO[InputStream] = IO(new FileInputStream(file))
+  override def openStream: RManaged[Blocking, InputStream] = ZManaged.fromAutoCloseable(effectBlocking(new FileInputStream(file)))
 
-  override def size: IO[Long] = IO.pure(file.length())
+  override def size: RIO[Blocking, Long] = effectBlocking(file.length())
 }

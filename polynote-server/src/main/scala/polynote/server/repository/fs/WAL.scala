@@ -4,15 +4,16 @@ package repository.fs
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.time.Instant
-
 import polynote.messages.{Message, Notebook}
+import polynote.kernel.CodecError
 import scodec.bits.{BitVector, ByteVector}
-import scodec.{Attempt, Codec, codecs}
-import scodec.stream.StreamDecoder
-import zio.{RIO, Task, ZIO}
-import zio.blocking.Blocking
+import scodec.{Attempt, Codec, DecodeResult, codecs}
+import zio.{RIO, Ref, Task, ZIO, ZManaged}
+import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.{Clock, currentDateTime}
+import zio.stream.{Take, ZStream}
 
+import java.nio.channels.FileChannel
 import scala.util.Try
 
 object WAL {
@@ -32,21 +33,27 @@ object WAL {
       .mapError(err => new RuntimeException(err.message))
 
   val messageCodec: Codec[(Instant, Message)] = codecs.variableSizeBytes(codecs.int32, instantCodec ~ Message.codec)
+  private def decodeMessage(bits: BitVector): RIO[Blocking, DecodeResult[(Instant, Message)]] =
+    effectBlocking(messageCodec.decode(bits).toEither.left.map(err => CodecError(err))).absolve
 
-  val decoder: StreamDecoder[(Instant, Message)] = {
-    val readMagic = StreamDecoder.once(codecs.constant(ByteVector(WALMagicNumber)))
-    val readVersion = StreamDecoder.once(codecs.int16)
-    def readMessages(version: Int): StreamDecoder[(Instant, Message)] = version match {
-      case 1 => StreamDecoder.many(messageCodec)
-      case v => StreamDecoder.raiseError(new Exception(s"Unknown WAL version $v"))
-    }
+  private val headerCodec = codecs.constant(ByteVector(WALMagicNumber)) ~> codecs.int16
+  private def decodeHeader(bits: BitVector): RIO[Blocking, DecodeResult[Int]] =
+    effectBlocking(headerCodec.decode(bits).toEither.left.map(err => CodecError(err))).absolve
 
-    for {
-      _       <- readMagic
-      ver     <- readVersion
-      message <- readMessages(ver)
-    } yield message
-  }
+  def decode[R](is: ZManaged[R, Nothing, FileChannel]): ZStream[Blocking with R, Throwable, (Instant, Message)] = for {
+    bits   <- ZStream.managed(is).mapM(in => effectBlocking(BitVector.fromMmap(in)))
+    header <- ZStream.fromEffect(decodeHeader(bits))
+    _      <- ZStream.when(header.value != 1)(ZStream.fail(new IllegalStateException(s"Unknown WAL version ${header.value}")))
+    remain <- ZStream.fromEffect(Ref.make(header.remainder))
+    messages <- ZStream.repeatEffect {
+      remain.get.flatMap {
+        case done if done.isEmpty => ZIO.succeed(Take.end)
+        case bits => decodeMessage(bits).flatMap {
+          result => remain.set(result.remainder).as(Take.single(result.value))
+        }
+      }
+    }.flattenTake
+  } yield messages
 
   trait WALWriter {
     protected def append(bytes: Array[Byte]): RIO[Blocking, Unit] = append(ByteBuffer.wrap(bytes))

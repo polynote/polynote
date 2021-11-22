@@ -1,6 +1,5 @@
 package polynote.messages
 
-import cats.MonadError
 import cats.syntax.either._
 import io.circe.{Decoder, Encoder, ObjectEncoder}
 import polynote.kernel._
@@ -13,6 +12,7 @@ import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, Spa
 import polynote.data.Rope
 import polynote.runtime.{CellRange, StreamingDataRepr, TableOp}
 import shapeless.cachedImplicit
+import zio.{IO, ZIO}
 
 sealed trait Message
 
@@ -21,17 +21,17 @@ object Message {
 
   val codec: Codec[Message] = Codec[Message]
 
-  def decode[F[_]](bytes: ByteVector)(implicit F: MonadError[F, Throwable]): F[Message] = F.fromEither {
+  def decode(bytes: ByteVector): IO[CodecError, Message] = ZIO.fromEither {
     codec.decode(bytes.toBitVector).toEither
       .map(_.value)
       .leftMap {
-        err => new Exception(err.messageWithContext)
+        err => CodecError(err)
       }
   }
 
-  def encode[F[_]](msg: Message)(implicit F: MonadError[F, Throwable]): F[BitVector] = F.fromEither {
+  def encode(msg: Message): IO[CodecError, BitVector] = ZIO.fromEither {
     codec.encode(msg).toEither.leftMap {
-      err => new Exception(err.messageWithContext)
+      err => CodecError(err)
     }
   }
 }
@@ -254,7 +254,7 @@ sealed trait NotebookUpdate extends Message {
   }
 
   // transform this update so that it has the same effect when applied after the given update
-  def rebase(prev: NotebookUpdate, reverse: Boolean = false): NotebookUpdate = (this, prev) match {
+  def rebase(prev: NotebookUpdate, client: Boolean = false): NotebookUpdate = (this, prev) match {
     case (i@InsertCell(_, _, cell1, after1), InsertCell(_, _, cell2, after2)) if after1 == after2 =>
       // we both tried to insert a cell after the same cell. Transform the first update so it inserts after the cell created by the second update.
       i.copy(after = cell2.id)
@@ -262,7 +262,7 @@ sealed trait NotebookUpdate extends Message {
     case (u@UpdateCell(_, _, id1, edits1, _), UpdateCell(_, _, id2, edits2, _)) if id1 == id2 =>
       // we both tried to edit the same cell. Transform first edits so they apply to the document state as it exists after the second edits are already applied.
 
-      u.copy(edits = edits1.rebase(edits2, reverse))
+      u.copy(edits = edits1.rebase(edits2, client))
 
     // all other cases should be independent (TODO: they're not yet, though)
     case _ => this

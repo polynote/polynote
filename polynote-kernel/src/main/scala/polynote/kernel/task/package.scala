@@ -1,18 +1,17 @@
 package polynote.kernel
 
-import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue}
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
-import scala.collection.JavaConverters._
-import cats.effect.concurrent.Ref
-import fs2.concurrent.SignallingRef
-import polynote.kernel.environment.{CurrentTask, PublishStatus}
+import polynote.kernel.environment.{CurrentTask, PublishStatus, TaskRef}
 import polynote.kernel.logging.Logging
-import polynote.kernel.util.Publish
+import polynote.kernel.util.UPublish
 import polynote.messages.TinyString
-import zio.{Cause, Exit, Fiber, Has, Promise, Queue, RIO, Schedule, Semaphore, Supervisor, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.Blocking
 import zio.clock.Clock
-import zio.interop.catz._
+import zio.stream.SubscriptionRef
+import zio.{Cause, Fiber, Has, Promise, Queue, RIO, Semaphore, Task, UIO, URIO, ZIO, ZLayer, ZManaged}
+
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
+import scala.collection.JavaConverters._
 
 package object task {
 
@@ -105,7 +104,7 @@ package object task {
     private case class QueuedTask(id: String, ready: Promise[Throwable, Unit], done: Promise[Throwable, Unit])
     private case class TaskDescriptor(
       id: String,
-      taskInfoRef: Ref[Task, TaskInfo],
+      taskInfoRef: TaskRef,
       fiber: Fiber[Throwable, Any],
       counter: Long,
       ready: Option[Promise[Throwable, Unit]]
@@ -122,7 +121,7 @@ package object task {
 
     private class Impl (
       queueing: Semaphore,
-      statusUpdates: Publish[Task, KernelStatusUpdate],
+      statusUpdates: UPublish[KernelStatusUpdate],
       readyQueue: zio.Queue[QueuedTask],
       process: Fiber[Throwable, Nothing]
     ) extends Service {
@@ -139,26 +138,25 @@ package object task {
         errorWith: Cause[Throwable] => TaskInfo => TaskInfo
       )(task: RIO[R, A])(implicit ev: R1 with CurrentTask <:< R): RIO[R1, Task[A]] = queueing.withPermit {
         for {
-          statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Queued))
+          statusSubRef  <- SubscriptionRef.make(TaskInfo(id, lbl(id, label), detail, Queued))
+          statusRef      = statusSubRef.ref
           remove         = ZIO.effectTotal(tasks.remove(id))
           myTurn        <- Promise.make[Throwable, Unit]
           imDone        <- Promise.make[Throwable, Unit]
-          fail           = (err: Cause[Throwable]) => statusRef.update(errorWith(err)).ensuring(remove &> imDone.interrupt).uninterruptible.orDie
-          complete       = statusRef.update(_.completed).ensuring(remove).uninterruptible.orDie
-          updater       <- statusRef.discrete
-            .terminateAfter(_.status.isDone)
-            .through(updates.publish)
-            .compile.drain.uninterruptible.forkDaemon
+          fail           = (err: Cause[Throwable]) => statusRef.update(t => ZIO.succeed(errorWith(err)(t))).ensuring(remove &> imDone.interrupt).uninterruptible
+          complete       = statusRef.update(t => ZIO.succeed(t.completed)).ensuring(remove).uninterruptible
+          updater       <- statusSubRef.changes.foreachWhile(t => updates.publish(t).as(!t.status.isDone)).uninterruptible.forkDaemon
           taskBody       = ZIO.absolve {
-            task.provideSomeLayer[R1](ZLayer.succeed[Ref[Task, TaskInfo]](statusRef))
+            task.provideSomeLayer[R1](ZLayer.succeed[TaskRef](statusRef))
               .either
               .tap(_.fold(err => fail(Cause.fail(err)), _ => complete)) <* updater.join
           }
           _             <- readyQueue.offer(QueuedTask(id, myTurn, imDone))
           wait           = myTurn.await.onInterrupt(imDone.interrupt)
-          runTask        = (wait *> statusRef.update(_.running) *> taskBody)
+          runTask        = (wait *> statusRef.update(t => ZIO.succeed(t.running)) *> taskBody)
             .onTermination(fail)
             .ensuring(imDone.succeed(()))
+          _             <- statusRef.get >>= updates.publish
           taskFiber     <- runTask.ensuring(remove).forkDaemon
           descriptor     = TaskDescriptor(id, statusRef, taskFiber, taskCounter.getAndIncrement(), Some(myTurn))
           _             <- Option(tasks.put(id, descriptor)).map(_.cancel).getOrElse(ZIO.unit)
@@ -173,16 +171,21 @@ package object task {
         parent: Option[TinyString],
         errorWith: Cause[Throwable] => TaskInfo => TaskInfo
       ): RIO[R, A] = for {
-        statusRef     <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent))
+        statusSubRef  <- SubscriptionRef.make(TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent))
+        statusRef      = statusSubRef.ref
         remove         = ZIO.effectTotal(tasks.remove(id))
-        updater       <- statusRef.discrete
-          .terminateAfter(_.status.isDone)
-          .through(updates.publish)
-          .compile.drain.uninterruptible.ensuring(remove).fork
+        updater       <- statusSubRef.changes
+          .foreachWhile(t => updates.publish(t).as(!t.status.isDone))
+          .uninterruptible
+          .ensuring(remove).fork
         taskBody       = task
-          .onInterrupt(fibers => statusRef.update(errorWith(Cause.interrupt(fibers.headOption.getOrElse(Fiber.Id.None)))).ignore.unit)
+          .onInterrupt(fibers => statusRef.update(t => ZIO.succeed(errorWith(Cause.interrupt(fibers.headOption.getOrElse(Fiber.Id.None)))(t))).ignore.unit)
           .provideSomeLayer[R](CurrentTask.layer(statusRef))
-        taskFiber     <- (taskBody <* statusRef.update(_.completed) <* updater.join).onError(cause => statusRef.update(errorWith(cause)).orDie).fork
+        _             <- statusRef.get >>= updates.publish
+        taskFiber     <- (taskBody <* statusRef.update(t => ZIO.succeed(t.completed)) <* updater.join)
+          .onError(cause => statusRef.update(t => ZIO.succeed(errorWith(cause)(t))))
+          .onInterrupt(fibers => statusRef.update(t => ZIO.succeed(errorWith(Cause.interrupt(fibers.head))(t))))
+          .fork
         descriptor     = TaskDescriptor(id, statusRef, taskFiber, taskCounter.getAndIncrement(), None)
         _             <- Option(tasks.put(id, descriptor)).map(_.cancel).getOrElse(ZIO.unit)
         result        <- taskFiber.join.onInterrupt(taskFiber.interrupt)
@@ -199,26 +202,25 @@ package object task {
 
       override def register(id: String, label: String = "", detail: String = "", parent: Option[String], errorWith: DoneStatus)(cancelCallback: ((TaskInfo => TaskInfo) => Unit) => ZIO[Logging, Nothing, Unit]): RIO[Blocking with Clock with Logging, Fiber[Throwable, Unit]] =
         for {
-          runtime     <- ZIO.runtime[Any]
-          statusRef   <- SignallingRef[Task, TaskInfo](TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent.map(TinyString(_))))
-          updateTasks <- Queue.unbounded[TaskInfo => TaskInfo]
-          completed    = new AtomicBoolean(false)
-          updater     <- statusRef.discrete
-            .terminateAfter(_.status.isDone)
-            .through(updates.publish)
-            .compile.drain
+          runtime      <- ZIO.runtime[Any]
+          statusSubRef <- SubscriptionRef.make(TaskInfo(id, lbl(id, label), detail, Running, progress = 0, parent = parent.map(TinyString(_))))
+          statusRef     = statusSubRef.ref
+          updateTasks  <- Queue.unbounded[TaskInfo => TaskInfo]
+          completed     = new AtomicBoolean(false)
+          updater      <- statusSubRef.changes
+            .foreachWhile(t => updates.publish(t).as(!t.status.isDone))
             .uninterruptible
             .ensuring(ZIO.effectTotal(completed.set(true)))
             .forkDaemon
-          onUpdate     = (fn: TaskInfo => TaskInfo) => runtime.unsafeRun(updateTasks.offer(fn).unit)
-          cancel       = cancelCallback(onUpdate)
-          process     <- updateTasks.take.flatMap(updater => statusRef.update(updater) *> statusRef.get)
+          onUpdate      = (fn: TaskInfo => TaskInfo) => runtime.unsafeRun(updateTasks.offer(fn).unit)
+          cancel        = cancelCallback(onUpdate)
+          process      <- updateTasks.take.flatMap(updater => statusRef.update(t => ZIO.succeed(updater(t))) *> statusRef.get)
             .repeatUntil(_.status.isDone).unit
             .ensuring(ZIO.effectTotal(tasks.remove(id)))
-            .onInterrupt(statusRef.update(_.done(errorWith)).orDie.ensuring(cancel))
+            .onInterrupt(statusRef.update(t => ZIO.succeed(t.done(errorWith))).ensuring(cancel))
             .forkDaemon
-          descriptor   = TaskDescriptor(id, statusRef, process, taskCounter.getAndIncrement(), None)
-          _           <- Option(tasks.put(id, descriptor)).map(_.cancel).getOrElse(ZIO.unit)
+          descriptor    = TaskDescriptor(id, statusRef, process, taskCounter.getAndIncrement(), None)
+          _            <- Option(tasks.put(id, descriptor)).map(_.cancel).getOrElse(ZIO.unit)
         } yield process
 
       override def cancelAll(): UIO[Unit] = {
@@ -244,13 +246,13 @@ package object task {
             ZIO.foreachPar_(tasksAfter)(_.cancel) *> descriptor.cancel
         }.orElseSucceed(())
 
-      override def list: UIO[List[TaskInfo]] = ZIO.foreach(tasks.values().asScala.toList.sortBy(_.counter))(_.taskInfoRef.get.orDie)
+      override def list: UIO[List[TaskInfo]] = ZIO.foreach(tasks.values().asScala.toList.sortBy(_.counter))(_.taskInfoRef.get)
 
       override def shutdown(): UIO[Unit] = cancelAll() *> readyQueue.shutdown *> process.interrupt.unit
     }
 
     def apply(
-      statusUpdates: Publish[Task, KernelStatusUpdate]
+      statusUpdates: UPublish[KernelStatusUpdate]
     ): Task[TaskManager.Service] = for {
       queueing <- Semaphore.make(1)
       queue    <- Queue.unbounded[QueuedTask]

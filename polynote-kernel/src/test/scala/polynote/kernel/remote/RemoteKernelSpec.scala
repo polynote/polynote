@@ -1,31 +1,26 @@
 package polynote.kernel
 package remote
 
-import java.net.InetSocketAddress
-import java.util.concurrent.TimeUnit
-
 import org.scalamock.scalatest.MockFactory
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FreeSpec, Matchers}
+import org.scalatest.{BeforeAndAfterEach, FreeSpec, Matchers}
 import org.scalatestplus.scalacheck.ScalaCheckDrivenPropertyChecks
 import polynote.config.{KernelConfig, PolynoteConfig}
 import polynote.kernel.Kernel.Factory
 import polynote.kernel.RuntimeError.RecoveredException
 import polynote.kernel.environment.{PublishResult, PublishStatus}
-import polynote.kernel.{BaseEnv, CellEnv, Completion, CompletionType, GlobalEnv, Kernel, KernelBusyState, KernelInfo, Output, ParameterHint, ParameterHints, ResultValue, Signatures, TaskInfo, UpdatedTasks}
-import polynote.kernel.logging.Logging
 import polynote.messages._
 import polynote.runtime.ReprsOf.DataReprsOf
-import polynote.runtime.{DataEncoder, GroupAgg, MIMERepr, StreamingDataRepr, StringType}
-import polynote.testing.{Generators, ZIOSpec}
-import polynote.testing.kernel.{MockEnv, MockKernelEnv}
+import polynote.runtime.{GroupAgg, MIMERepr, StreamingDataRepr, StringType}
+import polynote.testing.kernel.MockKernelEnv
 import polynote.testing.kernel.remote.InProcessDeploy
+import polynote.testing.{Generators, ZIOSpec}
 import scodec.bits.ByteVector
 import zio.blocking.effectBlocking
 import zio.duration.Duration
-import zio.{RIO, Ref, Task, ZIO}
-import zio.interop.catz._
-import zio.stream.ZStream
+import zio.{RIO, Ref, ZIO}
 
+import java.net.InetSocketAddress
+import java.util.concurrent.TimeUnit
 import scala.concurrent.TimeoutException
 
 // Base to test remote kernel with various configurations
@@ -178,7 +173,7 @@ class RemoteKernelSpec extends RemoteKernelSpecBase {
 }
 
 class RemoteKernelSpecWithPortRange extends RemoteKernelSpecBase {
-  import runtime.{unsafeRun, unsafeRunSync, unsafeRunTask}
+  import runtime.unsafeRun
   override protected lazy val config: PolynoteConfig = PolynoteConfig(kernel = KernelConfig(portRange = Some(9000 to 10000)))
   override protected lazy val label: String = "With port range"
 

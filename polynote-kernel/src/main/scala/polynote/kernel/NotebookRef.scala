@@ -67,7 +67,7 @@ trait NotebookRef {
     * Get a stream of notebook updates
     * @return
     */
-  def updates: ZStream[Any, Nothing, NotebookUpdate]
+  def updates: ZStream[Any, Throwable, NotebookUpdate]
 }
 
 

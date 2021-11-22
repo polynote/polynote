@@ -12,10 +12,12 @@ import polynote.testing
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
-import zio.internal.Platform
+import zio.internal.{Executor, NamedThreadFactory, Platform}
 import zio.random.Random
 import zio.system.System
 import zio.{Has, RIO, Runtime, Tag, ZIO, ZLayer}
+
+import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 abstract class TestRuntime
 object TestRuntime {

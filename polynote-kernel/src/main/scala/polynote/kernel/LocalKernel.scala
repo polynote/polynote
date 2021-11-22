@@ -2,9 +2,6 @@ package polynote.kernel
 
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
-import cats.instances.list._
-import cats.syntax.traverse._
-import fs2.concurrent.SignallingRef
 import polynote.kernel.Kernel.InterpreterNotStarted
 import polynote.kernel.dependency.CoursierFetcher
 import polynote.kernel.environment._
@@ -20,7 +17,7 @@ import scodec.bits.ByteVector
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.duration.Duration
-import zio.interop.catz._
+import zio.stream.SubscriptionRef
 import zio.{Promise, RIO, Task, UIO, URIO, ZIO, ZLayer}
 
 
@@ -28,7 +25,7 @@ class LocalKernel private[kernel] (
   scalaCompiler: ScalaCompiler,
   interpreterState: InterpreterState.Service,
   interpreters: RefMap[String, Interpreter],
-  busyState: SignallingRef[Task, KernelBusyState],
+  busyState: SubscriptionRef[KernelBusyState],
   closed: Promise[Throwable, Unit]
 ) extends Kernel {
 
@@ -36,8 +33,8 @@ class LocalKernel private[kernel] (
 
   override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = PublishStatus.access.flatMap {
     publishStatus =>
-      val notifyCancelled = publishStatus.publish1(CellStatusUpdate(id, Complete)).orDie
-      val notifyErrored   = publishStatus.publish1(CellStatusUpdate(id, ErrorStatus)).orDie
+      val notifyCancelled = publishStatus.publish(CellStatusUpdate(id, Complete))
+      val notifyErrored   = publishStatus.publish(CellStatusUpdate(id, ErrorStatus))
       val queueTask: RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = TaskManager.queue(s"Cell $id", s"Cell $id", errorWith = _ => _.completed) {
         currentTime.flatMap {
           startTime =>
@@ -45,7 +42,7 @@ class LocalKernel private[kernel] (
               currentTime.flatMap(endTime => PublishResult(ExecutionInfo(startTime, Some(endTime))))
 
             val run = for {
-              _             <- busyState.update(_.setBusy)
+              _             <- busyState.ref.update(s => ZIO.succeed(s.setBusy))
               _             <- PublishStatus(CellStatusUpdate(id, Running))
               notebook      <- CurrentNotebook.get
               cell          <- ZIO(notebook.cell(id))
@@ -60,23 +57,23 @@ class LocalKernel private[kernel] (
               resultState   <- (interpreter.run(cell.content.toString, initialState).provideSomeLayer(CellExecutor.layer(scalaCompiler.classLoader)) >>= updateValues)
                 .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
               _             <- updateState(resultState)
-              _             <- resultState.values.map(PublishResult.apply).sequence.unit                                  // publish the result values
+              _             <- ZIO.collectAll_(resultState.values.map(PublishResult.apply))                              // publish the result values
               _             <- publishEndTime
               _             <- notifyCancelled
               notebook      <- CurrentNotebook.get
-              _             <- busyState.update(_.setIdle)
+              _             <- busyState.ref.update(s => ZIO.succeed(s.setIdle))
             } yield ()
 
             run.provideSomeLayer(CurrentRuntime.layer(id)).onInterrupt {
               PublishResult(ErrorResult(new InterruptedException("Execution was interrupted by the user"))).orDie *>
               notifyErrored *>
-              busyState.update(_.setIdle).orDie *>
+              busyState.ref.update(s => ZIO.succeed(s.setIdle)) *>
               publishEndTime.orDie
             }.catchAll {
               err =>
                 PublishResult(ErrorResult(err)) *>
                   notifyErrored *>
-                  busyState.update(_.setIdle) *>
+                  busyState.ref.update(s => ZIO.succeed(s.setIdle)) *>
                   publishEndTime.orDie
             }
         }
@@ -84,7 +81,7 @@ class LocalKernel private[kernel] (
 
       for {
         inner <- queueTask
-        _     <- publishStatus.publish1(CellStatusUpdate(id, Queued))
+        _     <- publishStatus.publish(CellStatusUpdate(id, Queued))
       } yield inner.onInterrupt(notifyCancelled)
   }
 
@@ -123,10 +120,10 @@ class LocalKernel private[kernel] (
   override def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
     for {
       publishStatus <- PublishStatus.access
-      busyUpdater   <- busyState.discrete.terminateAfter(!_.alive).through(publishStatus.publish).compile.drain.forkDaemon
-      initialState  <- initScala().onError(err => (PublishResult(ErrorResult(err.squash)) *> busyState.update(_.setIdle)).orDie)
+      busyUpdater   <- busyState.changes.haltWhen(closed.await.run).foreachWhile(s => publishStatus.publish(s).as(s.alive)).forkDaemon
+      initialState  <- initScala().onError(err => (PublishResult(ErrorResult(err.squash)) *> busyState.ref.update(s => ZIO.succeed(s.setIdle))).orDie)
       _             <- ZIO.foreach_(initialState.values)(PublishResult.apply)
-      _             <- busyState.update(_.setIdle)
+      _             <- busyState.ref.update(s => ZIO.succeed(s.setIdle))
     } yield ()
   }
 
@@ -165,14 +162,14 @@ class LocalKernel private[kernel] (
   } yield predefState
 
   override def shutdown(): Task[Unit] = for {
-    _            <- busyState.update(_.setBusy)
+    _            <- busyState.ref.update(s => ZIO.succeed(s.setBusy))
     interpreters <- interpreters.values
     _            <- ZIO.foreachPar_(interpreters)(_.shutdown())
-    _            <- busyState.set(KernelBusyState(busy = false, alive = false))
+    _            <- busyState.ref.set(KernelBusyState(busy = false, alive = false))
     _            <- closed.succeed(())
   } yield ()
 
-  override def status(): Task[KernelBusyState] = busyState.get
+  override def status(): Task[KernelBusyState] = busyState.ref.get
 
   override def values(): Task[List[ResultValue]] = interpreterState.getState.map(_.scope)
 
@@ -301,7 +298,7 @@ class LocalKernelFactory extends Kernel.Factory.LocalService {
     scalaDeps    <- CoursierFetcher.fetch("scala")
     (main, transitive) = scalaDeps.partition(_._1)
     compiler     <- ScalaCompiler(main.map(_._3), transitive.map(_._3), Nil)
-    busyState    <- SignallingRef[Task, KernelBusyState](KernelBusyState(busy = true, alive = true))
+    busyState    <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
     interpreters <- RefMap.empty[String, Interpreter]
     _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
     interpState  <- InterpreterState.access

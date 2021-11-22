@@ -1,28 +1,23 @@
 package polynote.testing.kernel
 
-import cats.effect.concurrent.Ref
-import fs2.Stream
-import fs2.concurrent.{Queue, SignallingRef, Topic}
 import polynote.config.PolynoteConfig
 import polynote.kernel.Kernel.Factory
-import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime}
+import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime, TaskRef}
 import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.kernel.util.Publish
+import polynote.kernel.util.UPublish
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, InterpreterEnv, KernelStatusUpdate, NotebookRef, Result, StreamingHandles, TaskInfo}
 import polynote.messages._
-import polynote.runtime.{KernelRuntime, StreamingDataRepr, TableOp}
+import polynote.runtime.KernelRuntime
 import polynote.testing.MockPublish
 import zio.blocking.Blocking
-import zio.clock.Clock
-import zio.interop.catz._
-import zio.{Has, RIO, Runtime, Task, URIO, ZIO, ZLayer}
+import zio.{Has, RIO, RefM, Runtime, URIO, ZIO, ZLayer}
 
 case class MockEnv(
   baseEnv: BaseEnv,
   cellID: CellID,
-  currentTask: SignallingRef[Task, TaskInfo],
+  currentTask: TaskRef,
   publishResult: MockPublish[Result],
   publishStatus: MockPublish[KernelStatusUpdate],
   runtime: Runtime[Any]
@@ -33,9 +28,9 @@ case class MockEnv(
     ZLayer.succeedMany(baseEnv) ++
       ZLayer.succeed(logging) ++
       ZLayer.succeed(currentRuntime) ++
-      ZLayer.succeed(publishResult: Publish[Task, Result]) ++
-      ZLayer.succeed(publishStatus: Publish[Task, KernelStatusUpdate]) ++
-      ZLayer.succeed(currentTask: Ref[Task, TaskInfo])
+      ZLayer.succeed(publishResult: UPublish[Result]) ++
+      ZLayer.succeed(publishStatus: UPublish[KernelStatusUpdate]) ++
+      ZLayer.succeed(currentTask)
 
   def toCellEnv(classLoader: ClassLoader): ZLayer[Any, Throwable, BaseEnv with InterpreterEnv] = baseLayer ++ (baseLayer >>> CellExecutor.layer(classLoader))
 }
@@ -47,7 +42,7 @@ object MockEnv {
   def apply(cellID: Int): URIO[BaseEnv, MockEnv] = for {
     env <- ZIO.access[BaseEnv](identity)
     runtime <- ZIO.runtime[Any]
-    currentTask <- SignallingRef[Task, TaskInfo](TaskInfo(s"Cell$cellID")).orDie
+    currentTask <- RefM.make(TaskInfo(s"Cell$cellID"))
   } yield new MockEnv(env, CellID(cellID), currentTask, new MockPublish, new MockPublish, runtime)
 
   def layer(cellID: Int): ZLayer[BaseEnv, Nothing, BaseEnv with InterpreterEnv] = ZLayer.fromManagedMany(MockEnv(cellID).toManaged_.flatMap(_.baseLayer.build))
@@ -73,7 +68,7 @@ case class MockKernelEnv(
   val baseLayer: ZLayer[Any, Nothing, MockEnv.Env] =
     ZLayer.succeedMany {
       baseEnv ++ Has.allOf(kernelFactory, interpreterFactories, taskManager, polynoteConfig) ++
-        Has(streamingHandles) ++ Has(publishResult: Publish[Task, Result]) ++ Has(publishStatus: Publish[Task, KernelStatusUpdate])
+        Has(streamingHandles) ++ Has(publishResult: UPublish[Result]) ++ Has(publishStatus: UPublish[KernelStatusUpdate])
     } ++ CurrentNotebook.layer(currentNotebook) ++ InterpreterState.emptyLayer
 
 }
