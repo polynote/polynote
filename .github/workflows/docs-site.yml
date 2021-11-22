@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - master
-  # TODO: remove this before merge!
-  pull_request:
 
 jobs:
   deploy:
