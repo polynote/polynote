@@ -1,7 +1,7 @@
 # Unreleased
 
 # O.4.3 (Nov 19, 2021)
-* Initial support for Scala 2.13 (with Spark 3)
+* Preliminary alpha support for Scala 2.13 (with Spark 3) (not yet ready for release)
 * Fix an issue which sometimes caused Polynote to reject all updates, "freezing" the notebook in an old state.
 * Safety and performance improvements to `ReprsOf` solving OOMs when handling huge collections.
 * Fix some concurrent editing bugs. 
