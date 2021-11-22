@@ -24,7 +24,7 @@ class KernelPublisher private (
   val versionedNotebook: NotebookRef,
   private[server] val updateQueue: Queue[(SubscriberId, NotebookUpdate)], // visible for testing
   val broadcastUpdates: Hub[(SubscriberId, NotebookUpdate)],
-  val status: Hub[KernelStatusUpdate],
+  status: Hub[KernelStatusUpdate],
   val cellResults: ZHub[Any, Any, Throwable, Throwable, CellResult, CellResult],
   val taskManager: TaskManager.Service,
   kernelRef: Ref[Option[Kernel]],
@@ -74,6 +74,7 @@ class KernelPublisher private (
   def subscribeUpdates: UManaged[UStream[(SubscriberId, NotebookUpdate)]] =
     broadcastUpdates.subscribe.map(queue => ZStream.fromQueue(queue))
 
+  def subscribeStatus: ZStream[Any, Throwable, KernelStatusUpdate] = ZStream.fromHub(status).haltWhen(status.awaitShutdown)
 
   private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
     kernel.awaitClosed.catchAllCause {
@@ -106,7 +107,7 @@ class KernelPublisher private (
             //       starting kernel.
         }
       }.tapError {
-        err => Logging.error("Error starting kernel; shutting it down", err) *> shutdownKernel() *> status.publish(KernelError(err))
+        err => Logging.error("Error starting kernel; shutting it down", err) *> shutdownKernel() *> publishStatus.publish(KernelError(err))
       }
   }
 
@@ -195,8 +196,8 @@ class KernelPublisher private (
       updates      <- subscribeUpdates
       subscriber   <- KernelSubscriber(subscriberId, updates, this).toManaged(_.close())
       _            <- subscribing.withPermit(subscribers.put(subscriberId, subscriber)).toManaged(_ => removeSubscriber(subscriberId))
-      _            <- status.publish(PresenceUpdate(List(subscriber.presence), Nil)).toManaged_
-      _            <- subscriber.selections.mapM(status.publish).runDrain.forkManaged
+      _            <- publishStatus.publish(PresenceUpdate(List(subscriber.presence), Nil)).toManaged_
+      _            <- subscriber.selections.mapM(publishStatus.publish).runDrain.forkManaged
     } yield subscriber
 
   private def closeIfNoSubscribers: TaskB[Unit] =
@@ -215,16 +216,17 @@ class KernelPublisher private (
       subscriber <- subscribers.get(id).get.orElseFail(new NoSuchElementException(s"Subscriber $id does not exist"))
       _          <- ZIO.unlessM(subscriber.closed.isDone)(subscriber.close())
       _          <- subscribers.remove(id)
-      _          <- status.publish(PresenceUpdate(Nil, List(id)))
+      _          <- publishStatus.publish(PresenceUpdate(Nil, List(id)))
     } yield ()
   }.catchAll(Logging.error) *> closeIfNoSubscribers.delay(5.seconds).forkDaemon.unit
 
   def close(): TaskB[Unit] = ZIO.unlessM(closed.isDone) {
     broadcastUpdates.shutdown *> closed.succeed(()).unit *>
-      subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
       shutdownKernel() *>
       taskManager.shutdown() *>
-      versionedNotebook.close()
+      versionedNotebook.close() *>
+      status.shutdown *>
+      subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit
   }
 
   private def createKernel(): TaskG[Kernel] = kernelFactory()

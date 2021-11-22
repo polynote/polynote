@@ -207,7 +207,8 @@ val `polynote-server` = project.settings(
     val _ = distUI.value
     (packageBin in Compile).value
   },
-  distFiles := Seq(assembly.value)
+  distFiles := Seq(assembly.value),
+  testOptions in Test += Tests.Argument("-oF")
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
 val sparkVersions = Map(

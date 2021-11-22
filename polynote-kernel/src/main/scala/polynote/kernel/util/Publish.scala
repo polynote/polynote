@@ -46,8 +46,8 @@ object Publish {
   }
 
   final case class PublishZHub[-RA, -RB, +EA, +EB, -A, +B](hub: ZHub[RA, RB, EA, EB, A, B]) extends Publish[RA, EA, A] {
-    override def publish(t: A): ZIO[RA, EA, Unit] = hub.publish(t).flip.retryUntilEquals(true).flip.unit
-    override def publishAll(ts: Iterable[A]): ZIO[RA, EA, Unit] = hub.publishAll(ts).flip.retryUntilEquals(true).flip.unit
+    override def publish(t: A): ZIO[RA, EA, Unit] = ZIO.unlessM(hub.isShutdown)(hub.publish(t).flip.retryUntilEquals(true).flip.unit)
+    override def publishAll(ts: Iterable[A]): ZIO[RA, EA, Unit] = ZIO.unlessM(hub.isShutdown)(hub.publishAll(ts).flip.retryUntilEquals(true).flip.unit)
   }
 
   implicit def zHubToPublish[RA, RB, EA, EB, A, B](hub: ZHub[RA, RB, EA, EB, A, B]): Publish[RA, EA, A] = PublishZHub(hub)

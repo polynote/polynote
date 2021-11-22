@@ -120,7 +120,7 @@ class LocalKernel private[kernel] (
   override def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
     for {
       publishStatus <- PublishStatus.access
-      busyUpdater   <- busyState.changes.foreachWhile(s => publishStatus.publish(s).as(s.alive)).forkDaemon
+      busyUpdater   <- busyState.changes.haltWhen(closed.await.run).foreachWhile(s => publishStatus.publish(s).as(s.alive)).forkDaemon
       initialState  <- initScala().onError(err => (PublishResult(ErrorResult(err.squash)) *> busyState.ref.update(s => ZIO.succeed(s.setIdle))).orDie)
       _             <- ZIO.foreach_(initialState.values)(PublishResult.apply)
       _             <- busyState.ref.update(s => ZIO.succeed(s.setIdle))

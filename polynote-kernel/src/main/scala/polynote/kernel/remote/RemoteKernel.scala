@@ -226,7 +226,7 @@ class RemoteKernelClient(
 
   private val sessionHandles = new ConcurrentHashMap[Int, StreamingHandles.Service]()
 
-  def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Int] =
+  def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Unit] =
     requests
       .map(handleRequest)
       .map(z => ZStream.fromEffect(z))
@@ -234,7 +234,7 @@ class RemoteKernelClient(
       .tap(publishResponse.publish)
       .mapM(closeOnShutdown)
       .haltWhen(closed)
-      .runDrain.uninterruptible.as(0)
+      .runDrain.uninterruptible
 
 
   private def closeOnShutdown(rep: RemoteResponse): URIO[BaseEnv, Unit] = rep match {
@@ -323,8 +323,8 @@ object RemoteKernelClient extends polynote.app.App {
     _               <- tapClient.fold(ZIO.unit)(_.set(client))
     _               <- kernel.init()
     _               <- publishResponse.publish(Announce(initial.reqId, localAddress))
-    exitCode        <- client.run().ensuring(client.close())
-  } yield exitCode
+    _               <- client.run().ensuring(client.close())
+  } yield 0
 
   def mkEnv(
     currentNotebook: NotebookRef,

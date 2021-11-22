@@ -14,7 +14,7 @@ import polynote.kernel.remote.{RemoteKernel, SocketTransport, SocketTransportSer
 import polynote.kernel.remote.SocketTransport.DeploySubprocess.DeployJava
 import polynote.kernel.util.Publish
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelInfo, KernelStatusUpdate, LocalKernel, LocalKernelFactory, Output}
-import polynote.messages.{CellID, ContentEdit, ContentEdits, Delete, Insert, Message, Notebook, NotebookCell, NotebookUpdate, ShortList, UpdateCell}
+import polynote.messages.{CellID, ContentEdit, ContentEdits, Delete, Insert, Message, Notebook, NotebookCell, NotebookConfig, NotebookUpdate, ShortList, UpdateCell}
 import polynote.server.auth.UserIdentity
 import polynote.testing.ExtConfiguredZIOSpec
 import polynote.testing.kernel.MockNotebookRef
@@ -79,42 +79,37 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val ref             = MockNotebookRef(notebook).runIO()
       val kernelFactory   = RemoteKernel.factory(transport)
       val kernelPublisher = KernelPublisher(ref, bq).runWith(kernelFactory)
+      val collectStatus   = kernelPublisher.subscribeStatus.runCollect.map(_.toList).forkDaemon.runIO()
       val kernel          = kernelPublisher.kernel.runWith(kernelFactory).asInstanceOf[RemoteKernel[InetSocketAddress]]
       val process         = kernel.transport.asInstanceOf[SocketTransportServer].process
 
-      val collectStatus = ZStream.fromHub(kernelPublisher.status)
-        .mapAccum((false, false)) {
-          case ((_, sawError), update@KernelBusyState(false, false)) => ((true, sawError), (true, sawError) -> update)
-          case ((sawBusyState, _), update@KernelError(_)) => ((sawBusyState, true), (sawBusyState, true) -> update)
-          case (saw, update) => (saw, saw -> update)
-        }.takeUntil {
-          case ((sawBusyState, sawError), _) => sawBusyState && sawError
-        }.map(_._2).runCollect.map(_.toList).forkDaemon.runIO()
-
       process.kill().runIO()
-      assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty)
+      assert(process.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty, "first process exited")
 
       val kernel2 = kernelPublisher.kernel
         .repeatUntil(_ ne kernel)
         .timeout(Duration(20, TimeUnit.SECONDS))
-        .someOrFail(new Exception("Kernel should have changed; didn't change after 5 seconds"))
+        .someOrFail(new Exception("Kernel should have changed; didn't change after 20 seconds"))
         .runWith(kernelFactory)
 
       assert(kernel2 ne kernel, "Kernel should have changed")
+
+      val process2 = kernel.transport.asInstanceOf[SocketTransportServer].process
+
+      kernelPublisher
+        .subscribeStatus
+        .takeUntil(_ == KernelBusyState(false, true))
+        .timeout(Duration(20, TimeUnit.SECONDS)).runDrain.runIO()
+
       kernelPublisher.close().runIO()
-      val statusUpdates = collectStatus.join
-        .timeout(Duration(5, TimeUnit.SECONDS))
-        .someOrFail(new Exception("Timed out waiting for kernel busy state"))
-        .runIO()
 
-      // should have gotten a notification that the kernel became dead
-      statusUpdates should contain (KernelBusyState(busy = false, alive = false))
+      assert(process2.awaitExit(1, TimeUnit.SECONDS).runIO().nonEmpty, "second process exited")
+      // TODO: test that it exited with 0. Currently it doesn't, it is killed. Why?
 
-      // should have gotten some kernel error
-      statusUpdates.collect {
-        case KernelError(err) => err
-      }.size shouldEqual 1
+      val statuses = collectStatus.join.runIO()
 
+      assert(statuses.exists(_.isInstanceOf[KernelError]), "Should have seen a kernel error")
+      assert(statuses.contains(KernelBusyState(false, false)), "Should have seen a dead kernel")
     }
 
     "gracefully handles startup failure of kernel" in {
@@ -135,8 +130,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
       val ref             = MockNotebookRef(notebook).runIO()
       val kernelPublisher = KernelPublisher(ref, bq).runWith(failingKernelFactory)
       val stopStatus = Promise.make[Throwable, Unit].runIO()
-      val collectStatus = ZStream.fromHub(kernelPublisher.status)
-        .interruptWhen(stopStatus.await.either)
+      val collectStatus = kernelPublisher.subscribeStatus
+        .haltWhen(stopStatus.await.either)
         .runCollect.map(_.toList)
         .forkDaemon.runIO()
 
@@ -182,8 +177,8 @@ class KernelPublisherIntegrationTest extends FreeSpec with Matchers with ExtConf
           _.mapM {
             edit => zio.clock.currentTime(TimeUnit.MILLISECONDS).flatMap {
               time => ZIO.effectTotal(serverEdits += ((edit._1, edit._2, time)))
-            }.uninterruptible
-          }.runDrain
+            }
+          }.haltWhen(stopListening).runDrain
         }.forkDaemon.runIO()
 
         val expected1 = client1Init.ops.length

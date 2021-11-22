@@ -66,7 +66,7 @@ object KernelSubscriber {
   ): RIO[BaseEnv with PublishMessage with UserIdentity, KernelSubscriber] = {
 
     def foreignUpdates(local: AtomicInteger, global: AtomicInteger, closed: Promise[Throwable, Unit]) =
-      broadcastUpdates
+      broadcastUpdates.haltWhen(closed)
         .tap {
           case (`id`, update) => ZIO.effectTotal { local.set(update.localVersion) }
           case _              => ZIO.unit
@@ -87,7 +87,7 @@ object KernelSubscriber {
       currentSelection <- SubscriptionRef.make[Option[PresenceSelection]](None)
       updater          <- ZStream(
           foreignUpdates(lastLocalVersion, lastGlobalVersion, closed).interruptWhen(closed.await.run),
-          ZStream.fromEffect(publisher.kernelStatus().map(KernelStatus(_))) ++ ZStream.fromHub(publisher.status)
+          ZStream.fromEffect(publisher.kernelStatus().map(KernelStatus(_))) ++ publisher.subscribeStatus
             .filter(_.isRelevant(id))
             .map(update => KernelStatus(update.forSubscriber(id)))
             .interruptWhen(closed.await.run),
