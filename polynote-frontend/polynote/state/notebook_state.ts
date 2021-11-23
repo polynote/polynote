@@ -499,12 +499,10 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
     rebaseUpdate(update: NotebookUpdate) {
         this.globalVersion = update.globalVersion
         if (update.localVersion < this.localVersion) {
-            const prevUpdates = this.edits.range(update.localVersion, this.localVersion);
+            update = this.edits.rebaseThrough(update, this.localVersion);
 
             // discard edits before the local version from server – it will handle rebasing at least until that point
             this.edits = this.edits.discard(update.localVersion)
-
-            update = messages.NotebookUpdate.rebase(update, prevUpdates)
         }
 
         return update
