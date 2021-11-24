@@ -20,7 +20,7 @@ markdown_extensions:
   - attr_list
   - abbr
 repo_url: https://github.com/polynote/polynote
-edit_uri: edit/master/docs
+edit_uri: edit/master/docs-site/docs
 repo_name: polynote
 nav:
   - index.md
