@@ -5,6 +5,7 @@
 * Fix an issue which sometimes caused Polynote to reject all updates, "freezing" the notebook in an old state.
 * Safety and performance improvements to `ReprsOf` solving OOMs when handling huge collections.
 * Fix some concurrent editing bugs. 
+* Support for output of stderr to the UI (only really for Python right now)
 * Fix a crash when insanely long lines are printed to console.
 * Improve Python performance (in some cases running in Polynote was ~10x slower than the REPL) 
 * Implement `isatty()` to work around some issues where Python libraries check for this.. 
