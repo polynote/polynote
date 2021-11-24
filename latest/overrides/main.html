@@ -1,16 +1,27 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Redirecting</title>
-  <noscript>
-    <meta http-equiv="refresh" content="1; url=../../0.4.2/overrides/main.html" />
-  </noscript>
-  <script>
-    window.location.replace("../../0.4.2/overrides/main.html" + window.location.hash);
-  </script>
-</head>
-<body>
-  Redirecting to <a href="../../0.4.2/overrides/main.html">../../0.4.2/overrides/main.html</a>...
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block libs %}
+    {{ super() }}
+    <script src="https://unpkg.com/freezeframe/dist/freezeframe.min.js"></script>
+{% endblock %}}
+
+{% block scripts %}
+    <script type="text/javascript">
+        function runFreezeframe() {
+            console.log("loaded! {{ page.title }} ")
+            if (window.ff) window.ff.destroy()
+            window.ff = new Freezeframe('img[src$=".gif"]:not(img[src="images/hero-animation.gif"])',  // super-hacky way to ignore the front-page animation
+                {
+                    overlay: true,
+                    trigger: "click",
+                    responsive: false
+                }
+            );
+        }
+
+        window.addEventListener('DOMContentLoaded', (event) => {
+            document$.subscribe(runFreezeframe) // run this command every time the document changes (since it's an SPA)
+        });
+    </script>
+    {{ super ()}}
+{% endblock %}
