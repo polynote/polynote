@@ -15,7 +15,7 @@ import polynote.kernel.task.TaskManager
 import polynote.server.auth.UserIdentity
 import zio.clock.Clock
 import zio.duration._
-import zio.stream.{UStream, ZStream}
+import zio.stream.{Take, UStream, ZStream}
 
 import java.util.concurrent.TimeUnit
 import scala.collection.mutable.ListBuffer
@@ -24,7 +24,7 @@ class KernelPublisher private (
   val versionedNotebook: NotebookRef,
   private[server] val updateQueue: Queue[(SubscriberId, NotebookUpdate)], // visible for testing
   val broadcastUpdates: Hub[(SubscriberId, NotebookUpdate)],
-  status: Hub[KernelStatusUpdate],
+  status: Hub[Take[Nothing, KernelStatusUpdate]],
   val cellResults: ZHub[Any, Any, Throwable, Throwable, CellResult, CellResult],
   val taskManager: TaskManager.Service,
   kernelRef: Ref[Option[Kernel]],
@@ -36,7 +36,7 @@ class KernelPublisher private (
   val closed: Promise[Throwable, Unit],
   subscribers: RefMap[Int, KernelSubscriber]
 ) {
-  val publishStatus: UPublish[KernelStatusUpdate] = status
+  val publishStatus: UPublish[KernelStatusUpdate] = status.contramap[KernelStatusUpdate](u => Take.single(u))
 
   private val taskManagerLayer: ULayer[TaskManager] = ZLayer.succeed(taskManager)
 
@@ -74,7 +74,8 @@ class KernelPublisher private (
   def subscribeUpdates: UManaged[UStream[(SubscriberId, NotebookUpdate)]] =
     broadcastUpdates.subscribe.map(queue => ZStream.fromQueue(queue))
 
-  def subscribeStatus: ZStream[Any, Throwable, KernelStatusUpdate] = ZStream.fromHub(status).haltWhen(status.awaitShutdown)
+  def subscribeStatus: ZStream[Any, Throwable, KernelStatusUpdate] =
+    ZStream.fromHub(status).flattenTake
 
   private def handleKernelClosed(kernel: Kernel): TaskB[Unit] =
     kernel.awaitClosed.catchAllCause {
@@ -225,8 +226,9 @@ class KernelPublisher private (
       shutdownKernel() *>
       taskManager.shutdown() *>
       versionedNotebook.close() *>
-      status.shutdown *>
-      subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit
+      status.publish(Take.end) *>
+      subscribers.values.flatMap(subs => ZIO.foreachPar_(subs)(_.close())).unit *>
+      status.shutdown
   }
 
   private def createKernel(): TaskG[Kernel] = kernelFactory()
@@ -333,9 +335,9 @@ object KernelPublisher {
     updates          <- Queue.unbounded[(SubscriberId, NotebookUpdate)]
                         // TODO: replace the following with ZTopic
     broadcastUpdates <- Hub.unbounded[(SubscriberId, NotebookUpdate)]
-    broadcastStatus  <- Hub.unbounded[KernelStatusUpdate]
+    broadcastStatus  <- Hub.unbounded[Take[Nothing, KernelStatusUpdate]]
     broadcastResults <- Hub.unbounded[CellResult]
-    taskManager      <- TaskManager(broadcastStatus)
+    taskManager      <- TaskManager(broadcastStatus.contramap[KernelStatusUpdate](a => Take.single(a)))
     versionBuffer     = new SubscriberUpdateBuffer()
     kernelStarting   <- Semaphore.make(1)
     queueingCell     <- Semaphore.make(1)
