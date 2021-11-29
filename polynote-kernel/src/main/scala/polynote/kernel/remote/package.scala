@@ -1,6 +1,7 @@
 package polynote.kernel
 
 import polynote.kernel.util.RPublish
+import polynote.messages.NotebookConfig
 import zio.Has
 
 import java.io.File
@@ -24,4 +25,5 @@ package object remote {
     case (name, value) => s"-D$name=$value"
   }
 
+  def jvmArgs(nbConfig: NotebookConfig) = nbConfig.jvmArgs.toList.flatten
 }
