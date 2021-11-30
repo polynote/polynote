@@ -48,10 +48,11 @@ object DeploySparkSubmit extends DeployCommand {
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
 
     val allDriverOptions = {
-      nbConfig.jvmArgs.toList ++
-      sparkConfig.get("spark.driver.extraJavaOptions").toList ++
-      asPropString(javaOptions)
-    } mkString " "
+      val all: List[String] = jvmArgs(nbConfig) ++
+        sparkConfig.get("spark.driver.extraJavaOptions").toList ++
+        asPropString(javaOptions)
+      all mkString " "
+    }
 
     val additionalJars = classPath.toList.filter(_.getFile.endsWith(".jar"))
 
