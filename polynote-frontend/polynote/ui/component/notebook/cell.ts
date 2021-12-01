@@ -1489,6 +1489,9 @@ class CodeCellOutput extends Disposable {
     private stdOutEl: MIMEElement | null;
     private stdOutLines: number;
     private stdOutDetails: TagElement<"details"> | null;
+    private stdErrEl: MIMEElement | null;
+    private stdErrLines: number;
+    private stdErrDetails: TagElement<"details"> | null;
     private readonly cellOutputDisplay: TagElement<"div">;
     private readonly cellResultMargin: TagElement<"div">;
     private readonly cellOutputTools: TagElement<"div">;
@@ -1738,6 +1741,8 @@ class CodeCellOutput extends Disposable {
         this.cellOutputDisplay.innerHTML = "";
         this.stdOutEl = null;
         this.stdOutDetails = null;
+        this.stdErrEl = null;
+        this.stdErrDetails = null;
         if (this.copyOutputButton) this.copyOutputButton.style.display = 'none';
     }
 
@@ -1768,26 +1773,34 @@ class CodeCellOutput extends Disposable {
 
         if (this.copyOutputButton && mimeType === "text/plain") this.copyOutputButton.style.display = "unset";
 
-        if (mimeType === 'text/plain' && args.rel === 'stdout') {
+        if (mimeType === 'text/plain' && (args.rel === 'stdout' || args.rel === 'stderr')) {
+            let outputEl, outputLines, outputDetailsEl;
+            if (args.rel === 'stdout') {
+                outputEl = this.stdOutEl;
+                outputLines = this.stdOutLines;
+                outputDetailsEl = this.stdOutDetails;
+            } else {
+                outputEl = this.stdErrEl;
+                outputLines = this.stdErrLines;
+                outputDetailsEl = this.stdErrDetails;
+            }
             // first, strip ANSI control codes
             // TODO: we probably want to parse & render the colors, but it would complicate things at the moment
             //       given that the folding logic relies on text nodes and that would require using elements
             content = content.replace(/\u001b\[\d+m/g, '');
 
-
             // if there are too many lines, fold some
             const lines = content.split(/\n/g);
 
-
-            if (! this.stdOutEl?.parentNode) {
-                this.stdOutEl = mimeEl(mimeType, args, "");
-                this.stdOutLines = lines.length;
-                this.cellOutputDisplay.appendChild(this.stdOutEl);
+            if (! outputEl?.parentNode) {
+                outputEl = mimeEl(mimeType, args, "");
+                outputLines = lines.length;
+                this.cellOutputDisplay.appendChild(outputEl);
             } else {
-                this.stdOutLines += lines.length - 1;
+                outputLines += lines.length - 1;
             }
 
-            if (this.stdOutLines > 12) { // TODO: user-configurable number?
+            if (outputLines > 12) { // TODO: user-configurable number?
 
                 const splitAtLine = (textNode: Text, line: number) => {
                     const lf = /\n/g;
@@ -1806,19 +1819,19 @@ class CodeCellOutput extends Disposable {
                 };
 
                 // fold all but the first 5 and last 5 lines into an expandable thingy
-                const numHiddenLines = this.stdOutLines - 11;
-                if (! this.stdOutDetails?.parentNode) {
-                    this.stdOutDetails = tag('details', [], {}, [
+                const numHiddenLines = outputLines - 11;
+                if (! outputDetailsEl?.parentNode) {
+                    outputDetailsEl = tag('details', [], {}, [
                         tag('summary', [], {}, [span([], '')])
                     ]);
 
                     // collapse into single node
-                    this.stdOutEl.normalize();
+                    outputEl.normalize();
                     // split the existing text node into first 5 lines and the rest
-                    let textNode = this.stdOutEl.childNodes[0] as Text;
+                    let textNode = outputEl.childNodes[0] as Text;
                     if (!textNode) {
                         textNode = document.createTextNode(content);
-                        this.stdOutEl.appendChild(textNode);
+                        outputEl.appendChild(textNode);
                     } else {
                         // add the current content to the text node before folding
                         textNode.nodeValue += content;
@@ -1827,35 +1840,44 @@ class CodeCellOutput extends Disposable {
                     if (hidden) {
                         const after = splitAtLine(hidden, numHiddenLines);
 
-                        this.stdOutDetails.appendChild(hidden);
-                        this.stdOutEl.insertBefore(this.stdOutDetails, after);
+                        outputDetailsEl.appendChild(hidden);
+                        outputEl.insertBefore(outputDetailsEl, after);
                     }
                 } else {
-                    const textNode = this.stdOutDetails.nextSibling! as Text;
+                    const textNode = outputDetailsEl.nextSibling! as Text;
                     textNode.nodeValue += content;
                     const after = splitAtLine(textNode, lines.length);
                     if (after) {
-                        this.stdOutDetails.appendChild(textNode);
-                        this.stdOutEl.appendChild(after);
+                        outputDetailsEl.appendChild(textNode);
+                        outputEl.appendChild(after);
                     }
                 }
                 // update summary
-                this.stdOutDetails.querySelector('summary span')!.setAttribute('line-count', numHiddenLines.toString());
+                outputDetailsEl.querySelector('summary span')!.setAttribute('line-count', numHiddenLines.toString());
             } else {
                 // no folding (yet) - append to the existing stdout container
-                this.stdOutEl.appendChild(document.createTextNode(content));
+                outputEl.appendChild(document.createTextNode(content));
             }
 
             // collapse the adjacent text nodes
-            this.stdOutEl.normalize();
+            outputEl.normalize();
 
             // handle carriage returns in the last text node – they erase back to the start of the line
-            const lastTextNode = [...this.stdOutEl.childNodes].filter(node => node.nodeType === 3).pop();
+            const lastTextNode = [...outputEl.childNodes].filter(node => node.nodeType === 3).pop();
             if (lastTextNode) {
                 const eat = /^(?:.|\r)+\r(.*)$/gm; // remove everything before the last CR in each line
                 lastTextNode.nodeValue = lastTextNode.nodeValue!.replace(eat, '$1');
             }
 
+            if (args.rel === 'stdout') {
+                this.stdOutEl = outputEl;
+                this.stdOutLines = outputLines;
+                this.stdOutDetails = outputDetailsEl;
+            } else {
+                this.stdErrEl = outputEl;
+                this.stdErrLines = outputLines;
+                this.stdErrDetails = outputDetailsEl;
+            }
         } else {
             this.buildOutput(mimeType, args, content).then((el: MIMEElement) => {
                 this.cellOutputDisplay.appendChild(el);
