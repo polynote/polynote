@@ -4,4 +4,4 @@ nbconvert
 numpy
 pandas==1.2.5
 jedi>=0.18.1
-jep==3.9.*
+jep==4.0.0

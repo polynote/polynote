@@ -776,6 +776,13 @@ class PythonInterpreter private[python] (
                   // filter `Out` values that are equal to `None` (this approximates a "void" return type for Python)
                   val notNoneOut = key != "Out" || (key == "Out" && typeStr != "NoneType")
 
+                  // unwrap a wrapped Java value
+                  def unwrapJavaValue = {
+                    val jValue = valueAs(classOf[Object])
+                    val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
+                    (typ, jValue)
+                  }
+
                   if (typeStr != null && notNoneOut && typeStr != "module") {
                     val (typ, value) = typeStr match {
                       case "int" => (typeOf[Long], valueAs(classOf[java.lang.Number]).longValue())
@@ -787,19 +794,23 @@ class PythonInterpreter private[python] (
 
                       // TODO: can we get better type information from `PyJArray`?
                       // Types that start with "PyJ*" are actually Java values wrapped by jep for use in Python
-                      case other if other.startsWith("PyJ") =>
-                        val jValue = valueAs(classOf[Object])
-                        val typ = runtime.unsafeRun(compiler.reflect(jValue)).symbol.info
-                        (typ, jValue)
+                      case other if other.startsWith("PyJ") => unwrapJavaValue
                       case other =>
-                        val pyObj = valueAs(classOf[PyObject])
-                        if (convert.isDefinedAt((typeStr, pyObj))) {
-                          convert((typeStr, pyObj))
-                        } else {
-                          // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
-                          // But in every other case it's just noise.
-                          val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
-                          (typ, new TypedPythonObject[String](valueAs(classOf[PyObject]), runner))
+                        // TODO: is there any way to determine whether it's a wrapped Java value if it's not wrapped in PyJ*?
+                        try {
+                          val pyObj = valueAs(classOf[PyObject])
+                          if (convert.isDefinedAt((typeStr, pyObj))) {
+                            convert((typeStr, pyObj))
+                          } else {
+                            // should we use the qualified type? It's confusing that both Spark and Pandas have a "DataFrame".
+                            // But in every other case it's just noise.
+                            val typ = appliedType(typeOf[TypedPythonObject[Nothing]].typeConstructor, compiler.global.internal.constantType(Constant(other)))
+                            (typ, new TypedPythonObject[String](valueAs(classOf[PyObject]), runner))
+                          }
+                        } catch {
+                          case e: JepException if e.getMessage.contains("TypeError") =>
+                            // this might still be a Java value that for some reason isn't wrapped as a PyJ* object
+                            unwrapJavaValue
                         }
                     }
                     Some(new ResultValue(key, compiler.unsafeFormatType(typ.asInstanceOf[Type]), Nil, state.id, value, typ.asInstanceOf[Type], None))
