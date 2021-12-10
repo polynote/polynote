@@ -27,7 +27,7 @@ export class ErrorEl {
         }
     }
 
-    static fromServerError(err: ServerErrorWithCause, filename?: string, maxDepth: number = 0, nested: boolean = false): ErrorEl {
+    static fromServerError(err: ServerErrorWithCause, filename?: string, maxDepth: number = 10, nested: boolean = false): ErrorEl {
         let errorLine: number | undefined = undefined;
         const items: ErrorEl["trace"]["items"] = [];
         const message = `${err.message} (${err.className})`;
