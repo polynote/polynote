@@ -304,7 +304,7 @@ object KernelPublisher {
                 ZIO(versions.add(nextVer, newUpdate)) *>
                 publishUpdates.publish(newUpdate) *>
                 ZIO.effectTotal {
-                  logStr ++= s"""  $newUpdate "${notebook.cells.head.content}""""
+                  logStr ++= s"""  $newUpdate "${notebook.cells.headOption.map(_.content).getOrElse("")}""""
                   log += ((time, logStr.result()))
                 }
           }

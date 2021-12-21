@@ -1,4 +1,5 @@
 # Unreleased
+* Fix bug preventing addition of new cells in empty notebooks #1229
 
 # 0.4.4 (Dec 10, 2021)
 * Upgrade Jep to 4.0.0
