@@ -12,7 +12,7 @@
     "fast-diff": "1.2.0",
     "idb-keyval": "3.2.0",
     "katex": "0.12.0",
-    "markdown-it": "10.0.0",
+    "markdown-it": "12.3.2",
     "monaco-editor": "0.22.3",
     "monaco-vim": "0.1.12",
     "requirejs": "2.3.6",
