@@ -2,11 +2,12 @@ package polynote
 
 import polynote.app.MainArgs
 import polynote.kernel.environment.{CurrentNotebook, PublishResult, PublishStatus}
+import polynote.kernel.interpreter.Interpreter.Factories
 import polynote.kernel.interpreter.InterpreterState
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.Publish
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, Kernel, KernelStatusUpdate}
-import polynote.messages.{CellID, Notebook, NotebookCell}
+import polynote.messages.{CellID, Notebook}
 import polynote.server.AppEnv
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.FileSystems
@@ -69,12 +70,13 @@ object NotebookRunner {
     startKernel.provideSomeLayer[KernelFactoryEnv](PublishResult.ignore).toManaged(_.shutdown().orDie).use {
       kernel =>
         for {
-          notebook <- CurrentNotebook.get
-          cells     = notebook.cells.filter(shouldRunCell).map(_.id)
+          notebook  <- CurrentNotebook.get
+          languages <- ZIO.access[Factories](_.get).map(_.keys.toSet)
+          cells      = notebook.cells.filter(c => languages.contains(c.language)).map(_.id)
           // make a new ref for the updated notebook (existing one is not modified)
-          nbRef    <- Ref.make(notebook)
-          _        <- ZIO.foreach(cells)(cell => runCell(cell, nbRef, kernel))
-          result   <- nbRef.get
+          nbRef     <- Ref.make(notebook)
+          _         <- ZIO.foreach(cells)(cell => runCell(cell, nbRef, kernel))
+          result    <- nbRef.get
       } yield result
   }
 
@@ -88,11 +90,6 @@ object NotebookRunner {
     kernel <- Kernel.Factory.newKernel
     _      <- kernel.init()
   } yield kernel
-
-  private def shouldRunCell(cell: NotebookCell) = cell.language.toString match {
-    case "text" | "vega" | "markdown" => false
-    case _ => true
-  }
 
   def writeResult(runnerArgs: Args, sourcePath: Path, notebook: Notebook): RIO[AppEnv, Unit] =
     clock.currentDateTime.flatMap {
