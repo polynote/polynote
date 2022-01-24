@@ -1,5 +1,6 @@
 # Unreleased
 * Fix bug preventing addition of new cells in empty notebooks #1229
+* Fix a failure in the notebook runner when the notebook has a 'viz' cell #1236
 
 # 0.4.4 (Dec 10, 2021)
 * Upgrade Jep to 4.0.0
