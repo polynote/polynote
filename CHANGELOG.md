@@ -1,4 +1,6 @@
 # Unreleased
+
+# 0.4.5 (Feb 15, 2022)
 * Fix bug preventing addition of new cells in empty notebooks #1229
 * Fix a failure in the notebook runner when the notebook has a 'viz' cell #1236
 
