@@ -218,3 +218,8 @@ monaco.languages.registerCompletionItemProvider('sql', {
         return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
     }
 });
+
+document.fonts.ready.then(() => {
+    monaco.editor.remeasureFonts();
+    console.log("all fonts ready");
+})
