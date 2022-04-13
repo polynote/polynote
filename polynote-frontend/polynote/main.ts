@@ -219,7 +219,5 @@ monaco.languages.registerCompletionItemProvider('sql', {
     }
 });
 
-document.fonts.ready.then(() => {
-    monaco.editor.remeasureFonts();
-    console.log("all fonts ready");
-})
+// remeasure custom fonts after loading to avoid changing whitespace size when selected, see also microsoft/monaco-editor#648
+document.fonts.ready.then(() => monaco.editor.remeasureFonts())
