@@ -11,6 +11,7 @@ import polynote.kernel.logging.Logging
 import polynote.messages._
 import polynote.server.auth.IdentityProvider.checkPermission
 import polynote.server.auth.{IdentityProvider, Permission, UserIdentity}
+import polynote.config.HotkeyInfo
 import uzhttp.websocket.Frame
 import zio.stream.{Stream, Take, UStream, ZStream}
 import zio.Queue
@@ -85,7 +86,8 @@ object SocketSession {
       serverVersion = BuildInfo.version,
       serverCommit = BuildInfo.commit,
       identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString))),
-      sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil)
+      sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil),
+      customKeybindings = config.ui.customKeybindings.asInstanceOf[TinyMap[TinyString, HotkeyInfo]],
     )
 
   def getRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, RunningKernels] = for {

@@ -65,7 +65,7 @@ import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
 import {cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
-import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
+import {Error, TaskInfo, TaskStatus, HotkeyInfo} from "../../../data/messages";
 import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import {
     availableResultValues,
@@ -88,7 +88,8 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
 import {UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
-
+import { logger } from "vega";
+import { keycodeToKeybinding } from "../../input/hotkeys";
 
 export type CodeCellModel = editor.ITextModel & {
     requestCompletion(pos: number): Promise<CompletionList>,
@@ -366,14 +367,7 @@ export class CellContainer extends Disposable {
     }
 }
 
-export interface HotkeyInfo {
-    key: string,
-    description: string,
-    hide?: boolean,
-    vimOnly?: boolean
-}
-
-export const cellHotkeys: Record<string, HotkeyInfo> = {
+export const cellHotkeys: Record<number, HotkeyInfo> = {
     [monaco.KeyCode.UpArrow]: {key: "MoveUp", description: "Move to previous cell."},
     [monaco.KeyCode.DownArrow]: {key: "MoveDown", description: "Move to next cell. If there is no cell below, create it."},
     [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {key: "RunAndSelectNext", description: "Run cell and select the next cell. If there is no cell, create one."},
@@ -541,7 +535,10 @@ abstract class Cell extends Disposable {
         } else {
             keybinding = new StandardKeyboardEvent(evt)._asKeybinding;
         }
-        const hotkey = cellHotkeys[keybinding]
+        let hotkey = cellHotkeys[keybinding];
+        if (!hotkey) hotkey = ServerStateHandler.state.customKeybindings[keybinding];
+        // TODO: remove
+        if (!hotkey && (keybinding & 255) > 0) console.log("keybinding not found", keycodeToKeybinding(keybinding));
         if (hotkey && (!hotkey.vimOnly || UserPreferencesHandler.state['vim'].value)) {
             const key = hotkey.key;
             const pos = this.getPosition();
@@ -576,6 +573,10 @@ abstract class Cell extends Disposable {
             .when("MoveDownJ", () => {
                 this.notebookState.selectCell(this.id, {relative: "below", editing: true})
             })
+            .when("RunActive", () => {
+                this.dispatcher.runActiveCell()
+                return ["stopPropagation", "preventDefault"]
+            })
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
                 this.selectOrInsertCell("below", false)
@@ -609,6 +610,26 @@ abstract class Cell extends Disposable {
             .when("RunToCursor", () => {
                 this.dispatcher.runToActiveCell()
             })
+            .when("MoveAbove", () => {
+                //TODO: selectCell doesnt work yet!
+                this.notebookState.moveCell("above").then(id => this.notebookState.selectCell(id));
+                return ["stopPropagation", "preventDefault"]
+            })
+            .when("MoveBelow", () => {
+                //TODO: selectCell doesnt work yet!
+                this.notebookState.moveCell("below").then(id => this.notebookState.selectCell(id));
+                return ["stopPropagation", "preventDefault"]
+            })     
+            .when("Merge", () => {
+                //TODO
+                console.log("Merge not yet implemented");
+                return ["stopPropagation", "preventDefault"]
+            })        
+            .when("Split", () => {
+                //TODO
+                console.log("Split not yet implemented");
+                return ["stopPropagation", "preventDefault"]
+            })                             
             .otherwise(null) ?? undefined
     }
 

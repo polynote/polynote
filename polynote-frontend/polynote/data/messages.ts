@@ -29,7 +29,7 @@ import {CellComment, CellMetadata, NotebookCell, NotebookConfig, SparkPropertySe
 import {ContentEdit} from "./content_edit";
 import {Left, Right} from "./codec_types";
 import {deepEquals} from "../util/helpers";
-import {DoubleType, LongType, StructField, StructType} from "./data_type";
+import {BoolType, DoubleType, LongType, StructField, StructType} from "./data_type";
 
 export abstract class Message extends CodecContainer {
     static codec: Codec<Message>;
@@ -675,14 +675,26 @@ export class Identity {
     }
 }
 
-export class ServerHandshake extends Message {
-    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec), arrayCodec(int32, SparkPropertySet.codec)).to(ServerHandshake);
-    static get msgTypeId() { return 16; }
-    static unapply(inst: ServerHandshake): ConstructorParameters<typeof ServerHandshake> {
-        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity, inst.sparkTemplates];
+export class HotkeyInfo {
+    static codec = combined(str, str, bool, bool).to(HotkeyInfo);
+    static unapply(inst: HotkeyInfo): ConstructorParameters<typeof HotkeyInfo> {
+        return [inst.key, inst.description, inst.hide, inst.vimOnly];
     }
 
-    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null, readonly sparkTemplates: SparkPropertySet[]) {
+    constructor(readonly key: string, readonly description: string, readonly hide?: boolean, readonly vimOnly?: boolean) {
+        Object.freeze(this);
+    }
+}
+
+export class ServerHandshake extends Message {
+    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec), arrayCodec(int32, SparkPropertySet.codec), mapCodec(uint8, tinyStr, HotkeyInfo.codec)).to(ServerHandshake);
+    static get msgTypeId() { return 16; }
+    static unapply(inst: ServerHandshake): ConstructorParameters<typeof ServerHandshake> {
+        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity, inst.sparkTemplates, inst.customKeybindings];
+    }
+
+    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, 
+                readonly identity: Identity | null, readonly sparkTemplates: SparkPropertySet[], readonly customKeybindings: Record<string, HotkeyInfo>) {
         super();
         Object.freeze(this);
     }

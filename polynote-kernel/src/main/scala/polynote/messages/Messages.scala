@@ -8,7 +8,7 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.codecs.implicits._
 import io.circe.generic.semiauto._
-import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, SparkConfig, SparkPropertySet}
+import polynote.config.{DependencyConfigs, PolynoteConfig, RepositoryConfig, SparkConfig, SparkPropertySet, HotkeyInfo}
 import polynote.data.Rope
 import polynote.runtime.{CellRange, StreamingDataRepr, TableOp}
 import shapeless.cachedImplicit
@@ -419,7 +419,8 @@ final case class ServerHandshake(
   serverVersion: TinyString,
   serverCommit: TinyString,
   identity: Option[Identity],
-  sparkTemplates: List[SparkPropertySet]
+  sparkTemplates: List[SparkPropertySet],
+  customKeybindings: TinyMap[TinyString,HotkeyInfo]
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 
