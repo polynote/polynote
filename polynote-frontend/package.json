@@ -29,6 +29,7 @@
     "@testing-library/jest-dom": "5.11.8",
     "@types/jest": "26.0.19",
     "@types/node": "14.14.20",
+    "@types/css-font-loading-module": "0.0.7",
     "babel-jest": "26.6.3",
     "copy-webpack-plugin": "7.0.0",
     "css-loader": "3.4.2",

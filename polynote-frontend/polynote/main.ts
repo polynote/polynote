@@ -218,3 +218,6 @@ monaco.languages.registerCompletionItemProvider('sql', {
         return (doc as CodeCellModel).requestCompletion(doc.getOffsetAt(pos));
     }
 });
+
+// remeasure custom fonts after loading to avoid changing whitespace size when selected, see also microsoft/monaco-editor#648
+document.fonts.ready.then(() => monaco.editor.remeasureFonts())
