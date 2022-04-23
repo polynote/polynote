@@ -303,7 +303,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
      * @param direction  Whether to insert below of above the anchor
      * @return           A Promise that resolves with the inserted cell's id.
      */
-    moveCell(direction: 'above' | 'below'): Promise<number|undefined> {
+    moveCell(direction: 'above' | 'below'): number|undefined {
         const state = this.state;
         let currentCellId = state.activeCellId;
         if (currentCellId) {
@@ -312,16 +312,16 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             // trigger the move
             if (afterIdx >= 0 && afterIdx < state.cellOrder.length) {
                 //TODO: why does moveCell not work?
-                //this.updateHandler.moveCell(currentCellId, maybeAfterId);
-                return this.updateAsync(state => {
+                //const afterId = this.getCellIdAtIndex(afterIdx);
+                //this.updateHandler.moveCell(currentCellId, afterId!);
+                this.update(state => {
                     return {
                         cellOrder: moveArrayValue(anchorIdx, afterIdx)
                     }
-                }, this, 'cellOrder')
-                .then(_ => currentCellId);
+                }, this, 'cellOrder');
             }
         }
-        return Promise.resolve(undefined);
+        return currentCellId;
     }
 
     /**
