@@ -87,7 +87,7 @@ object SocketSession {
       serverCommit = BuildInfo.commit,
       identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString))),
       sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil),
-      customKeybindings = config.ui.customKeybindings.asInstanceOf[TinyMap[TinyString, HotkeyInfo]],
+      customKeybindings = config.ui.customKeybindings.asInstanceOf[TinyMap[TinyString, HotkeyInfo]]
     )
 
   def getRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, RunningKernels] = for {
