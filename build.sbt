@@ -214,17 +214,12 @@ val `polynote-server` = project.settings(
 val sparkVersions = Map(
   "2.11" -> "2.1.1",
   "2.12" -> "3.1.2",
-  "2.13" -> "3.2.0"
+  "2.13" -> "3.2.1"
 )
 
 val sparkDistUrl: String => String = {
-  case "3.2.0" => "https://dist.apache.org/repos/dist/dev/spark/v3.2.0-rc1-bin"
+  case "3.2.1" => "https://www.apache.org/dyn/closer.lua/spark/spark-3.2.1/"
   case ver     => s"https://archive.apache.org/dist/spark/spark-$ver/"
-}
-
-val pysparkVersion: String => String = {
-  case "3.2.0" => "3.1.2"
-  case ver     => ver
 }
 
 val sparkSettings = Seq(
