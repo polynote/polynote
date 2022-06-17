@@ -217,10 +217,8 @@ val sparkVersions = Map(
   "2.13" -> "3.2.1"
 )
 
-val sparkDistUrl: String => String = {
-  case "3.2.1" => "https://www.apache.org/dyn/closer.lua/spark/spark-3.2.1/"
-  case ver     => s"https://archive.apache.org/dist/spark/spark-$ver/"
-}
+val sparkDistUrl: String => String =
+  ver => s"https://archive.apache.org/dist/spark/spark-$ver/"
 
 val sparkSettings = Seq(
   resolvers ++= {
@@ -247,6 +245,7 @@ val sparkSettings = Seq(
     val pkgName = s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
+    Seq("ls", "-lah", baseDir.toString).!
     val destDir = baseDir / pkgName
     if (!destDir.exists()) {
       baseDir.mkdirs()
@@ -258,7 +257,7 @@ val sparkSettings = Seq(
       }
       println(s"Extracting $pkgFile to $baseDir")
       Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
-      Seq("ls", "-lah", baseDir.toString).!
+      Seq("ls", "-lah", (baseDir / pkgName).toString).!
     }
   },
   Test / envVars ++= {
