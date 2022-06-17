@@ -245,7 +245,6 @@ val sparkSettings = Seq(
     val pkgName = s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
-    Seq("ls", "-lah", baseDir.toString).!
     val destDir = baseDir / pkgName
     if (!destDir.exists()) {
       baseDir.mkdirs()
@@ -257,7 +256,6 @@ val sparkSettings = Seq(
       }
       println(s"Extracting $pkgFile to $baseDir")
       Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
-      Seq("ls", "-lah", (baseDir / pkgName).toString).!
     }
   },
   Test / envVars ++= {
