@@ -103,11 +103,18 @@ class PySparkInterpreter(
        |    sys.path.insert(1, spark_python)
        |    import glob
        |    py4j_dir = os.path.join(spark_home, 'python', 'lib')
+       |    if os.path.exists(py4j_dir):
+       |        print("FOUND DIR", py4j_dir, file=sys.stderr)
+       |        print(os.listdir(py4j_dir), file=sys.stderr)
+       |    else:
+       |        print("MISSING DIR", py4j_dir, file=sys.stderr)
+       |        print(os.listdir(spark_home), file=sys.stderr)
+       |
        |    try:
        |        py4j_path = glob.glob(os.path.join(py4j_dir, 'py4j-*.zip'))[0]  # we want to use the py4j distributed with pyspark
        |        sys.path.insert(1, py4j_path)
        |    except IndexError as err:
-       |        raise IndexError('No py4j found using SPARK_HOME: ' + spark_home + ' searched in ' + py4j_dir + ' found ' + os.listdir(py4j_dir))
+       |        raise IndexError('No py4j found using SPARK_HOME: ' + spark_home + ' searched in ' + py4j_dir)
        |
        |    pythonpath = os.pathsep.join(filter(lambda x: x is not None, [spark_python, py4j_path, os.environ.get("PYTHONPATH", None)]))
        |    os.environ["PYTHONPATH"] = pythonpath

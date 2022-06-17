@@ -258,6 +258,7 @@ val sparkSettings = Seq(
       }
       println(s"Extracting $pkgFile to $baseDir")
       Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
+      Seq("ls", "-lah", baseDir.toString).!
     }
   },
   Test / envVars ++= {
