@@ -9,7 +9,7 @@
       
       
       <link rel="icon" href="../../favicon.ico">
-      <meta name="generator" content="mkdocs-1.3.0, mkdocs-material-8.2.9">
+      <meta name="generator" content="mkdocs-1.3.0, mkdocs-material-8.3.6">
     
     
       
@@ -17,15 +17,16 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.120efc48.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.4a0965b7.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.9647289d.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.cbb835fc.min.css">
         
           
           
           <meta name="theme-color" content="#000000">
         
+      
       
     
     
@@ -425,7 +426,7 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4" checked>
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
       
       
@@ -499,7 +500,7 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4_4" checked>
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4_4" type="checkbox" id="__nav_2_4_4" checked>
       
       
       
@@ -629,7 +630,7 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6" data-md-state="indeterminate" type="checkbox" id="__nav_2_6" checked>
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" checked>
       
       
       
@@ -877,14 +878,14 @@ and it will turn into a text cell.</p>
 Here it is in case you're following along:</p>
 <details class="example">
 <summary>Demonstation Code</summary>
-<div class="highlight"><pre><span></span><code><span class="k">import</span> <span class="nn">scala</span><span class="p">.</span><span class="nn">util</span><span class="p">.</span><span class="nc">Random</span><span class="p">.</span><span class="n">nextGaussian</span>
+<div class="highlight"><pre><span></span><code><span class="k">import</span><span class="w"> </span><span class="nn">scala</span><span class="p">.</span><span class="nn">util</span><span class="p">.</span><span class="nc">Random</span><span class="p">.</span><span class="n">nextGaussian</span>
 
-<span class="n">println</span><span class="p">(</span><span class="s">&quot;this is some console output!&quot;</span><span class="p">)</span>
+<span class="n">println</span><span class="p">(</span><span class="s">&quot;this is some console output!&quot;</span><span class="p">)</span><span class="w"></span>
 
-<span class="kd">val</span> <span class="n">x</span> <span class="o">=</span> <span class="mi">50</span>
+<span class="kd">val</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">50</span><span class="w"></span>
 
-<span class="k">case</span> <span class="k">class</span> <span class="nc">Point</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="nc">Double</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="nc">Double</span><span class="p">)</span>
-<span class="nc">List</span><span class="p">.</span><span class="n">fill</span><span class="p">(</span><span class="n">x</span><span class="p">)(</span><span class="nc">Point</span><span class="p">(</span><span class="n">nextGaussian</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">5</span><span class="p">,</span> <span class="n">nextGaussian</span> <span class="o">*</span> <span class="mi">4</span><span class="p">))</span>
+<span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">Point</span><span class="p">(</span><span class="n">x</span><span class="p">:</span><span class="w"> </span><span class="nc">Double</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">:</span><span class="w"> </span><span class="nc">Double</span><span class="p">)</span><span class="w"></span>
+<span class="nc">List</span><span class="p">.</span><span class="n">fill</span><span class="p">(</span><span class="n">x</span><span class="p">)(</span><span class="nc">Point</span><span class="p">(</span><span class="n">nextGaussian</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="n">nextGaussian</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">4</span><span class="p">))</span><span class="w"></span>
 </code></pre></div>
 </details>
 <p>Once you start typing, you'll see some activity under <a href="../kernel-pane/#tasks">Tasks</a> on the right as the Kernel is 
@@ -902,7 +903,7 @@ Once it starts, you'll start seeing interactive completions as you type. </p>
 <li>The final expression of the cell was bound to a variable called <code>Out</code> <span class="num">③</span> and some information 
   about it appeared below the console output <span class="num">④</span>.</li>
 </ul>
-<p>Because the expression <code class="highlight"><span class="nc">List</span><span class="p">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">50</span><span class="p">)(</span><span class="nc">Point</span><span class="p">(</span><span class="n">nextGaussian</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">5</span><span class="p">,</span> <span class="n">nextGaussian</span> <span class="o">*</span> <span class="mi">4</span><span class="p">))</span></code> results in "table-like" 
+<p>Because the expression <code class="highlight"><span class="nc">List</span><span class="p">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">50</span><span class="p">)(</span><span class="nc">Point</span><span class="p">(</span><span class="n">nextGaussian</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="n">nextGaussian</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">4</span><span class="p">))</span><span class="w"></span></code> results in "table-like" 
 data – a collection of structured values – a special representation of it is displayed. In this Cell Result view, we
 can see the result's schema (the fields of the structured row) along with its type and some icons. </p>
 <p>Clicking these icons creates a new viz cell below this one, allowing you to inspect the cell's result in more detail.</p>
@@ -918,14 +919,14 @@ that are available to the cell (from previous cells) below the thick black line.
 track of which variables are available, which is useful because Polynote keeps track of the cell input scope. </p>
 <p>Polynote is different from other notebook tools in that a cell's place in the notebook is important. Every cell has an
 "input state" defined by the cells that have run above it. This means that if we create a code cell that defines a value:</p>
-<div class="highlight"><pre><span></span><code><span class="kd">val</span> <span class="n">foo</span> <span class="o">=</span> <span class="mi">20</span>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="n">foo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">20</span><span class="w"></span>
 </code></pre></div>
 <p>Then another cell below it can use the value <code>foo</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="kd">val</span> <span class="n">bar</span> <span class="o">=</span> <span class="n">foo</span> <span class="o">*</span> <span class="mi">2</span>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="n">bar</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">foo</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="w"></span>
 </code></pre></div>
 <p>But, if we then go back and edit the first cell like this:</p>
-<div class="highlight"><pre><span></span><code><span class="kd">val</span> <span class="n">foo</span> <span class="o">=</span> <span class="mi">20</span>
-<span class="kd">val</span> <span class="n">fail</span> <span class="o">=</span> <span class="n">bar</span> <span class="o">*</span> <span class="mi">2</span>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="n">foo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">20</span><span class="w"></span>
+<span class="kd">val</span><span class="w"> </span><span class="n">fail</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bar</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="w"></span>
 </code></pre></div>
 <p>It won't work! </p>
 <p>The value <code>bar</code> isn't in the input scope of the first cell, because it was defined in the second cell.
@@ -939,6 +940,7 @@ bottom if later cells can't affect earlier cells.</p>
 
               
             </article>
+            
           </div>
         </div>
         
@@ -946,7 +948,8 @@ bottom if later cells can't affect earlier cells.</p>
       
         <footer class="md-footer">
   
-    <nav class="md-footer__inner md-grid" aria-label="Footer">
+    
+    <nav class="md-footer__inner md-grid" aria-label="Footer" >
       
         
         <a href="../installation/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation" rel="prev">
@@ -1023,7 +1026,7 @@ bottom if later cells can't affect earlier cells.</p>
     <div class="md-dialog" data-md-component="dialog">
       <div class="md-dialog__inner md-typeset"></div>
     </div>
-    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.2a1c317c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}, "version": {"provider": "mike"}}</script>
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.85cb4492.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
     <script type="text/javascript">
@@ -1044,7 +1047,7 @@ bottom if later cells can't affect earlier cells.</p>
         });
     </script>
     
-      <script src="../../assets/javascripts/bundle.6e54b5cd.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a877e258.min.js"></script>
       
     
 

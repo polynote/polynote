@@ -9,7 +9,7 @@
       
       
       <link rel="icon" href="../../favicon.ico">
-      <meta name="generator" content="mkdocs-1.3.0, mkdocs-material-8.2.9">
+      <meta name="generator" content="mkdocs-1.3.0, mkdocs-material-8.3.6">
     
     
       
@@ -17,15 +17,16 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.120efc48.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.4a0965b7.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.9647289d.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.cbb835fc.min.css">
         
           
           
           <meta name="theme-color" content="#000000">
         
+      
       
     
     
@@ -448,7 +449,7 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4" checked>
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
       
       
@@ -522,7 +523,7 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4_4" data-md-state="indeterminate" type="checkbox" id="__nav_2_4_4" checked>
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4_4" type="checkbox" id="__nav_2_4_4" checked>
       
       
       
@@ -652,7 +653,7 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_6" data-md-state="indeterminate" type="checkbox" id="__nav_2_6" checked>
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" checked>
       
       
       
@@ -900,7 +901,7 @@ the <a href="../python/">Python documentation</a>.</p>
 Python selected in the language drop-down). </p>
 <p><img alt="Accessing a Scala variable from Python" src="../images/simple-py-interop.png" /></p>
 <p>The <code>foo</code> and <code>bar</code> Scala variables can be accessed directly in Python, because they represent primitive 
-types (<code class="highlight"><span class="nc">Int</span></code>s in this case). This also works the other way 'round, from Python to Scala, in much the same way.</p>
+types (<code class="highlight"><span class="nc">Int</span><span class="w"></span></code>s in this case). This also works the other way 'round, from Python to Scala, in much the same way.</p>
 <h3 id="use-case-plotting-scala-data-with-matplotlib">Use Case: Plotting Scala data with Matplotlib<a class="headerlink" href="#use-case-plotting-scala-data-with-matplotlib" title="Permanent link">&para;</a></h3>
 <div class="admonition tip">
 <p class="admonition-title">Real-world usage at Netflix</p>
@@ -927,13 +928,13 @@ structures, you don't need to worry about the details of language-specific data 
 a Python cell, plots it.</p>
 <div class="admonition example">
 <p class="admonition-title">Scala cell</p>
-<div class="highlight"><pre><span></span><code><span class="kd">val</span> <span class="n">colors</span> <span class="o">=</span> <span class="nc">Array</span><span class="p">(</span><span class="s">&quot;red&quot;</span><span class="p">,</span> <span class="s">&quot;green&quot;</span><span class="p">,</span> <span class="s">&quot;blue&quot;</span><span class="p">)</span>
-<span class="kd">val</span> <span class="n">n</span> <span class="o">=</span> <span class="mi">750</span>
-<span class="kd">val</span> <span class="n">flattenedLength</span> <span class="o">=</span> <span class="n">colors</span><span class="p">.</span><span class="n">length</span> <span class="o">*</span> <span class="n">n</span> <span class="o">*</span> <span class="mi">2</span> <span class="c1">// 2 for x and y</span>
-<span class="kd">val</span> <span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span> <span class="n">until</span> <span class="n">flattenedLength</span><span class="p">).</span><span class="n">map</span><span class="p">(</span><span class="n">_</span> <span class="o">=&gt;</span> <span class="nc">Math</span><span class="p">.</span><span class="n">random</span><span class="p">()).</span><span class="n">toArray</span> <span class="c1">// converted to Array for Python interop</span>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="n">colors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Array</span><span class="p">(</span><span class="s">&quot;red&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;green&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;blue&quot;</span><span class="p">)</span><span class="w"></span>
+<span class="kd">val</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">750</span><span class="w"></span>
+<span class="kd">val</span><span class="w"> </span><span class="n">flattenedLength</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">colors</span><span class="p">.</span><span class="n">length</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="c1">// 2 for x and y</span>
+<span class="kd">val</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="mi">0</span><span class="w"> </span><span class="n">until</span><span class="w"> </span><span class="n">flattenedLength</span><span class="p">).</span><span class="n">map</span><span class="p">(</span><span class="n">_</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="nc">Math</span><span class="p">.</span><span class="n">random</span><span class="p">()).</span><span class="n">toArray</span><span class="w"> </span><span class="c1">// converted to Array for Python interop</span>
 </code></pre></div>
 </div>
-<p>This cell generates an <code class="highlight"><span class="nc">Array</span><span class="p">[</span><span class="nc">Double</span><span class="p">]</span></code> that is a flattened representation of data in three dimensions - <code>color</code>, 
+<p>This cell generates an <code class="highlight"><span class="nc">Array</span><span class="p">[</span><span class="nc">Double</span><span class="p">]</span><span class="w"></span></code> that is a flattened representation of data in three dimensions - <code>color</code>, 
 <code>x</code>, and <code>y</code>. </p>
 <p>This data is then fed into the Python cell to be plotted: </p>
 <div class="admonition example">
@@ -964,7 +965,7 @@ a Python cell, plots it.</p>
 both <code>data</code> and <code>color</code> are Scala variables accessed directly from Python).</p>
 <h4 id="can-we-do-better">Can we do better?<a class="headerlink" href="#can-we-do-better" title="Permanent link">&para;</a></h4>
 <p>This is pretty straightforward, but you might have noticed that the interchange values between the two languages are
-<code class="highlight"><span class="nc">Array</span></code>s, rather than the more idiomatic (for Scala) <code class="highlight"><span class="nc">Seq</span></code>s. You might also notice that it was pretty 
+<code class="highlight"><span class="nc">Array</span><span class="w"></span></code>s, rather than the more idiomatic (for Scala) <code class="highlight"><span class="nc">Seq</span><span class="w"></span></code>s. You might also notice that it was pretty 
 unnatural to flatten <code>data</code> like we did. </p>
 <p>The reason for this is that it's easier to interchange between Scala and Python using primitives and basic structures 
 like Arrays. </p>
@@ -978,16 +979,16 @@ such as implicits, or encoded Java method names (like <code>$colon$colon()</code
 to do (a bit) more work in Python to massage the data. </p>
 <h4 id="a-more-idiomatic-implementation">A more idiomatic implementation<a class="headerlink" href="#a-more-idiomatic-implementation" title="Permanent link">&para;</a></h4>
 <p>First, we'll use some more idiomatic code to generate our point data: </p>
-<div class="highlight"><pre><span></span><code><span class="k">case</span> <span class="k">class</span> <span class="nc">Point</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="nc">Double</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="nc">Double</span><span class="p">,</span> <span class="n">color</span><span class="p">:</span> <span class="nc">String</span><span class="p">)</span>
-<span class="kd">val</span> <span class="n">colors</span> <span class="o">=</span> <span class="nc">Seq</span><span class="p">(</span><span class="s">&quot;red&quot;</span><span class="p">,</span> <span class="s">&quot;green&quot;</span><span class="p">,</span> <span class="s">&quot;blue&quot;</span><span class="p">)</span>
-<span class="kd">val</span> <span class="n">n</span> <span class="o">=</span> <span class="mi">750</span>
-<span class="kd">val</span> <span class="n">idiomaticData</span> <span class="o">=</span> <span class="k">for</span> <span class="p">{</span>
-    <span class="n">color</span> <span class="o">&lt;-</span> <span class="n">colors</span>
-    <span class="n">n</span>     <span class="o">&lt;-</span> <span class="p">(</span><span class="mi">0</span> <span class="n">to</span> <span class="n">n</span><span class="p">)</span>
-<span class="p">}</span> <span class="k">yield</span> <span class="nc">Point</span><span class="p">(</span><span class="nc">Math</span><span class="p">.</span><span class="n">random</span><span class="p">(),</span> <span class="nc">Math</span><span class="p">.</span><span class="n">random</span><span class="p">(),</span> <span class="n">color</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">Point</span><span class="p">(</span><span class="n">x</span><span class="p">:</span><span class="w"> </span><span class="nc">Double</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">:</span><span class="w"> </span><span class="nc">Double</span><span class="p">,</span><span class="w"> </span><span class="n">color</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span><span class="w"></span>
+<span class="kd">val</span><span class="w"> </span><span class="n">colors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Seq</span><span class="p">(</span><span class="s">&quot;red&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;green&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;blue&quot;</span><span class="p">)</span><span class="w"></span>
+<span class="kd">val</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">750</span><span class="w"></span>
+<span class="kd">val</span><span class="w"> </span><span class="n">idiomaticData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="n">color</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="n">colors</span><span class="w"></span>
+<span class="w">    </span><span class="n">n</span><span class="w">     </span><span class="o">&lt;-</span><span class="w"> </span><span class="p">(</span><span class="mi">0</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"></span>
+<span class="p">}</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="nc">Point</span><span class="p">(</span><span class="nc">Math</span><span class="p">.</span><span class="n">random</span><span class="p">(),</span><span class="w"> </span><span class="nc">Math</span><span class="p">.</span><span class="n">random</span><span class="p">(),</span><span class="w"> </span><span class="n">color</span><span class="p">)</span><span class="w"></span>
 </code></pre></div>
-<p>Wow, a <code class="highlight"><span class="k">case</span> <span class="k">class</span></code> AND a <code class="highlight"><span class="k">for</span></code> expression? This is surely extremely idiomatic Scala code. 
-Not an <code class="highlight"><span class="nc">Array</span></code> in sight!</p>
+<p>Wow, a <code class="highlight"><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"></span></code> AND a <code class="highlight"><span class="k">for</span><span class="w"></span></code> expression? This is surely extremely idiomatic Scala code. 
+Not an <code class="highlight"><span class="nc">Array</span><span class="w"></span></code> in sight!</p>
 <p>Let's inspect <code>idiomaticData</code> for a moment. </p>
 <p><img alt="Inspecting the value of idiomaticData using Polynote's inspection tools" src="../images/inspecting-idiomaticData.gif" /></p>
 <div class="admonition info">
@@ -995,7 +996,7 @@ Not an <code class="highlight"><span class="nc">Array</span></code> in sight!</p
 <p>This image showcases using the <a href="../kernel-pane/#quick-inspector">Quick Inspector</a> and <a href="../visualization-and-viz-cells/">Viz cells</a> 
 to easily inspect values within a notebook.</p>
 </div>
-<p>Now that we've taken a look at <code>idiomaticData</code> and seen that it's a <code class="highlight"><span class="nc">Seq</span><span class="p">[</span><span class="nc">Point</span><span class="p">]</span></code>, we can delete the Viz cell and 
+<p>Now that we've taken a look at <code>idiomaticData</code> and seen that it's a <code class="highlight"><span class="nc">Seq</span><span class="p">[</span><span class="nc">Point</span><span class="p">]</span><span class="w"></span></code>, we can delete the Viz cell and 
 start working with it using Python. </p>
 <p>Since we're no longer working with primitives, we need to do a little data preparation. We'll build a <code class="highlight"><span class="nb">list</span></code>, 
 iterate over <code>idiomaticData</code>, and extract values from <code>Point</code>. </p>
@@ -1007,9 +1008,9 @@ iterate over <code>idiomaticData</code>, and extract values from <code>Point</co
 </code></pre></div>
 <p>There are two things of note here. </p>
 <p>First, we need to manually iterate through the collection, generating an index which we can pass into the
-<a href="https://www.scala-lang.org/api/2.12.0/scala/collection/Seq.html#apply(idx:Int):A"><code class="highlight"><span class="n">apply</span><span class="p">(</span><span class="n">idx</span><span class="p">:</span> <span class="nc">Int</span><span class="p">):</span> <span class="nc">A</span></code></a>
+<a href="https://www.scala-lang.org/api/2.12.0/scala/collection/Seq.html#apply(idx:Int):A"><code class="highlight"><span class="n">apply</span><span class="p">(</span><span class="n">idx</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span><span class="p">):</span><span class="w"> </span><span class="nc">A</span><span class="w"></span></code></a>
 method of the <code>Seq</code> to select elements from it. </p>
-<p>Second, we'll access the <code class="highlight"><span class="k">case</span> <span class="k">class</span></code> members using the member accessor methods as usual, but note that with 
+<p>Second, we'll access the <code class="highlight"><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"></span></code> members using the member accessor methods as usual, but note that with 
 Python we need to specify <code>()</code>, as in <code class="highlight"><span class="n">point</span><span class="o">.</span><span class="n">x</span><span class="p">()</span></code>, since of course in Python parentheses are always required, 
 even for nullary functions (ones that have no arguments). </p>
 <p>At this point, the <code>data</code> variable is a nice <code class="highlight"><span class="nb">list</span></code> of <code class="highlight"><span class="nb">list</span></code>s, and we can easily turn it into a 
@@ -1019,7 +1020,7 @@ Pandas DataFrame:
 <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="s1">&#39;color&#39;</span><span class="p">])</span>
 </code></pre></div></p>
 <p>Note that we have to manually specify the column names here. A more advanced example might extract the fields from 
-<code class="highlight"><span class="nc">Point</span></code> and pass them into Python, but we'll pass on that for now. </p>
+<code class="highlight"><span class="nc">Point</span><span class="w"></span></code> and pass them into Python, but we'll pass on that for now. </p>
 <p>Now that our data is a Pandas DataFrame we can manipulate it as usual. For example, we can add a <code>scale</code> column to it:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 
@@ -1048,6 +1049,7 @@ You can see a screenshot below.</p>
 
               
             </article>
+            
           </div>
         </div>
         
@@ -1055,7 +1057,8 @@ You can see a screenshot below.</p>
       
         <footer class="md-footer">
   
-    <nav class="md-footer__inner md-grid" aria-label="Footer">
+    
+    <nav class="md-footer__inner md-grid" aria-label="Footer" >
       
         
         <a href="../basic-usage/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Basic Usage" rel="prev">
@@ -1132,7 +1135,7 @@ You can see a screenshot below.</p>
     <div class="md-dialog" data-md-component="dialog">
       <div class="md-dialog__inner md-typeset"></div>
     </div>
-    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.2a1c317c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}, "version": {"provider": "mike"}}</script>
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.85cb4492.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
     <script type="text/javascript">
@@ -1153,7 +1156,7 @@ You can see a screenshot below.</p>
         });
     </script>
     
-      <script src="../../assets/javascripts/bundle.6e54b5cd.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a877e258.min.js"></script>
       
     
 
