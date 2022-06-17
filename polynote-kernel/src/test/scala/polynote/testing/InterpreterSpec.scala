@@ -64,9 +64,26 @@ trait InterpreterSpec extends ZIOSpec {
   def assertOutput(code: String)(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit =
     assertOutput(List(code))(assertion)
 
-  def assertOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit= {
-    val (finalState, interpResults) = code.toList.map(interp).sequence.run(cellState).runIO()
-    val terminalResults = interpResults.foldLeft((Map.empty[String, Any], List.empty[Result])) {
+  def assertOutput(code: Seq[String])(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit = {
+    val (finalState, interpResults) = code.toList.map(c => interp(c)).sequence.run(cellState).runIO()
+    assertResults(finalState, interpResults, assertion)
+  }
+
+  def assertPolyOutput(code: List[(Interpreter, String)])(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit = {
+    val (finalState, interpResults) =
+      code
+        .map {
+          case (interpreter, codeStr) =>
+            interp(codeStr, interpreter)
+        }
+        .sequence
+        .run(cellState)
+        .runIO()
+   assertResults(finalState, interpResults, assertion)
+  }
+
+  private def assertResults(finalState: State, results: List[InterpResult], assertion: (Map[String, Any], Seq[Result]) => Unit): Unit = {
+    val terminalResults = results.foldLeft((Map.empty[String, Any], List.empty[Result])) {
       case ((vars, results), next) =>
         val nextVars = vars ++ next.state.values.map(v => v.name -> v.value).toMap
         val nextOutputs = results ++ next.env.publishResult.toList.runIO()
@@ -79,7 +96,7 @@ trait InterpreterSpec extends ZIOSpec {
 
   type ITask[A] = RIO[Clock with Console with System with Random with Blocking with Logging, A]
 
-  def interp(code: String): StateT[ITask, State, InterpResult] = StateT[ITask, State, InterpResult] {
+  def interp(code: String, interpreter: Interpreter = interpreter): StateT[ITask, State, InterpResult] = StateT[ITask, State, InterpResult] {
     state => MockEnv(state.id).flatMap {
       env => interpreter.run(code, state).map {
         newState => State.id(newState.id + 1, newState) -> InterpResult(newState, env)
