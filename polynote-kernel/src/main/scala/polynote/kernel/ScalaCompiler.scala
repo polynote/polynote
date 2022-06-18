@@ -50,6 +50,7 @@ class ScalaCompiler private (
       val resultType = formatTypeInternal(result)
       s"($paramStr) => $resultType"
     case ConstantType(Constant(v)) => v.toString
+    case RefinedType(parents, _) => parents.map(formatTypeInternal).mkString(" with ")
     case NoType => "<Unknown>"
     case typ if typ.typeSymbol.name == "TypedPythonObject" =>
       typ.typeArgs.headOption.fold("PythonObject")(name => formatTypeInternal(name) + " (Python)")
