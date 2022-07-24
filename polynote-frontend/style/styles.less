@@ -276,15 +276,16 @@ select {
 }
 
 .new-cell-divider {
-  height: 0.5em;
+  height: 0.75em;
   text-align: center;
   line-height: 0.5em;
   padding-top: 1px; // correct '+' location
   white-space: pre;
   font-family: @code-fonts;
+  font-size: 16px;
   margin-left: @cell-left-border-width;
 
-  &:hover:after {
+  &:hover:after, .cell-and-divider:last-child &:after {
     content: '+';
   }
 }
