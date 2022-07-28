@@ -201,10 +201,11 @@ object JupyterCell {
         val disabled = obj("cell.metadata.run_control.frozen").flatMap(_.asBoolean).getOrElse(false)
         val hideSource = obj("jupyter.source_hidden").flatMap(_.asBoolean).getOrElse(false)
         val hideOutput = obj("jupyter.outputs_hidden").flatMap(_.asBoolean).getOrElse(false)
+        val wrapOutput = obj("cell.metadata.wrap_output").flatMap(_.asBoolean).getOrElse(false)
         val executionInfo = obj("cell.metadata.exec_info").flatMap(_.as[ExecutionInfo].right.toOption)
         val comments = obj("cell.comments").flatMap(_.as[ShortMap[CommentID, Comment]].right.toOption).getOrElse(ShortMap(Map.empty[CommentID, Comment])) // TODO: should we verify identity?
 
-        (CellMetadata(disabled, hideSource, hideOutput, executionInfo), comments)
+        (CellMetadata(disabled, hideSource, hideOutput, wrapOutput, executionInfo), comments)
     }.getOrElse((CellMetadata(), ShortMap(Map.empty[CommentID, Comment])))
 
     NotebookCell(index, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult(index))), meta, comments)
@@ -220,13 +221,14 @@ object JupyterCell {
     }
 
     val meta = cell.metadata match {
-      case CellMetadata(disableRun, hideSource, hideOutput, executionInfo) =>
+      case CellMetadata(disableRun, hideSource, hideOutput, wrapOutput, executionInfo) =>
         val runControl = if (disableRun) List("cell.metadata.run_control.frozen" -> Json.fromBoolean(disableRun)) else Nil
         val source = if (hideSource) List("jupyter.source_hidden" -> Json.fromBoolean(hideSource)) else Nil
         val output = if (hideOutput) List("jupyter.outputs_hidden" -> Json.fromBoolean(hideOutput)) else Nil
         val execInfo =  if (executionInfo.isDefined) List("cell.metadata.exec_info" -> executionInfo.asJson, "language" -> cell.language.toString.asJson) else Nil
         val comments = if (cell.comments.nonEmpty) List("cell.comments" -> cell.comments.asJson) else Nil
-        val metadata = runControl ++ source ++ output ++ execInfo ++ comments
+        val wrapped = if (cell.metadata.wrapOutput) List("cell.metadata.wrap_output" -> Json.fromBoolean(wrapOutput)) else Nil
+        val metadata = runControl ++ source ++ output ++ execInfo ++ comments ++ wrapped
         if (metadata.nonEmpty) Option(JsonObject.fromMap(metadata.toMap)) else None
     }
 

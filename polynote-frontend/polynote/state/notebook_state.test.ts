@@ -96,7 +96,7 @@ describe('NotebookStateHandler', () => {
         const init = nbState.insertCell("below")
             .then(() => nbState.insertCell("below"))
             // insert out of order
-            .then(() => nbState.insertCell("below", {id: 0, language: "scala", metadata: new CellMetadata(false, false, false)}))
+            .then(() => nbState.insertCell("below", {id: 0, language: "scala", metadata: new CellMetadata(false, false, false, false)}))
             .then(() => nbState.insertCell("below"))
 
         await expect(init).resolves.toEqual(3)
@@ -162,7 +162,7 @@ describe('NotebookStateHandler', () => {
         const init = nbState.insertCell("below")
             .then(() => nbState.insertCell("below"))
             // insert out of order
-            .then(() => nbState.insertCell("below", {id: 0, language: "scala", metadata: new CellMetadata(false, false, false)}))
+            .then(() => nbState.insertCell("below", {id: 0, language: "scala", metadata: new CellMetadata(false, false, false, false)}))
             .then(() => nbState.insertCell("below"))
 
         await expect(init).resolves.toEqual(3)
@@ -215,7 +215,7 @@ describe('NotebookStateHandler', () => {
         const init = nbState.insertCell("below")
             .then(() => nbState.insertCell("below"))
             // insert out of order
-            .then(() => nbState.insertCell("below", {id: 0, language: "scala", metadata: new CellMetadata(false, false, false)}))
+            .then(() => nbState.insertCell("below", {id: 0, language: "scala", metadata: new CellMetadata(false, false, false, false)}))
             .then(() => nbState.insertCell("below"))
 
         await expect(init).resolves.toEqual(3)
