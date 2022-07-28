@@ -9,7 +9,7 @@ outlined under [Dependencies](#dependencies) prior to attempting to build from
 
 ## Dependencies
 
-- JDK 8+
+- JDK 8
 - SBT
 - Node.js 13+
 - Python 3.7
@@ -37,3 +37,11 @@ cd target/dist/polynote
 ./polynote.py
 ```
 
+# Running with IntelliJ
+To run your app using IntelliJ, navigate to `Run -> Edit Configuration` and perform the following steps:
+
+- Select `Modify Options` -> Select `Add VM Options` and `Add depdendencies with provided scope to classpath`
+- Select `Build and Run` -> Select `cp-spark`
+- Under `VM Options`, enter `-Djava.library.path=<path-to-jep>`
+  - Ex: `-Djava.library.path=/opt/homebrew/lib/python3.9/site-packages/jep`
+- Under `Program Arguments`, enter `--watch`
