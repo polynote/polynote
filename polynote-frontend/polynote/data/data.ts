@@ -18,9 +18,6 @@ import {
 import {ExecutionInfo, PosRange, Result} from "./result";
 
 export class CellMetadata {
-    // TODO: Adding the fourth bool here should configure the button to false by default but breaks cell rendering
-    // Enabling line wrap prevents creating a new cell from current wrapped cell (not sure if related to this issue)
-    // Update: It seems like CellOrderUpdate in line 132 of notebook.ts becomes undefined somehow
     static codec = combined(bool, bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
     static unapply(inst: CellMetadata): ConstructorParameters<typeof CellMetadata> {
         return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.wrapOutput, inst.executionInfo];
