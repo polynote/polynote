@@ -79,6 +79,7 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
             vim: storage.get("preferences")?.["VIM"] ?? {},
             theme: storage.get("preferences")?.["Theme"] ?? {},
             notifications: storage.get("preferences")?.["Notifications"] ?? {},
+            markdownEditor: storage.get("preferences")?.["Rich Text Editor"] ?? {}
         };
         // In order to handle schema changes over time, we compare the locally stored values with `initial`.
         // The schema in `initial` is the currently expected schema, so we need to handle added and removed keys.
@@ -122,6 +123,11 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
 type UserPreference<T extends Record<string, any>> = {name: string, value: T[keyof T], description: string, possibleValues: T}
 export const UserPreferences: {[k: string]: UserPreference<Record<string, any>>} = {
     vim: {name: "VIM", value: false, description: "Whether VIM input mode is enabled for Code cells", possibleValues: {true: true, false: false}},
+    markdownEditor: {
+        name: "Markdown Editor",
+        value: false,
+        description: "Whether the text editor supports markdown or rich text editing mode",
+        possibleValues: {true: true, false: false}},
     notifications: {
         name: "Notifications",
         value: false,

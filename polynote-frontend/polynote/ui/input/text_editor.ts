@@ -3,10 +3,12 @@ import {MarkdownIt} from "./markdown-it";
 import {LaTeXEditor} from "./latex_editor";
 import {htmlToMarkdown} from "./html_to_md";
 
-export class RichTextEditor {
+export class TextEditor {
     constructor(readonly element: TagElement<"div">, content: string) {
-        if (content)
+        if (content) {
+            content = this.cleanMarkdown(content);
             this.element.innerHTML = MarkdownIt.render(content);
+        }
 
         this.element.contentEditable = 'true';
 
@@ -79,6 +81,26 @@ export class RichTextEditor {
         return Array.from(this.element.childNodes)
             // there are a bunch of text nodes with newlines we don't care about.
             .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
+    }
+
+    // Functions for handling markdown text mode rendering
+    renderMarkdown(textContent: string) {
+        textContent = this.cleanMarkdown(textContent);
+        this.element.innerHTML = MarkdownIt.render(textContent);
+    }
+
+    renderRawMarkdown(lastContent: string) {
+        lastContent = lastContent.replace(new RegExp('\n', 'g'), '<br>');
+        this.element.innerHTML = lastContent;
+    }
+
+    cleanMarkdown(textContent: string) {
+        textContent = textContent.replace(new RegExp('<div>', 'g'), '');
+        textContent = textContent.replace(new RegExp('</div>', 'g'), '');
+        textContent = textContent.replace(new RegExp('<br>', 'g'), '\n');
+        // TODO: This solution isn't working as well as I thought - one line separators render incorrectly right now
+        textContent = textContent.replace(new RegExp('&nbsp;', 'g'), '\n');
+        return textContent;
     }
 }
 

@@ -56,7 +56,7 @@ import {
 } from "../../display/display_content";
 import match, {matchS, purematch} from "../../../util/match";
 import {CommentHandler} from "./comment";
-import {RichTextEditor} from "../../input/text_editor";
+import {TextEditor} from "../../input/text_editor";
 import {DataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
 import {StructType} from "../../../data/data_type";
@@ -1900,10 +1900,11 @@ class CodeCellOutput extends Disposable {
 
 
 export class TextCell extends Cell {
-    private editor: RichTextEditor;
+    private editor: TextEditor;
     readonly editorEl: TagElement<'div'>;
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];
+    private savedRawMarkdown: string;
 
     constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>) {
         super(dispatcher, notebookState, stateHandler)
@@ -1911,8 +1912,9 @@ export class TextCell extends Cell {
         const editorEl = this.editorEl = div(['cell-input-editor', 'markdown-body'], [])
 
         const content = stateHandler.state.content;
-        this.editor = new RichTextEditor(editorEl, content)
+        this.editor = new TextEditor(editorEl, content)
         this.lastContent = content;
+        this.savedRawMarkdown = content;
 
         this.el = div(['cell-container', 'text-cell'], [
             div(['cell-input'], [editorEl])
@@ -1921,16 +1923,20 @@ export class TextCell extends Cell {
         this.listeners = [
             ['focus', () => {
                 this.doSelect();
+                if (!UserPreferencesHandler.state.markdownEditor.value)
+                    this.editor.renderRawMarkdown(this.savedRawMarkdown);
             }],
             ['blur', () => {
                 this.doDeselect();
+                this.savedRawMarkdown = this.editor.markdownContent;
+                if (!UserPreferencesHandler.state.markdownEditor.value)
+                    this.editor.renderMarkdown(this.editor.markdownContent);
             }],
             ['input', (evt: KeyboardEvent) => this.onInput()]
         ]
         this.listeners.forEach(([k, fn]) => {
             this.editor.element.addEventListener(k, fn);
         })
-
     }
 
     // not private because it is also used by latex-editor
