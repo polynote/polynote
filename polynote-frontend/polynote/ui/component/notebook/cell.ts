@@ -1923,14 +1923,17 @@ export class TextCell extends Cell {
         this.listeners = [
             ['focus', () => {
                 this.doSelect();
-                if (!UserPreferencesHandler.state.markdownEditor.value)
+
+                if (UserPreferencesHandler.state.markdownEditor.value)
                     this.editor.renderRawMarkdown(this.savedRawMarkdown);
             }],
             ['blur', () => {
                 this.doDeselect();
+
+                // Save the raw markdown text before it disappears from the DOM so it can be re-loaded on next focus
                 this.savedRawMarkdown = this.editor.markdownContent;
-                if (!UserPreferencesHandler.state.markdownEditor.value)
-                    this.editor.renderMarkdown(this.editor.markdownContent);
+                if (UserPreferencesHandler.state.markdownEditor.value)
+                    this.editor.renderMarkdown();
             }],
             ['input', (evt: KeyboardEvent) => this.onInput()]
         ]

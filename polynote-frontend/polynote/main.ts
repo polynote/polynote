@@ -19,6 +19,7 @@ import {SocketStateHandler} from "./state/socket_state";
 import {ServerStateHandler} from "./state/server_state";
 import {OpenNotebooksHandler, RecentNotebooks, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
+import {MarkdownEditorHandler} from "./state/markdown_editor";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -175,6 +176,9 @@ monaco.editor.defineTheme('polynote-dark', themes.dark);
 
 // start the theme handler
 const themeHandler = new ThemeHandler()
+
+// start the markdown editor handler
+const markdownEditorHandler = new MarkdownEditorHandler();
 
 // open the global socket for control messages
 SocketSession.global;

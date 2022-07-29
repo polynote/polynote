@@ -452,7 +452,7 @@ class TextToolbar extends ToolbarElement {
                         }) as CommandButton,
                     iconButton(["table"], "Insert data table", "table", "Table").disable().withKey('alwaysDisabled', true),
                 ]}
-        ]);
+        ]).withId("text-toolbar");
 
         this.blockTypeSelector = new FakeSelect(blockTypeSelectorEl);
 

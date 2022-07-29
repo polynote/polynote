@@ -6,8 +6,7 @@ import {htmlToMarkdown} from "./html_to_md";
 export class TextEditor {
     constructor(readonly element: TagElement<"div">, content: string) {
         if (content) {
-            content = this.cleanMarkdown(content);
-            this.element.innerHTML = MarkdownIt.render(content);
+            this.element.innerHTML = MarkdownIt.render(this.cleanMarkdown(content));
         }
 
         this.element.contentEditable = 'true';
@@ -83,24 +82,24 @@ export class TextEditor {
             .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
     }
 
-    // Functions for handling markdown text mode rendering
-    renderMarkdown(textContent: string) {
-        textContent = this.cleanMarkdown(textContent);
-        this.element.innerHTML = MarkdownIt.render(textContent);
+    renderMarkdown() {
+        this.element.innerHTML = MarkdownIt.render(this.element.innerText);
     }
 
     renderRawMarkdown(lastContent: string) {
+        // Replace all newlines with break tags, otherwise the raw text will render in one line
         lastContent = lastContent.replace(new RegExp('\n', 'g'), '<br>');
         this.element.innerHTML = lastContent;
     }
 
+    /*  This is a (very hacky) way to clean the markdown stored in HTML format on the backend before displaying, since
+        markdown-it will render weird HTML for certain cases (such as text on consecutive lines).
+        This is only necessary on startup, otherwise we can just take the raw text using .innerText in renderMarkdown() */
     cleanMarkdown(textContent: string) {
-        textContent = textContent.replace(new RegExp('<div>', 'g'), '');
-        textContent = textContent.replace(new RegExp('</div>', 'g'), '');
-        textContent = textContent.replace(new RegExp('<br>', 'g'), '\n');
-        // TODO: This solution isn't working as well as I thought - one line separators render incorrectly right now
-        textContent = textContent.replace(new RegExp('&nbsp;', 'g'), '\n');
-        return textContent;
+        return textContent.replaceAll('<div><br></div>', '\n')
+            .replaceAll('<br>', '\n')
+            .replaceAll('<div>', '\n')
+            .replaceAll('</div>', '');
     }
 }
 
