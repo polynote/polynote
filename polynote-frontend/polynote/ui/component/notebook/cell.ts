@@ -1904,7 +1904,6 @@ export class TextCell extends Cell {
     readonly editorEl: TagElement<'div'>;
     private lastContent: string;
     private listeners: [string, (evt: Event) => void][];
-    private savedRawMarkdown: string;
 
     constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>) {
         super(dispatcher, notebookState, stateHandler)
@@ -1914,7 +1913,6 @@ export class TextCell extends Cell {
         const content = stateHandler.state.content;
         this.editor = new TextEditor(editorEl, content)
         this.lastContent = content;
-        this.savedRawMarkdown = content;
 
         this.el = div(['cell-container', 'text-cell'], [
             div(['cell-input'], [editorEl])
@@ -1922,18 +1920,16 @@ export class TextCell extends Cell {
 
         this.listeners = [
             ['focus', () => {
-                this.doSelect();
-
                 if (UserPreferencesHandler.state.markdownEditor.value)
-                    this.editor.renderRawMarkdown(this.savedRawMarkdown);
+                    this.editor.renderRawMarkdown(this.lastContent);
+
+                this.doSelect();
             }],
             ['blur', () => {
-                this.doDeselect();
-
-                // Save the raw markdown text before it disappears from the DOM so it can be re-loaded on next focus
-                this.savedRawMarkdown = this.editor.markdownContent;
                 if (UserPreferencesHandler.state.markdownEditor.value)
-                    this.editor.renderMarkdown();
+                    this.editor.renderMarkdown(this.lastContent);
+
+                this.doDeselect();
             }],
             ['input', (evt: KeyboardEvent) => this.onInput()]
         ]
@@ -1944,7 +1940,8 @@ export class TextCell extends Cell {
 
     // not private because it is also used by latex-editor
     onInput() {
-        const newContent = this.editor.markdownContent;
+        // Extract the raw text from the editor or convert it to markdown from html if rich text mode enabled
+        const newContent = UserPreferencesHandler.state.markdownEditor.value ? this.editor.element.innerText : this.editor.markdownContent;
         const edits: ContentEdit[] = diffEdits(this.lastContent, newContent)
         this.lastContent = newContent;
 

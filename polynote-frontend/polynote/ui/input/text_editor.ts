@@ -6,7 +6,7 @@ import {htmlToMarkdown} from "./html_to_md";
 export class TextEditor {
     constructor(readonly element: TagElement<"div">, content: string) {
         if (content) {
-            this.element.innerHTML = MarkdownIt.render(this.cleanMarkdown(content));
+            this.element.innerHTML = MarkdownIt.render(content);
         }
 
         this.element.contentEditable = 'true';
@@ -82,28 +82,16 @@ export class TextEditor {
             .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
     }
 
-    renderMarkdown() {
-        this.element.innerHTML = MarkdownIt.render(this.element.innerText);
+    renderMarkdown(content: string) {
+        this.element.innerHTML = MarkdownIt.render(content);
     }
 
-    renderRawMarkdown(lastContent: string) {
-        // Replace all newlines with break tags, otherwise the raw text will render in one line
-        lastContent = lastContent.replace(new RegExp('\n', 'g'), '<br>');
-        this.element.innerHTML = lastContent;
-    }
-
-    /*  This is a (very hacky) way to clean the markdown stored in HTML format on the backend before displaying, since
-        markdown-it will render weird HTML for certain cases (such as text on consecutive lines).
-        This is only necessary on startup, otherwise we can just take the raw text using .innerText in renderMarkdown() */
-    cleanMarkdown(textContent: string) {
-        return textContent.replaceAll('<div><br></div>', '\n')
-            .replaceAll('<br>', '\n')
-            .replaceAll('<div>', '\n')
-            .replaceAll('</div>', '');
+    renderRawMarkdown(content: string) {
+        this.element.innerText = content;
     }
 }
 
-// TODO: add linky buttons here too, not just on the toolbar.
+// TODO: add linky buttons here too, not just on the toolbar.å
 class Link {
     readonly el: TagElement<"div">;
 
