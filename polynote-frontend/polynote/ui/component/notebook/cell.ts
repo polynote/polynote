@@ -453,7 +453,6 @@ abstract class Cell extends Disposable {
     doSelect(){
         if (! this.selected) {
             let result = this.notebookState.selectCell(this.id)
-            console.log(result);
         }
     }
 
@@ -2055,7 +2054,6 @@ export class MarkdownCell extends TextCell {
 
     // not private because it is also used by latex-editor
     onInput() {
-        console.log("input");
         const newContent = (this.editor as MarkdownEditor).cleanedInnerText; // weird (but necessary?) hack for subclass method
         const edits: ContentEdit[] = diffEdits(this.lastContent, newContent)
         this.lastContent = newContent;

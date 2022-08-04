@@ -72,15 +72,14 @@ export class RichTextEditor {
         this.element.focus();
     }
 
+    get markdownContent() {
+        return htmlToMarkdown(this.element);
+    }
+
     get contentNodes() {
         return Array.from(this.element.childNodes)
             // there are a bunch of text nodes with newlines we don't care about.
             .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
-    }
-
-    // Required implementations for MarkdownEditor sublcass
-    get markdownContent() {
-        return htmlToMarkdown(this.element);
     }
 }
 

@@ -201,10 +201,10 @@ class CellToolbar extends ToolbarElement {
         super(connectionStatus);
 
         const selectEl = fakeSelectElem(["cell-language"], [
-            button(["selected"], {value: "text"}, ["Text"]),
+            button(["selected"], {value: "text"}, ["Text"])
         ]);
         const disabledSelectEl = fakeSelectElem(["cell-language"], [
-            button(["selected"], {value: "text"}, "Text"),
+            button(["selected"], {}, "")
         ]);
 
         this.el = this.toolbarElem("cell", [
