@@ -305,7 +305,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         this.insertCell("below", {
             id: result.sourceCell,
             language: 'viz',
-            metadata: new CellMetadata(false, false, false),
+            metadata: new CellMetadata(false, false, false, false),
             content: JSON.stringify({type: viewType, value: result.name})
         }).then(id => this.selectCell(id))
     }

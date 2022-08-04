@@ -203,8 +203,9 @@ object JupyterCell {
         val hideOutput = obj("jupyter.outputs_hidden").flatMap(_.asBoolean).getOrElse(false)
         val executionInfo = obj("cell.metadata.exec_info").flatMap(_.as[ExecutionInfo].right.toOption)
         val comments = obj("cell.comments").flatMap(_.as[ShortMap[CommentID, Comment]].right.toOption).getOrElse(ShortMap(Map.empty[CommentID, Comment])) // TODO: should we verify identity?
+        val markdownEditor = obj("cell.metadata.markdown_editor").flatMap(_.asBoolean).getOrElse(false)
 
-        (CellMetadata(disabled, hideSource, hideOutput, executionInfo), comments)
+        (CellMetadata(disabled, hideSource, hideOutput, markdownEditor, executionInfo), comments)
     }.getOrElse((CellMetadata(), ShortMap(Map.empty[CommentID, Comment])))
 
     NotebookCell(index, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult(index))), meta, comments)
@@ -220,13 +221,14 @@ object JupyterCell {
     }
 
     val meta = cell.metadata match {
-      case CellMetadata(disableRun, hideSource, hideOutput, executionInfo) =>
+      case CellMetadata(disableRun, hideSource, hideOutput, markdownEditor, executionInfo) =>
         val runControl = if (disableRun) List("cell.metadata.run_control.frozen" -> Json.fromBoolean(disableRun)) else Nil
         val source = if (hideSource) List("jupyter.source_hidden" -> Json.fromBoolean(hideSource)) else Nil
         val output = if (hideOutput) List("jupyter.outputs_hidden" -> Json.fromBoolean(hideOutput)) else Nil
         val execInfo =  if (executionInfo.isDefined) List("cell.metadata.exec_info" -> executionInfo.asJson, "language" -> cell.language.toString.asJson) else Nil
         val comments = if (cell.comments.nonEmpty) List("cell.comments" -> cell.comments.asJson) else Nil
-        val metadata = runControl ++ source ++ output ++ execInfo ++ comments
+        val markdown = if (cell.metadata.richText) List("cell.metadata.markdown_editor" -> Json.fromBoolean(markdownEditor)) else Nil
+        val metadata = runControl ++ source ++ output ++ execInfo ++ comments ++ markdown
         if (metadata.nonEmpty) Option(JsonObject.fromMap(metadata.toMap)) else None
     }
 

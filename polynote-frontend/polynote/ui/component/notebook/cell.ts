@@ -1,3 +1,11 @@
+/*
+    TODO:
+    1. Remove current metadata fix to work instead (it currently attaches to code cells, not text cells lol)
+    2. Fix newline spacing issue
+    3. Do final testing with both editing modes
+    4. Update documentation
+ */
+
 import {blockquote, button, div, dropdown, h4, iconButton, img, span, tag, TagElement} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
@@ -56,7 +64,7 @@ import {
 } from "../../display/display_content";
 import match, {matchS, purematch} from "../../../util/match";
 import {CommentHandler} from "./comment";
-import {RichTextEditor} from "../../input/text_editor";
+import {MarkdownEditor, RichTextEditor, TextEditor} from "../../input/text_editor";
 import {DataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
 import {StructType} from "../../../data/data_type";
@@ -346,9 +354,14 @@ export class CellContainer extends Disposable {
     }
 
     private cellFor(lang: string) {
+        console.log(this.cellState.state.metadata);
         switch (lang) {
             case "text":
+                console.log("text");
                 return new TextCell(this.dispatcher, this.notebookState, this.cellState);
+            case "markdown":
+                console.log("markdown");
+                return new MarkdownCell(this.dispatcher, this.notebookState, this.cellState);
             case "viz":
                 return new VizCell(this.dispatcher, this.notebookState, this.cellState);
             default:
@@ -1900,10 +1913,10 @@ class CodeCellOutput extends Disposable {
 
 
 export class TextCell extends Cell {
-    private editor: RichTextEditor;
-    readonly editorEl: TagElement<'div'>;
-    private lastContent: string;
-    private listeners: [string, (evt: Event) => void][];
+    protected editor: TextEditor;
+    editorEl: TagElement<'div'>;
+    protected lastContent: string;
+    protected listeners: [string, (evt: Event) => void][];
 
     constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>) {
         super(dispatcher, notebookState, stateHandler)
@@ -2023,6 +2036,30 @@ export class TextCell extends Cell {
 
     setDisabled(disabled: boolean) {
         this.editor.disabled = disabled
+    }
+}
+
+export class MarkdownCell extends TextCell {
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, stateHandler: StateHandler<CellState>) {
+        super(dispatcher, notebookState, stateHandler);
+
+        const content = stateHandler.state.content;
+        this.editor = new MarkdownEditor(this.editorEl, content);
+
+        this.listeners = [
+            ['focus', () => {
+                this.editor.renderRawMarkdown();
+                this.doSelect();
+            }],
+            ['blur', () => {
+                this.editor.renderMarkdown();
+                this.doDeselect();
+            }],
+            ['input', (evt: KeyboardEvent) => this.onInput()]
+        ]
+        this.listeners.forEach(([k, fn]) => {
+            this.editor.element.addEventListener(k, fn);
+        })
     }
 }
 

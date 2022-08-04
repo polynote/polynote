@@ -492,6 +492,152 @@ class TextToolbar extends ToolbarElement {
     }
 }
 
+class MarkdownToolbar extends ToolbarElement {
+    private blockTypeSelector: FakeSelect;
+    private codeButton: CommandButton;
+    private equationButton: CommandButton;
+    private unlinkButton: CommandButton;
+    private buttons: CommandButton[];
+
+    constructor(connectionStatus: StateView<"disconnected" | "connected">) {
+        super(connectionStatus);
+
+        let buttons = [];
+
+        function commandButton(cmd: string, title: string, icon: string, alt: string, arg?: () => string | undefined): CommandButton {
+            const button = iconButton([cmd], title, icon, alt)
+                // .attr('command', cmd)
+                .click(() => document.execCommand(cmd, false, arg?.()))
+                .withKey('getState', () => document.queryCommandValue(cmd)) as CommandButton;
+
+            buttons.push(button);
+            return button
+        }
+        let blockTypeSelectorEl: TagElement<"div">;
+
+        this.el = this.toolbarElem("text", [
+            [
+                blockTypeSelectorEl = fakeSelectElem(["blockType"], [
+                    button(["selected"], {value: "p"}, ["Paragraph"]),
+                    button([], {value: "h1"}, ["Heading 1"]),
+                    button([], {value: "h2"}, ["Heading 2"]),
+                    button([], {value: "h3"}, ["Heading 3"]),
+                    button([], {value: "h4"}, ["Heading 4"]),
+                    button([], {value: "blockquote"}, ["Quote"]),
+                ]).click(evt => {
+                    document.execCommand("formatBlock", false, `<${(evt.target as HTMLButtonElement).value}>`)
+                })
+            ], {
+                classes: ["font"],
+                elems: [
+                    commandButton("bold", "Bold", "bold", "Bold"),
+                    commandButton("italic", "Italic", "italic", "Italic"),
+                    commandButton("underline", "underline", "underline", "underline"),
+                    commandButton("strikethrough", "Strikethrough", "strikethrough", "Strikethrough"),
+                    this.codeButton = iconButton(["code"], "Inline code", "code", "Code")
+                        .click(() => {
+                            const selection = document.getSelection();
+                            if ((selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code") {
+
+                                if (selection?.anchorOffset === selection?.focusOffset) {
+                                    // expand selection to the whole element
+                                    document.getSelection()!.selectAllChildren(document.getSelection()!.anchorNode!.parentNode!);
+                                }
+                                document.execCommand('removeFormat');
+                            } else {
+                                document.execCommand('insertHTML', false, '<code>' + selection!.toString() + '</code>');
+                            }
+                        }).withKey('getState', () => {
+                            const selection = document.getSelection()!;
+                            return (
+                                (selection?.anchorNode?.parentNode as HTMLElement)?.tagName?.toLowerCase() === "code"
+                            )
+                        }) as CommandButton,
+                    commandButton("createLink", "Link", "link", "Link", () => document.getSelection()?.toString())
+                        .withKey('getState', () => {
+                            const selection = document.getSelection();
+                            return selection?.anchorNode?.parentElement instanceof HTMLAnchorElement
+                        }),
+                    this.unlinkButton = iconButton(["unlink"], "Unlink", "unlink", "Unlink")
+                        .click(() => {
+                            const selection = document.getSelection();
+                            if (selection?.anchorNode?.parentElement instanceof HTMLAnchorElement) {
+                                selection.selectAllChildren(selection.anchorNode.parentNode!);
+                                document.execCommand("unlink")
+                                selection.removeAllRanges()
+                            }
+                        })
+                        .withKey('getState', () => {
+                            const selection = document.getSelection();
+                            return selection?.anchorNode?.parentElement instanceof HTMLAnchorElement
+                        }) as CommandButton
+                ]}, {
+                classes: ["lists"],
+                elems: [
+                    commandButton("insertUnorderedList", "Bulleted list", "list-ul", "Bulleted list"),
+                    commandButton("insertOrderedList", "Numbered list", "list-ol", "Numbered list"),
+                    commandButton("indent", "Indent", "indent", "Indent"),
+                    commandButton("outdent", "Outdent", "outdent", "Outdent"),
+                ]}, {
+                classes: ["objects"],
+                elems: [
+                    iconButton(["image"], "Insert image", "image", "Image").disable().withKey('alwaysDisabled', true),
+                    this.equationButton = button(["equation"], {title: "Insert/edit equation"}, "𝝨")
+                        .click(() => LaTeXEditor.forSelection()?.show())
+                        .withKey('getState', () => {
+                            const selection = document.getSelection()!;
+                            if (selection?.focusNode?.childNodes) {
+                                for (let i = 0; i < selection.focusNode.childNodes.length; i++) {
+                                    const node = selection.focusNode.childNodes[i];
+                                    if (node.nodeType === 1 && selection.containsNode(node, false) && ((node as HTMLElement).classList.contains('katex') || (node as HTMLElement).classList.contains('katex-block'))) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        }) as CommandButton,
+                    iconButton(["table"], "Insert data table", "table", "Table").disable().withKey('alwaysDisabled', true),
+                ]}
+        ]);
+
+        this.blockTypeSelector = new FakeSelect(blockTypeSelectorEl);
+
+        buttons.push(this.codeButton);
+        buttons.push(this.unlinkButton);
+        buttons.push(this.equationButton);
+        this.buttons = buttons;
+
+        // listen for selection changes to properly set button state
+        document.addEventListener('selectionchange', () => this.onSelectionChange());
+    }
+
+    onSelectionChange() {
+        for (const button of this.buttons) {
+
+            let state = button.getState();
+
+            if (state.toString() !== 'false') {
+                button.classList.add('active');
+            } else {
+                button.classList.remove('active');
+            }
+        }
+        const blockType = document.queryCommandValue('formatBlock').toLocaleLowerCase();
+        const blockTypeIndex = this.blockTypeSelector.options.findIndex(el => el.value.toLowerCase() === blockType);
+        if (blockTypeIndex !== -1) {
+            this.blockTypeSelector.selectedIndex = blockTypeIndex;
+        }
+    }
+
+    enable() {
+        this.setDisabled(false);
+    }
+
+    disable() {
+        this.setDisabled(true);
+    }
+}
+
 class SettingsToolbar extends ToolbarElement {
     private floatingMenu: TagElement<"div">;
 

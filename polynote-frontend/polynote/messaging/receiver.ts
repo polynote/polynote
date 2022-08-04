@@ -591,6 +591,9 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                     interpreters[key] = ClientInterpreters[key].languageTitle;
             });
 
+            // inject the client markdown interpreter here as well.
+            interpreters["markdown"] = "Markdown";
+
             return {
                 interpreters: setValue(interpreters),
                 serverVersion: setValue(serverVersion),

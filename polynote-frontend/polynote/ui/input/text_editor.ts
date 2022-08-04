@@ -2,8 +2,9 @@ import {a, div, TagElement} from "../tags";
 import {MarkdownIt} from "./markdown-it";
 import {LaTeXEditor} from "./latex_editor";
 import {htmlToMarkdown} from "./html_to_md";
+import TurndownService from "turndown";
 
-export class RichTextEditor {
+export abstract class TextEditor {
     constructor(readonly element: TagElement<"div">, content: string) {
         if (content)
             this.element.innerHTML = MarkdownIt.render(content);
@@ -71,16 +72,53 @@ export class RichTextEditor {
         this.element.focus();
     }
 
-    get markdownContent() {
-        return htmlToMarkdown(this.element);
-    }
-
     get contentNodes() {
         return Array.from(this.element.childNodes)
             // there are a bunch of text nodes with newlines we don't care about.
             .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
     }
+
+    get markdownContent() {return ""}
+    renderRawMarkdown() {}
+    renderMarkdown() {}
 }
+
+
+export class RichTextEditor extends TextEditor {
+    constructor(readonly element: TagElement<"div">, content: string) {
+        super(element, content);
+    }
+
+    get markdownContent() {
+        return htmlToMarkdown(this.element);
+    }
+}
+
+
+export class MarkdownEditor extends TextEditor {
+    private td = new TurndownService({
+        headingStyle: 'atx',
+        codeBlockStyle: 'fenced',
+        emDelimiter: '*',
+    });
+
+    constructor(readonly element: TagElement<"div">, content: string) {
+        super(element, content);
+    }
+
+    get markdownContent() {
+        return this.td.turndown(this.element.innerHTML).replaceAll('\\', '');
+    }
+
+    renderRawMarkdown() {
+        this.element.innerText = this.markdownContent;
+    }
+
+    renderMarkdown() {
+        this.element.innerHTML = MarkdownIt.render(this.element.innerText);
+    }
+}
+
 
 // TODO: add linky buttons here too, not just on the toolbar.
 class Link {

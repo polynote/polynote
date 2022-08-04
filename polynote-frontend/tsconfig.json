@@ -18,6 +18,7 @@
     "noImplicitThis": true, // when true, use of `this` outside classes does not get assigned to `any` - rather, it must have an explicit (or inferred) type. See: https://www.typescriptlang.org/docs/handbook/migrating-from-javascript.html#no-implicit-any-for-this
     "sourceMap": true, // show typescript in devtools. might be slow according to https://webpack.js.org/configuration/devtool/
     "alwaysStrict": true,
+    "allowSyntheticDefaultImports": true, // enable turndown import
     "moduleResolution": "node"
   }
 }
