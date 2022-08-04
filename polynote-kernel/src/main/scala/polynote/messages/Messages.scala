@@ -56,7 +56,6 @@ final case class CellMetadata(
   disableRun: Boolean = false,
   hideSource: Boolean = false,
   hideOutput: Boolean = false,
-  markdownEditor: Boolean = true,
   executionInfo: Option[ExecutionInfo] = None
 )
 

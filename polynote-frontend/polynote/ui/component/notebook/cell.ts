@@ -1,11 +1,3 @@
-/*
-    TODO:
-    1. Remove current metadata fix to work instead (it currently attaches to code cells, not text cells lol)
-    2. Fix newline spacing issue
-    3. Do final testing with both editing modes
-    4. Update documentation
- */
-
 import {blockquote, button, div, dropdown, h4, iconButton, img, span, tag, TagElement} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
@@ -333,7 +325,8 @@ export class CellContainer extends Disposable {
         this.el.mousedown(evt => this._cell.doSelect());
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
-            if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
+            if (updateResult.oldValue && (updateResult.oldValue === "text" || updateResult.oldValue === "markdown" ||
+                newLang === "text" || newLang === "markdown")) {
                 const newCell = this.cellFor(newLang)
                 newCell.replace(this._cell).then(cell => {
                     this._cell = cell
@@ -354,13 +347,10 @@ export class CellContainer extends Disposable {
     }
 
     private cellFor(lang: string) {
-        console.log(this.cellState.state.metadata);
         switch (lang) {
             case "text":
-                console.log("text");
                 return new TextCell(this.dispatcher, this.notebookState, this.cellState);
             case "markdown":
-                console.log("markdown");
                 return new MarkdownCell(this.dispatcher, this.notebookState, this.cellState);
             case "viz":
                 return new VizCell(this.dispatcher, this.notebookState, this.cellState);

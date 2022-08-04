@@ -214,7 +214,7 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             cellIds = this.state.cellOrder
         }
 
-        cellIds = collect(cellIds, id => this.state.cells[id]?.language !== "text" ? id : undefined);
+        cellIds = collect(cellIds, id => this.state.cells[id]?.language !== "text" && this.state.cells[id]?.language !== "markdown" ? id : undefined);
 
         const [clientCells, serverCells] = partition(cellIds, id => {
             const cell = this.state.cells[id]

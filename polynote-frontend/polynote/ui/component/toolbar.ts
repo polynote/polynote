@@ -42,6 +42,9 @@ export class Toolbar extends Disposable {
                             if (lang === "text") {
                                 this.el.classList.remove('editing-code');
                                 this.el.classList.add('editing-text');
+                            } else if (lang === "markdown") {
+                                this.el.classList.remove('editing-code');
+                                this.el.classList.remove('editing-text');
                             } else {
                                 this.el.classList.remove('editing-text');
                                 this.el.classList.add('editing-code');
@@ -197,12 +200,12 @@ class CellToolbar extends ToolbarElement {
     constructor(connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
 
-        const selectEl = fakeSelectElem(["cell-language"], [
-            button(["selected"], {value: "text"}, ["Text"])
-        ]);
+        // Tracks the select element for all cell languages and the currently selected options (defaulting to text)
+        const selectEl = fakeSelectElem(["cell-language"], []);
         const disabledSelectEl = fakeSelectElem(["cell-language"], [
-            button(["selected"], {}, "")
+            button(["selected"], {value: "text"}, "Text")
         ]);
+
         this.el = this.toolbarElem("cell", [
             [
                 selectEl

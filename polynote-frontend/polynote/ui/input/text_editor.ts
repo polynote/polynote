@@ -78,6 +78,7 @@ export abstract class TextEditor {
             .filter(node => !(node.nodeType === Node.TEXT_NODE && node.textContent === '\n'))
     }
 
+    // Required implementations for MarkdownEditor sublcass
     get markdownContent() {return ""}
     renderRawMarkdown() {}
     renderMarkdown() {}
@@ -106,6 +107,8 @@ export class MarkdownEditor extends TextEditor {
         super(element, content);
     }
 
+    // Turndown is necessary here because our internal way of converting HTML to MD struggles with the HTML that
+    // gets generated inside of our textboxes.
     get markdownContent() {
         return this.td.turndown(this.element.innerHTML).replaceAll('\\', '');
     }
