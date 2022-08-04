@@ -4,7 +4,7 @@ import {LaTeXEditor} from "./latex_editor";
 import {htmlToMarkdown} from "./html_to_md";
 import TurndownService from "turndown";
 
-export abstract class TextEditor {
+export class RichTextEditor {
     constructor(readonly element: TagElement<"div">, content: string) {
         if (content)
             this.element.innerHTML = MarkdownIt.render(content);
@@ -79,24 +79,13 @@ export abstract class TextEditor {
     }
 
     // Required implementations for MarkdownEditor sublcass
-    get markdownContent() {return ""}
-    renderRawMarkdown() {}
-    renderMarkdown() {}
-}
-
-
-export class RichTextEditor extends TextEditor {
-    constructor(readonly element: TagElement<"div">, content: string) {
-        super(element, content);
-    }
-
     get markdownContent() {
         return htmlToMarkdown(this.element);
     }
 }
 
 
-export class MarkdownEditor extends TextEditor {
+export class MarkdownEditor extends RichTextEditor {
     private td = new TurndownService({
         headingStyle: 'atx',
         codeBlockStyle: 'fenced',
@@ -108,17 +97,21 @@ export class MarkdownEditor extends TextEditor {
     }
 
     // Turndown is necessary here because our internal way of converting HTML to MD struggles with the HTML that
-    // gets generated inside of our textboxes.
+    // gets generated inside of our textboxes when a user is typing.
     get markdownContent() {
         return this.td.turndown(this.element.innerHTML).replaceAll('\\', '');
     }
 
-    renderRawMarkdown() {
-        this.element.innerText = this.markdownContent;
+    get cleanedInnerText() {
+        return this.element.innerText; // innerText preserves newlines in contentEditable divs.
+    }
+
+    renderRawMarkdown(content: string) {
+        this.element.innerText = content; // put in the previously saved raw text
     }
 
     renderMarkdown() {
-        this.element.innerHTML = MarkdownIt.render(this.element.innerText);
+        this.element.innerHTML = MarkdownIt.render(this.cleanedInnerText);
     }
 }
 

@@ -56,7 +56,7 @@ import {
 } from "../../display/display_content";
 import match, {matchS, purematch} from "../../../util/match";
 import {CommentHandler} from "./comment";
-import {MarkdownEditor, RichTextEditor, TextEditor} from "../../input/text_editor";
+import {MarkdownEditor, RichTextEditor} from "../../input/text_editor";
 import {DataRepr, MIMERepr, StreamingDataRepr, StringRepr} from "../../../data/value_repr";
 import {DataReader} from "../../../data/codec";
 import {StructType} from "../../../data/data_type";
@@ -452,7 +452,8 @@ abstract class Cell extends Disposable {
 
     doSelect(){
         if (! this.selected) {
-            this.notebookState.selectCell(this.id)
+            let result = this.notebookState.selectCell(this.id)
+            console.log(result);
         }
     }
 
@@ -1903,7 +1904,7 @@ class CodeCellOutput extends Disposable {
 
 
 export class TextCell extends Cell {
-    protected editor: TextEditor;
+    protected editor: RichTextEditor | MarkdownEditor;
     editorEl: TagElement<'div'>;
     protected lastContent: string;
     protected listeners: [string, (evt: Event) => void][];
@@ -2038,11 +2039,11 @@ export class MarkdownCell extends TextCell {
 
         this.listeners = [
             ['focus', () => {
-                this.editor.renderRawMarkdown();
+                (this.editor as MarkdownEditor).renderRawMarkdown(this.lastContent); // weird (but necessary?) hack for subclass method
                 this.doSelect();
             }],
             ['blur', () => {
-                this.editor.renderMarkdown();
+                (this.editor as MarkdownEditor).renderMarkdown(); // weird (but necessary?) hack for subclass method
                 this.doDeselect();
             }],
             ['input', (evt: KeyboardEvent) => this.onInput()]
@@ -2050,6 +2051,18 @@ export class MarkdownCell extends TextCell {
         this.listeners.forEach(([k, fn]) => {
             this.editor.element.addEventListener(k, fn);
         })
+    }
+
+    // not private because it is also used by latex-editor
+    onInput() {
+        console.log("input");
+        const newContent = (this.editor as MarkdownEditor).cleanedInnerText; // weird (but necessary?) hack for subclass method
+        const edits: ContentEdit[] = diffEdits(this.lastContent, newContent)
+        this.lastContent = newContent;
+
+        if (edits.length > 0) {
+            this.cellState.updateField("content", () => editString(edits))
+        }
     }
 }
 
