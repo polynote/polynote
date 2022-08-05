@@ -317,7 +317,9 @@ export class CellContainer extends Disposable {
             dragHandle.disabled = state.running || state.queued;
         })
 
-        this.el = div(['cell-and-divider'], [
+        // If code cell, check if the cell container should be rendered in a side display
+        const cellAndDividerClasses = ['cell-and-divider', ... (this._cell.splitDisplay) ? ['split-display-container'] : []];
+        this.el = div(cellAndDividerClasses, [
             div(['cell-component'], [dragHandle, this._cell.el]),
             newCellDivider
         ]).dataAttr('data-cellid', id.toString());
@@ -441,6 +443,10 @@ abstract class Cell extends Disposable {
     protected removeCellClass(name: string) {
         this.el?.classList.remove(name);
         this.el?.parentElement?.classList.remove(name);
+    }
+
+    get splitDisplay() {
+        return this.state.metadata.splitDisplay;
     }
 
     get selected() {
@@ -812,6 +818,7 @@ export class CodeCell extends Cell {
                     div(["options"], [
                         button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
                         iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput()),
+                        iconButton(['toggle-split'], 'Enable/Disable side-by-side cells', 'split-display', 'Enable/Disable side-by-side cells').click(evt => this.toggleSplitDisplay()),
                         copyCellOutputBtn
                     ])
                 ]),
@@ -845,6 +852,16 @@ export class CodeCell extends Cell {
                 this.el.classList.add("hide-output");
             } else {
                 this.el.classList.remove("hide-output");
+            }
+
+            // Get the grandparent of the cell toolbar and make it split
+            const grandparent = this.el.parentElement?.parentElement;
+            if (metadata.splitDisplay) {
+                this.el.classList.add("split-display");
+                grandparent?.classList.add("split-display-container");
+            } else {
+                this.el.classList.remove("split-display");
+                grandparent?.classList.remove("split-display-container");
             }
 
             if (metadata.executionInfo) {
@@ -1145,6 +1162,10 @@ export class CodeCell extends Cell {
 
     private toggleOutput() {
         this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})))
+    }
+
+    private toggleSplitDisplay() {
+        this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({splitDisplay: !prevMetadata.splitDisplay})))
     }
 
     private copyOutput() {
@@ -2185,6 +2206,16 @@ export class VizCell extends Cell {
                 this.el.classList.add("hide-output");
             } else {
                 this.el.classList.remove("hide-output");
+            }
+
+            // Get the grandparent of the cell toolbar and make it split
+            const grandparent = this.el.parentElement?.parentElement;
+            if (metadata.splitDisplay) {
+                this.el.classList.add("split-display");
+                grandparent?.classList.add("split-display-container");
+            } else {
+                this.el.classList.remove("split-display");
+                grandparent?.classList.remove("split-display-container");
             }
 
             if (metadata.executionInfo) {

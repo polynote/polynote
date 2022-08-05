@@ -18,12 +18,12 @@ import {
 import {ExecutionInfo, PosRange, Result} from "./result";
 
 export class CellMetadata {
-    static codec = combined(bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
+    static codec = combined(bool, bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
     static unapply(inst: CellMetadata): ConstructorParameters<typeof CellMetadata> {
-        return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.executionInfo];
+        return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.splitDisplay, inst.executionInfo];
     }
 
-    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly executionInfo: ExecutionInfo | null = null) {
+    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly splitDisplay: boolean = false, readonly executionInfo: ExecutionInfo | null = null) {
         Object.freeze(this);
     }
 
@@ -31,8 +31,9 @@ export class CellMetadata {
         const disableRun = metadata.disableRun ?? this.disableRun;
         const hideSource = metadata.hideSource ?? this.hideSource;
         const hideOutput = metadata.hideOutput ?? this.hideOutput;
+        const splitDisplay = metadata.splitDisplay ?? this.splitDisplay;
         const executionInfo = metadata.executionInfo ?? this.executionInfo;
-        return new CellMetadata(disableRun, hideSource, hideOutput, executionInfo);
+        return new CellMetadata(disableRun, hideSource, hideOutput, splitDisplay, executionInfo);
     }
 }
 
@@ -58,7 +59,7 @@ export class NotebookCell {
                 readonly language: string,
                 readonly content: string = '',
                 readonly results: Result[] = [],
-                readonly metadata: CellMetadata = new CellMetadata(false, false, false),
+                readonly metadata: CellMetadata = new CellMetadata(false, false, false, false),
                 readonly comments: Record<string, CellComment> = {}) {
         Object.freeze(this);
     }

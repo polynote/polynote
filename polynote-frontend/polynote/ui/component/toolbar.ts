@@ -245,7 +245,8 @@ class CellToolbar extends ToolbarElement {
 
         this.langSelector.addListener(change => {
             const id = this.nbHandler?.activeCellView?.state?.id;
-            if (this.nbHandler && id !== undefined) {
+            // Check the handler and current cell are defined and that the "text" option was not selected on a split cell
+            if (this.nbHandler && id !== undefined && !(change.newValue == "text" && this.nbHandler?.activeCellView.state?.metadata?.splitDisplay)) {
                 this.nbHandler.setCellLanguage(id, change.newValue, this)
             }
         })
