@@ -503,6 +503,21 @@ select {
     }
   }
 
+  &.wrap-output {
+    .cell-output .output {
+      padding-right: 1em;
+      &[mime-type='text/plain'] {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+
+    .cell-input .toggle-wrap {
+      border-width: 1px;
+      border-style: solid;
+    }
+  }
+
   &.text-cell {
 
     &.active {
