@@ -392,7 +392,7 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
 final case class ListNotebooks(paths: List[ShortString]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
-final case class CreateNotebook(path: ShortString, maybeContent: Option[String] = None) extends Message
+final case class CreateNotebook(path: ShortString, maybeContent: Option[String] = None, maybeTemplate: Option[String] = None) extends Message
 object CreateNotebook extends MessageCompanion[CreateNotebook](14)
 
 final case class RenameNotebook(path: ShortString, newPath: ShortString) extends Message
@@ -419,7 +419,8 @@ final case class ServerHandshake(
   serverVersion: TinyString,
   serverCommit: TinyString,
   identity: Option[Identity],
-  sparkTemplates: List[SparkPropertySet]
+  sparkTemplates: List[SparkPropertySet],
+  notebookTemplates: List[TinyString]
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 

@@ -4,7 +4,7 @@ import java.net.URI
 
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.messages.{Notebook, ShortList}
+import polynote.messages.{CellID, Notebook, NotebookCell, ShortList}
 import polynote.server.MockServerSpec
 import zio.ZIO
 
@@ -15,6 +15,9 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
   private val tr = new TreeRepository(root, Map("one" -> mount1, "two" -> mount2))
 
   private def emptyNB(path: String) = Notebook(path, ShortList(List.empty), None)
+
+  private val templateCell = NotebookCell(CellID(0), "text", "Some text")
+  private def templateNB(path: String) = NotebookContent(List(templateCell), None).toNotebook(path)
 
   "A TreeRepository" - {
     "should delegate" - {
@@ -139,21 +142,29 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
       }
       "createNotebook" - {
         "for relative paths in the root mount" in {
-          (root.createNotebook _).expects("foo", None).once().returning(ZIO.succeed("foo"))
-          tr.createNotebook("foo", None).runIO shouldEqual "foo"
+          (root.createNotebook _).expects("foo", None, None).once().returning(ZIO.succeed("foo"))
+          tr.createNotebook("foo", None, None).runIO shouldEqual "foo"
         }
         "for relative paths in the other mounts" in {
-          (mount1.createNotebook _).expects("foo", None).once().returning(ZIO.succeed("foo"))
-          tr.createNotebook("one/foo", None).runIO shouldEqual "one/foo"
+          (mount1.createNotebook _).expects("foo", None, None).once().returning(ZIO.succeed("foo"))
+          tr.createNotebook("one/foo", None, None).runIO shouldEqual "one/foo"
         }
 
         "for absolute paths in the root mount" in {
-          (root.createNotebook _).expects("foo", None).once().returning(ZIO.succeed("foo"))
-          tr.createNotebook("/foo", None).runIO shouldEqual "foo"
+          (root.createNotebook _).expects("foo", None, None).once().returning(ZIO.succeed("foo"))
+          tr.createNotebook("/foo", None, None).runIO shouldEqual "foo"
         }
         "for absolute paths in the other mounts" in {
-          (mount1.createNotebook _).expects("foo", None).once().returning(ZIO.succeed("foo"))
-          tr.createNotebook("/one/foo", None).runIO shouldEqual "one/foo"
+          (mount1.createNotebook _).expects("foo", None, None).once().returning(ZIO.succeed("foo"))
+          tr.createNotebook("/one/foo", None, None).runIO shouldEqual "one/foo"
+        }
+
+        "for paths creating from a template" in {
+          val nb = templateNB("foo_template")
+          (root.createNotebook _).expects("foo", None, Some("foo_template.ipynb")).once().returning(ZIO.succeed("foo"))
+          (root.loadNotebook _).expects("foo").once().returning(ZIO.succeed(nb))
+          tr.createNotebook("foo", None, Some("foo_template.ipynb")).runIO shouldEqual "foo"
+          tr.loadNotebook("foo").runIO shouldEqual nb
         }
       }
     }

@@ -42,9 +42,9 @@ object SocketSession {
         notebooks => Some(ListNotebooks(notebooks.map(ShortString.apply)))
       }
 
-    case CreateNotebook(path, maybeContent) =>
+    case CreateNotebook(path, maybeContent, maybeTemplate) =>
       NotebookManager.assertValidPath(path) *>
-        checkPermission(Permission.CreateNotebook(path)) *> NotebookManager.create(path, maybeContent).as(None)
+        checkPermission(Permission.CreateNotebook(path)) *> NotebookManager.create(path, maybeContent, maybeTemplate).as(None)
 
     case RenameNotebook(path, newPath) =>
       (NotebookManager.assertValidPath(path) &> NotebookManager.assertValidPath(newPath)) *>
@@ -85,7 +85,8 @@ object SocketSession {
       serverVersion = BuildInfo.version,
       serverCommit = BuildInfo.commit,
       identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString))),
-      sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil)
+      sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil),
+      notebookTemplates = config.behavior.notebookTemplates
     )
 
   def getRunningKernels: RIO[SessionEnv with PublishMessage with NotebookManager, RunningKernels] = for {

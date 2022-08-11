@@ -57,6 +57,9 @@
 #  kernel_isolation: always
 #  shared_packages:
 #    - com.esoteric.kryo
+#  notebook_templates:
+#    - hello_world.ipynb # from relative notebook folder path
+#    - /Users/<your-name>/Desktop/templates/another_template.ipynb # from absolute path
 
 ########## Notebook Creation Configuration #######################################################
 ###

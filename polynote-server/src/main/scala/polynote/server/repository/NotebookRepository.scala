@@ -54,7 +54,7 @@ trait NotebookRepository {
     *
     * TODO: Server no longer imports. Need to implement this on the client side.
     */
-  def createNotebook(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
+  def createNotebook(path: String, maybeContent: Option[String], maybeTemplate: Option[String]): RIO[BaseEnv with GlobalEnv, String]
   def createAndOpen(path: String, notebook: Notebook, version: Int = 0): RIO[BaseEnv with GlobalEnv, NotebookRef]
 
   def renameNotebook(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
@@ -296,10 +296,10 @@ class TreeRepository (
     } yield rootNBs ++ mountNbs.flatten
   }
 
-  override def createNotebook(originalPath: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] = delegate(originalPath) {
+  override def createNotebook(originalPath: String, maybeContent: Option[String], maybeTemplate: Option[String]): RIO[BaseEnv with GlobalEnv, String] = delegate(originalPath) {
     (repo, relativePath, base) =>
         for {
-          nbPath <- repo.createNotebook(relativePath, maybeContent)
+          nbPath <- repo.createNotebook(relativePath, maybeContent, maybeTemplate)
         } yield deslash(base.map(b => Paths.get(b, nbPath).toString).getOrElse(nbPath))
   }
 

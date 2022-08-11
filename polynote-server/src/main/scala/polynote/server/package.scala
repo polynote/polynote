@@ -115,7 +115,7 @@ package object server {
     def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
     def listRunning(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.listRunning())
     def status(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelBusyState] = access.flatMap(_.status(path))
-    def create(path: String, maybeContent: Option[String]): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.create(path, maybeContent))
+    def create(path: String, maybeContent: Option[String], maybeTemplate: Option[String]): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.create(path, maybeContent, maybeTemplate))
     def rename(path: String, newPath: String): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.rename(path, newPath))
     def copy(path: String, newPath: String): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.copy(path, newPath))
     def delete(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Unit] = access.flatMap(_.delete(path))
@@ -127,7 +127,7 @@ package object server {
       def list(): RIO[BaseEnv with GlobalEnv, List[String]]
       def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
       def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState]
-      def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
+      def create(path: String, maybeContent: Option[String], maybeTemplate: Option[String]): RIO[BaseEnv with GlobalEnv, String]
       def rename(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
       def copy(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
       def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit]
@@ -195,9 +195,9 @@ package object server {
           */
         private def broadcastMessage(m: Message): Task[Unit] = broadcastAll.publish(m)
 
-        override def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
+        override def create(path: String, maybeContent: Option[String], maybeTemplate: Option[String]): RIO[BaseEnv with GlobalEnv, String] =
           for {
-            realPath <- repository.createNotebook(path, maybeContent)
+            realPath <- repository.createNotebook(path, maybeContent, maybeTemplate)
             _        <- broadcastMessage(CreateNotebook(ShortString(realPath)))
           } yield realPath
 
