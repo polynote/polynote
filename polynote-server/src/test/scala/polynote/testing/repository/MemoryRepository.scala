@@ -26,7 +26,7 @@ class MemoryRepository extends NotebookRepository {
 
   def listNotebooks(): UIO[List[String]] = ZIO.effectTotal(notebooks.keys.toList)
 
-  def createNotebook(path: String, maybeUriOrContent: Option[String]): UIO[String] =
+  def createNotebook(path: String, maybeUriOrContent: Option[String], maybeTemplate: Option[String]): UIO[String] =
     ZIO.effectTotal(notebooks.put(path, Notebook(path, ShortList.of(), None))).as(path)
 
   def createAndOpen(path: String, notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, NotebookRef] =
