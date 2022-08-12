@@ -97,12 +97,12 @@ object NotebookConfig {
   def empty = NotebookConfig(None, None, None, None, None, None)
 
   def fromPolynoteConfig(config: PolynoteConfig): NotebookConfig = {
-    val veryTinyDependencies: DependencyConfigs = TinyMap(config.dependencies.map {
+    val smallDependencies: DependencyConfigs = ShortMap(config.dependencies.map {
       case (lang, deps) =>
-        TinyString(lang) -> TinyList(deps.map(TinyString(_)))
+        TinyString(lang) -> ShortList(deps.map(TinyString(_)))
     })
     NotebookConfig(
-      dependencies = Option(veryTinyDependencies),
+      dependencies = Option(smallDependencies),
       exclusions = Option(config.exclusions),
       repositories = Option(config.repositories),
       sparkConfig = config.spark.map(SparkConfig.toMap),

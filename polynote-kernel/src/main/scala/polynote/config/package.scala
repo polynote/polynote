@@ -4,10 +4,9 @@ import java.io.File
 import java.net.URI
 import java.nio.file.{Path, Paths}
 import java.util.regex.Pattern
-
 import cats.data.{NonEmptyList, Validated, ValidatedNel}
 import io.circe.{CursorOp, Decoder, DecodingFailure, Encoder, HCursor, Json}
-import polynote.messages.{TinyList, TinyMap, TinyString}
+import polynote.messages.{ShortList, ShortMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import io.circe.generic.extras.{Configuration, JsonKey}
 import io.circe.generic.extras.semiauto._
@@ -25,7 +24,7 @@ import shapeless.{::, Annotations, Default, HList, HNil, LabelledGeneric, Lazy, 
 
 package object config {
   //                               lang      , deps
-  type DependencyConfigs = TinyMap[TinyString, TinyList[TinyString]]
+  type DependencyConfigs = ShortMap[TinyString, ShortList[TinyString]]
 
   sealed trait RepositoryConfig
   final case class ivy(
