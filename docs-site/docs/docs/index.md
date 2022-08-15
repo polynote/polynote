@@ -9,3 +9,5 @@ Get started by [installing Polynote](installation.md), or by taking a [tour](tou
 
 When you're ready, check out the [User Guide](basic-usage.md) for more information. Or if you need to customize your 
 installation, head over to the [configuration](server-configuration.md) section. 
+
+If you'd like to contribute to Polynote, check out the [Developing with Polynote](development.md) section. 
