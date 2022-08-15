@@ -85,19 +85,18 @@ export class DialogModal extends Modal {
 
         // Convert list of notebook templates to an object for the dropdown
         let selectedNotebookTemplate = '';
-        const optionsArr = ServerStateHandler.state.notebookTemplates;
-        let options = optionsArr.reduce((obj, v) => ({...obj, [v]: v}), {})
-        options = Object.assign({'': ''}, options); // Adds a blank string as the first (default) option
+        let options = ServerStateHandler.state.notebookTemplates.reduce((obj, v) => ({...obj, [v]: v}), {})
 
-        const notebookTemplateEl = dropdown(['notebook-templates'], options, '')
+        // Adds a blank string as the first (default) option
+        const notebookTemplateEl = dropdown(['notebook-templates'], Object.assign({'': 'None'}, options), '')
             .change(() => {
                 selectedNotebookTemplate = notebookTemplateEl.options[notebookTemplateEl.selectedIndex].value;
             })
 
         const wrapper = div(['input-dialog'], [
-            label([], 'Notebook Name (required)', input, true),
+            label([], 'Notebook Name', input, true),
             title === 'Create Notebook' ?
-                label([], 'Notebook Template (optional)', notebookTemplateEl, true) : '',
+                label([], 'Notebook Template', notebookTemplateEl, true) : '',
             para(['create-notebook-section'], 'To add templates, edit your config.yml file.'),
             div(['buttons'], [
                 button(['dialog-button'], {}, 'Cancel').click(evt => this.hide()),
