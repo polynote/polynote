@@ -144,7 +144,7 @@ export class SparkPropertySet {
 
 export class NotebookConfig {
     static codec = combined(
-        optional(mapCodec(uint8, tinyStr, arrayCodec(uint8, tinyStr))),
+        optional(mapCodec(uint16, tinyStr, arrayCodec(uint16, tinyStr))),
         optional(arrayCodec(uint8, tinyStr)),
         optional(arrayCodec(uint8, RepositoryConfig.codec)),
         optional(mapCodec(uint16, str as Codec<string>, str)),
