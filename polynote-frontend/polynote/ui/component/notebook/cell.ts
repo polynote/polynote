@@ -554,10 +554,10 @@ abstract class Cell extends Disposable {
         }
     }
 
-    protected selectOrInsertCell(direction: "above" | "below", doInsert = true) {
+    protected selectOrInsertCell(direction: "above" | "below") {
         const selected = this.notebookState.selectCell(this.id, {relative: direction, editing: true})
-        // if a new cell wasn't selected, we probably need to insert a cell
-        if (doInsert && (selected === undefined || selected === this.id)) {
+        // if a new cell wasn't selected, we need to insert a cell
+        if (selected === undefined || selected === this.id) {
             this.notebookState.insertCell(direction).then(id => this.notebookState.selectCell(id))
         }
     }
@@ -578,7 +578,7 @@ abstract class Cell extends Disposable {
             })
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
-                this.selectOrInsertCell("below", false)
+                this.selectOrInsertCell("below")
                 return ["stopPropagation", "preventDefault"]
             })
             .when("RunAndInsertBelow", () => {
