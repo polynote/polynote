@@ -952,15 +952,17 @@ environment in which it is running. It doesn't matter how you install Spark as l
 This method works for on both Mac and Linux. </p>
 <p>You may need to modify these instructions based on your local setup. </p>
 <div class="tabbed-set" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><label for="__tabbed_2_1">Spark on Mac</label><div class="tabbed-content">
-<p>Here is an example setup for Polynote on Mac. Also, check out the "Installation with Homebrew" tab above for an 
-alternative installation method. </p>
-<p>Install Java (this installs Java 11)</p>
-<div class="highlight"><pre><span></span><code>brew cask install adoptopenjdk11
+<p>Here is an example setup for Polynote on Mac. Also, check out the "Installing Spark on Mac with Homebrew"
+section below for an alternative installation method. </p>
+<p>Install Java 8 through any service you like (this uses SDKMAN):</p>
+<div class="highlight"><pre><span></span><code>curl -s <span class="s2">&quot;https://get.sdkman.io&quot;</span> <span class="p">|</span> bash
+<span class="nb">source</span> <span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.sdkman/bin/sdkman-init.sh&quot;</span>
+sdk install java <span class="m">8</span>.0.332-zulu
 </code></pre></div>
-<p><a href="https://spark.apache.org/downloads.html">Download spark</a> and then untar it wherever you like </p>
+<p><a href="https://archive.apache.org/dist/spark/spark-2.4.7/">Download spark</a> and then untar it wherever you like </p>
 <div class="highlight"><pre><span></span><code>tar -zxvf spark-2.4.7-bin-hadoop2.7.tgz
 </code></pre></div>
-<p>Set up the <code>SPARK_HOME</code> and <code>PATH</code> environment variables. You probably want to put these instructions in your 
+<p>Set up the <code>SPARK_HOME</code> and <code>PATH</code> environment variables. You must put these instructions in your 
 shell configuration somewhere, i.e., <code>~/.bashrc</code> or equivalent. </p>
 <p>Set <code>SPARK_HOME</code> </p>
 <div class="highlight"><pre><span></span><code>export SPARK_HOME=`pwd`/spark-2.4.7-bin-hadoop2.7/
@@ -968,7 +970,8 @@ shell configuration somewhere, i.e., <code>~/.bashrc</code> or equivalent. </p>
 <p>Set <code>PATH</code></p>
 <div class="highlight"><pre><span></span><code>export PATH=&quot;$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin&quot;
 </code></pre></div>
-<p>Check if Spark is correctly set up by running <code>spark-submit</code>, you should see usage information. </p>
+<p>Check if Spark is correctly set up by restarting your terminal and running <code>spark-submit</code> - 
+you should see usage information. </p>
 </div>
 <input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><label for="__tabbed_2_2">Spark on Linux</label><div class="tabbed-content">
 <p>Here is an example setup for Polynote on Debian. If you are not using Debian or Ubuntu, you may need to 
