@@ -83,18 +83,22 @@ server in order for Polynote to work properly with Spark.
         You may need to modify these instructions based on your local setup. 
 
         === "Spark on Mac"
-            Here is an example setup for Polynote on Mac. Also, check out the "Installation with Homebrew" tab above for an 
-            alternative installation method. 
+            Here is an example setup for Polynote on Mac. Also, check out the "Installing Spark on Mac with Homebrew"
+            section below for an alternative installation method. 
 
-            Install Java (this installs Java 11)
+            Install Java 8 through any service you like (this uses SDKMAN):
 
-                brew cask install adoptopenjdk11
+            ```bash
+            curl -s "https://get.sdkman.io" | bash
+            source "$HOME/.sdkman/bin/sdkman-init.sh"
+            sdk install java 8.0.332-zulu
+            ```
 
-            [Download spark](https://spark.apache.org/downloads.html) and then untar it wherever you like 
+            [Download spark](https://archive.apache.org/dist/spark/spark-2.4.7/) and then untar it wherever you like 
 
                 tar -zxvf spark-2.4.7-bin-hadoop2.7.tgz
 
-            Set up the `SPARK_HOME` and `PATH` environment variables. You probably want to put these instructions in your 
+            Set up the `SPARK_HOME` and `PATH` environment variables. You must put these instructions in your 
             shell configuration somewhere, i.e., `~/.bashrc` or equivalent. 
 
             Set `SPARK_HOME` 
@@ -105,7 +109,8 @@ server in order for Polynote to work properly with Spark.
 
                 export PATH="$PATH:$SPARK_HOME/bin:$SPARK_HOME/sbin"
 
-            Check if Spark is correctly set up by running `spark-submit`, you should see usage information. 
+            Check if Spark is correctly set up by restarting your terminal and running `spark-submit` - 
+            you should see usage information. 
 
         === "Spark on Linux"
             Here is an example setup for Polynote on Debian. If you are not using Debian or Ubuntu, you may need to 
