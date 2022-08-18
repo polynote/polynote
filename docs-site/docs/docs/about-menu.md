@@ -8,7 +8,7 @@ The left pane contains several sections to view different pieces of data about P
 ### About 
 The about menu contains information about your instance's version and most recent server commit. 
 
-![Settings Menu](images/settings-menu.png){: .centered-image }
+![Settings Menu](images/about-menu.png){: .centered-image }
 
 ### Hotkeys 
 The hotkeys menu contains a list of all supported keyboard shortcuts in Polynote. 
@@ -30,8 +30,8 @@ and provides easy access to wipe that data.
 
 ![Preferences](images/preferences.png){: .centered-image }
 
-### Open Kernels 
-The open kernels menu contains a list of all open notebooks alongside their kernel status. A notebook is considered open 
+### Open Notebooks 
+The open notebooks menu contains a list of all open notebooks alongside their kernel status. A notebook is considered open 
 if any client has it open, or if there is a running kernel associated with it. 
 
 This means the menu can be used to list notebooks not open in this particular browser, or to find running kernels you 
@@ -39,7 +39,7 @@ might have forgotten about.
 
 Note that the server keeps a notebook open for 30 seconds after it was last closed.  
 
-![Open Kernels](images/open-kernels.png){: .centered-image }
+![Open Notebooks](images/open-kernels.png){: .centered-image }
 
 ### Client-side Backups 
 The client-side backups menu contains a list of all the client-side backups that Polynote occasionally creates of your 
