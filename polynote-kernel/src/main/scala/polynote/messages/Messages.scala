@@ -420,7 +420,7 @@ final case class ServerHandshake(
   serverCommit: TinyString,
   identity: Option[Identity],
   sparkTemplates: List[SparkPropertySet],
-  notebookTemplates: List[TinyString]
+  notebookTemplates: List[ShortString]
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 

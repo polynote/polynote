@@ -45,7 +45,7 @@ object SocketSession {
 
     case CreateNotebook(path, maybeContent, maybeTemplatePath) =>
       NotebookManager.assertValidPath(path) *>
-        checkPermission(Permission.CreateNotebook(path)) *> getContent(maybeContent, maybeTemplatePath).flatMap(content =>
+        checkPermission(Permission.CreateNotebook(path)) *> getMaybeContent(maybeContent, maybeTemplatePath).flatMap(content =>
         NotebookManager.create(path, content).as(None))
 
     case RenameNotebook(path, newPath) =>
@@ -97,7 +97,7 @@ object SocketSession {
     kernelStatuses  = paths.zip(statuses).map { case (p, s) => ShortString(p) -> s }
   } yield RunningKernels(kernelStatuses)
 
-  def getContent(maybeContent: Option[String], maybeTemplatePath: Option[String]): ZIO[Config, Throwable, Option[String]] = {
+  def getMaybeContent(maybeContent: Option[String], maybeTemplatePath: Option[String]): ZIO[Config, Throwable, Option[String]] = {
     maybeContent match {
       case Some(content) => ZIO.succeed(Some(content))
       case None => for {
