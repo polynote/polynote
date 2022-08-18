@@ -338,7 +338,7 @@ class FileBasedRepository(
     }
   }
 
-  override def createNotebook(relativePath: String, maybeContent: Option[String] = None, maybeTemplate: Option[String] = None): RIO[BaseEnv with GlobalEnv, String] = {
+  override def createNotebook(relativePath: String, maybeContent: Option[String] = None): RIO[BaseEnv with GlobalEnv, String] = {
     val (noExtPath, ext) = extractExtension(relativePath.replaceFirst("""^/+""", ""))
     val path = s"$noExtPath.$ext"
 
@@ -350,11 +350,7 @@ class FileBasedRepository(
         emptyNotebook(path, defaultTitle)
       }
       name    <- findUniqueName(nb.path)
-      config  <- Config.access.map(_.behavior.notebookTemplates)
-      _       <- maybeTemplate match {
-        case t: Some[String] if config.contains(t.get) => copyNotebook(t.get, name)
-        case _ => saveNotebook(nb.copy(path = name))
-      }
+      _       <- saveNotebook(nb.copy(path = name))
     } yield name
   }
 

@@ -13,10 +13,11 @@ import polynote.server.auth.IdentityProvider.checkPermission
 import polynote.server.auth.{IdentityProvider, Permission, UserIdentity}
 import uzhttp.websocket.Frame
 import zio.stream.{Stream, Take, UStream, ZStream}
-import zio.Queue
-import zio.{Promise, RIO, Task, URIO, ZIO}
+import zio.{IO, Promise, Queue, RIO, URIO, ZIO}
 
+import java.io.FileNotFoundException
 import scala.collection.immutable.SortedMap
+import scala.io.Source
 
 object SocketSession {
 
@@ -42,9 +43,10 @@ object SocketSession {
         notebooks => Some(ListNotebooks(notebooks.map(ShortString.apply)))
       }
 
-    case CreateNotebook(path, maybeContent, maybeTemplate) =>
+    case CreateNotebook(path, maybeContent, maybeTemplatePath) =>
       NotebookManager.assertValidPath(path) *>
-        checkPermission(Permission.CreateNotebook(path)) *> NotebookManager.create(path, maybeContent, maybeTemplate).as(None)
+        checkPermission(Permission.CreateNotebook(path)) *> getContent(maybeContent, maybeTemplatePath).flatMap(content =>
+        NotebookManager.create(path, content).as(None))
 
     case RenameNotebook(path, newPath) =>
       (NotebookManager.assertValidPath(path) &> NotebookManager.assertValidPath(newPath)) *>
@@ -94,4 +96,26 @@ object SocketSession {
     statuses       <- ZIO.collectAllPar(paths.map(NotebookManager.status))
     kernelStatuses  = paths.zip(statuses).map { case (p, s) => ShortString(p) -> s }
   } yield RunningKernels(kernelStatuses)
+
+  def getContent(maybeContent: Option[String], maybeTemplatePath: Option[String]): ZIO[Config, Throwable, Option[String]] = {
+    maybeContent match {
+      case Some(content) => ZIO.succeed(Some(content))
+      case None => for {
+        config  <- Config.access.map(_.behavior.notebookTemplates)
+        content <- maybeTemplatePath match {
+          case Some(templatePath) if config.contains(templatePath) => readFromTemplatePath(templatePath)
+          case _ => ZIO.succeed(None)
+        }
+      } yield content
+    }
+  }
+
+  def readFromTemplatePath(templatePath: String): IO[FileNotFoundException, Some[String]] = {
+    try {
+      val content = Source.fromFile(templatePath).mkString
+      ZIO.succeed(Some(content))
+    } catch {
+      case e: FileNotFoundException => ZIO.fail(e)
+    }
+  }
 }
