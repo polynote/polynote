@@ -5,6 +5,7 @@ import java.net.{InetSocketAddress, URI}
 import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
+
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe.syntax._

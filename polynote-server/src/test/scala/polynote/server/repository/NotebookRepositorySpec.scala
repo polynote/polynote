@@ -4,7 +4,7 @@ import java.net.URI
 
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.messages.{CellID, Notebook, NotebookCell, ShortList}
+import polynote.messages.{Notebook, ShortList}
 import polynote.server.MockServerSpec
 import zio.ZIO
 

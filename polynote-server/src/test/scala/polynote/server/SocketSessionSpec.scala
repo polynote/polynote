@@ -10,7 +10,7 @@ import polynote.testing.ConfiguredZIOSpec
 import java.io.{File, FileWriter}
 import java.nio.file.Paths
 
-class SocketSessionTest extends FreeSpec with Matchers with MockFactory with ConfiguredZIOSpec {
+class SocketSessionSpec extends FreeSpec with Matchers with MockFactory with ConfiguredZIOSpec {
   val (goodDir, anotherGoodDir) = ("goodDir", "anotherGoodDir")
   val (goodContent, anotherGoodContent) = ("goodContent", "anotherGoodContent")
   val fileName = "test.ipynb"
