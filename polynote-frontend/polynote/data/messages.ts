@@ -378,7 +378,7 @@ export class TaskInfo {
 }
 
 export class UpdatedTasks extends KernelStatusUpdate {
-    static codec = combined(arrayCodec(uint8, TaskInfo.codec)).to(UpdatedTasks);
+    static codec = combined(arrayCodec(uint16, TaskInfo.codec)).to(UpdatedTasks);
     static get msgTypeId() { return 1; }
 
     static unapply(inst: UpdatedTasks): ConstructorParameters<typeof UpdatedTasks> {
