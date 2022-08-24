@@ -46,7 +46,7 @@ abstract class RemoteKernelSpecBase extends FreeSpec with Matchers with ZIOSpec 
     "with real networking" - {
 
       "init" in {
-        val statusUpdate = UpdatedTasks(TinyList.of(TaskInfo("init task")))
+        val statusUpdate = UpdatedTasks(ShortList.of(TaskInfo("init task")))
         val result = Output("text/plain", "some predef result")
 
         (kernel.init _).expects().returning {

@@ -3,7 +3,7 @@ package polynote.kernel
 import java.time.Instant
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.task.TaskManager
-import polynote.messages.TinyList
+import polynote.messages.ShortList
 import polynote.testing.{MockPublish, ZIOSpec}
 import zio.ZIO
 
@@ -54,7 +54,7 @@ class TaskManagerSpec extends FreeSpec with Matchers with ZIOSpec {
       await2.runIO()
 
       val taskInfos = mockPublish.toList.runIO().collect {
-        case UpdatedTasks(TinyList(taskInfo :: Nil)) => taskInfo
+        case UpdatedTasks(ShortList(taskInfo :: Nil)) => taskInfo
       }
 
       // we can only guarantee ordering of status updates to a certain degree.

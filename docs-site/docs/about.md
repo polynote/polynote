@@ -10,6 +10,7 @@ Polynote is maintained by:
 
 - [jeremyrsmith](https://github.com/jeremyrsmith)
 - [jonathanindig](https://github.com/jonathanindig)
+- [omidmogasemi](https://github.com/omidmogasemi)
 
 ## Acknowledgements
 

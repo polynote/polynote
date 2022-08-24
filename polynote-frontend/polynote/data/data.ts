@@ -18,12 +18,12 @@ import {
 import {ExecutionInfo, PosRange, Result} from "./result";
 
 export class CellMetadata {
-    static codec = combined(bool, bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
+    static codec = combined(bool, bool, bool, bool, bool, optional(ExecutionInfo.codec)).to(CellMetadata);
     static unapply(inst: CellMetadata): ConstructorParameters<typeof CellMetadata> {
-        return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.splitDisplay, inst.executionInfo];
+        return [inst.disableRun, inst.hideSource, inst.hideOutput, inst.splitDisplay, inst.wrapOutput, inst.executionInfo];
     }
 
-    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly splitDisplay: boolean = false, readonly executionInfo: ExecutionInfo | null = null) {
+    constructor(readonly disableRun: boolean = false, readonly hideSource: boolean = false, readonly hideOutput: boolean = false, readonly splitDisplay: boolean = false, readonly wrapOutput: boolean = false, readonly executionInfo: ExecutionInfo | null = null) {
         Object.freeze(this);
     }
 
@@ -32,8 +32,9 @@ export class CellMetadata {
         const hideSource = metadata.hideSource ?? this.hideSource;
         const hideOutput = metadata.hideOutput ?? this.hideOutput;
         const splitDisplay = metadata.splitDisplay ?? this.splitDisplay;
+        const wrapOutput = metadata.wrapOutput ?? this.wrapOutput;
         const executionInfo = metadata.executionInfo ?? this.executionInfo;
-        return new CellMetadata(disableRun, hideSource, hideOutput, splitDisplay, executionInfo);
+        return new CellMetadata(disableRun, hideSource, hideOutput, splitDisplay, wrapOutput, executionInfo);
     }
 }
 
@@ -145,7 +146,7 @@ export class SparkPropertySet {
 
 export class NotebookConfig {
     static codec = combined(
-        optional(mapCodec(uint8, tinyStr, arrayCodec(uint8, tinyStr))),
+        optional(mapCodec(uint16, tinyStr, arrayCodec(uint16, tinyStr))),
         optional(arrayCodec(uint8, tinyStr)),
         optional(arrayCodec(uint8, RepositoryConfig.codec)),
         optional(mapCodec(uint16, str as Codec<string>, str)),
