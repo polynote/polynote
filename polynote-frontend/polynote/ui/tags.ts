@@ -460,9 +460,9 @@ export function h4(classes: string[], content: Content) {
     return tag('h4', classes, {}, content);
 }
 
-export function label(classes: string[], label: string, input: TagElement<"input" | "select" | "textarea">): TagElement<"label"> {
+export function label(classes: string[], label: string, input: TagElement<"input" | "select" | "textarea">, largeLabel: boolean = false): TagElement<"label"> {
     return tag('label', classes, {}, [
-       span(['label-title'], label),
+       largeLabel ? h4(['label-title'], label) : span(['label-title'], label),
        input
     ]);
 }

@@ -586,13 +586,13 @@ export class ListNotebooks extends Message {
 }
 
 export class CreateNotebook extends Message {
-    static codec = combined(shortStr, optional(str)).to(CreateNotebook);
+    static codec = combined(shortStr, optional(str), optional(str)).to(CreateNotebook);
     static get msgTypeId() { return 14; }
     static unapply(inst: CreateNotebook): ConstructorParameters<typeof CreateNotebook> {
-        return [inst.path, inst.content];
+        return [inst.path, inst.content, inst.template];
     }
 
-    constructor(readonly path: string, readonly content?: string) {
+    constructor(readonly path: string, readonly content?: string, readonly template?: string) {
         super();
         Object.freeze(this);
     }
@@ -676,13 +676,13 @@ export class Identity {
 }
 
 export class ServerHandshake extends Message {
-    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec), arrayCodec(int32, SparkPropertySet.codec)).to(ServerHandshake);
+    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec), arrayCodec(int32, SparkPropertySet.codec), arrayCodec(int32, shortStr)).to(ServerHandshake);
     static get msgTypeId() { return 16; }
     static unapply(inst: ServerHandshake): ConstructorParameters<typeof ServerHandshake> {
-        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity, inst.sparkTemplates];
+        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity, inst.sparkTemplates, inst.notebookTemplates];
     }
 
-    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null, readonly sparkTemplates: SparkPropertySet[]) {
+    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null, readonly sparkTemplates: SparkPropertySet[], readonly notebookTemplates: string[]) {
         super();
         Object.freeze(this);
     }
