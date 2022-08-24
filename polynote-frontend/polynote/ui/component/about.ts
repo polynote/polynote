@@ -240,11 +240,14 @@ export class About extends FullScreenModal implements IDisposable {
         return el;
     }
 
-    openKernels() {
+    openNotebooks() {
         let content = div([], ['Looks like no kernels are open now!']);
         const el = div(["open-kernels"], [
             div([], [
-                h2([], ["Open Kernels"]),
+                h2([], ["Open Notebooks"]),
+                span([], ["This is a list of all open notebooks alongside their Kernel status. A notebook is " +
+                "considered open if: (1) any client has it open or (2) there is a running kernel associated with it. Note that " +
+                "Polynote may keep a handle open to a notebook after it's closed for up to 30 seconds."]),
                 content
             ])
         ]);
@@ -400,7 +403,7 @@ export class About extends FullScreenModal implements IDisposable {
             'About': this.aboutMain.bind(this),
             'Hotkeys': this.hotkeys.bind(this),
             'Preferences': this.preferences.bind(this),
-            'Open Kernels': this.openKernels.bind(this),
+            'Open Notebooks': this.openNotebooks.bind(this),
             'Client-side Backups': this.clientBackups.bind(this),
             'State Inspector': this.stateInspector.bind(this),
         };
