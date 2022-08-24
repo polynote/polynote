@@ -12,7 +12,7 @@ import {
     StateView,
     updateProperty
 } from ".";
-import {Identity} from "../data/messages";
+import {HotkeyInfo, Identity} from "../data/messages";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {NotebookMessageDispatcher,} from "../messaging/dispatcher";
@@ -38,7 +38,8 @@ export interface ServerState {
     serverVersion: string,
     serverCommit: string,
     identity: Identity,
-    sparkTemplates: SparkPropertySet[]
+    sparkTemplates: SparkPropertySet[],
+    customKeybindings: Record<number, HotkeyInfo>,
     // ephemeral states
     currentNotebook?: string,
     openNotebooks: string[],
@@ -63,6 +64,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 serverCommit: "unknown",
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
+                customKeybindings: {},
                 currentNotebook: undefined,
                 openNotebooks: [],
                 serverOpenNotebooks: []
@@ -105,6 +107,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 serverCommit: "unknown",
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
+                customKeybindings: {},
                 currentNotebook: undefined,
                 openNotebooks: [],
                 serverOpenNotebooks: []

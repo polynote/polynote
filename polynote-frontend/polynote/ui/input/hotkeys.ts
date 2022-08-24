@@ -1,3 +1,4 @@
+import * as monaco from "monaco-editor";
 import {KeyCode} from "monaco-editor";
 
 // The following Monaco imports don't have proper types as they're directly using implementation code in a bit of a
@@ -8,6 +9,8 @@ import {isMacintosh, OS} from 'monaco-editor/esm/vs/base/common/platform.js'
 // @ts-ignore
 import {createSimpleKeybinding, KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
 import {cellHotkeys} from "../component/notebook/cell";
+import {ServerStateHandler} from "../../state/server_state";
+import { HotkeyInfo } from "../../data/messages";
 
 interface Keybinding {
     readonly ctrlKey: boolean;
@@ -19,8 +22,9 @@ interface Keybinding {
 
 export function getHotkeys() {
     const hotkeys: Record<string, string> = {};
+    const keybindings: Record<number, HotkeyInfo> = Object.assign(ServerStateHandler.state.customKeybindings,cellHotkeys);
 
-    Object.entries(cellHotkeys).forEach(([code, keyInfo]) => {
+    Object.entries(keybindings).forEach(([code, keyInfo]) => {
         if (!keyInfo.hide) {
             const simpleKeybinding: Keybinding = createSimpleKeybinding(code, OS);
             const keyCombo = keybindingToString(simpleKeybinding);
@@ -29,6 +33,10 @@ export function getHotkeys() {
     })
 
     return hotkeys;
+}
+
+export function keycodeToKeybinding(code: number) {
+    return createSimpleKeybinding(code, OS);
 }
 
 function keybindingToString(simpleKeybinding: Keybinding): string {
@@ -58,4 +66,22 @@ function keybindingToString(simpleKeybinding: Keybinding): string {
         keys.push(actualKey)
     }
     return keys.join("+")
+}
+
+export function keybindingFromString(keybindingStr: string, ): number {
+    const keysStr = keybindingStr.toLowerCase().split("-");
+    var keyMods = 0;
+    if (keysStr.includes("ctrl")) keyMods += monaco.KeyMod.CtrlCmd;
+    if (keysStr.includes("shift")) keyMods += monaco.KeyMod.Shift;
+    if (keysStr.includes("option")) keyMods += monaco.KeyMod.Alt;
+    if (keysStr.includes("alt")) keyMods += monaco.KeyMod.Alt;
+    if (keysStr.includes("cmd")) keyMods += monaco.KeyMod.WinCtrl;
+    if (keysStr.includes("meta")) keyMods += monaco.KeyMod.WinCtrl;
+    const actualKeys = keysStr
+    .map( key => KeyCodeUtils.fromString(key))
+    .filter( keyCode => !createSimpleKeybinding(keyCode, OS).isModifierKey());
+    if (actualKeys.length > 1) throw `Could not parse keybinding ${keybindingStr}: multiple key codes not supported`;
+    if (actualKeys.length == 0) throw `Could not parse keybinding ${keybindingStr}: no key code found`;
+    const keyCode = actualKeys[0];
+    return keyCode + keyMods;
 }

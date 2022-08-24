@@ -36,6 +36,7 @@ import {deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
 import {ConstView, ProxyStateView} from "./state_handler";
 import {ServerStateHandler} from "./server_state";
+import { moveArrayValue } from "./state_updates";
 
 
 export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
@@ -294,6 +295,33 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         return this.updateHandler.insertCell(maxId + 1, anchor.language, anchor.content ?? '', anchor.metadata, maybePrevId).then(
             insert => insert.cell.id
         )
+    }
+
+    /**
+     * Helper for moving current cell.
+     *
+     * @param direction  Whether to insert below of above the anchor
+     * @return           A Promise that resolves with the inserted cell's id.
+     */
+    moveCell(direction: 'above' | 'below'): number|undefined {
+        const state = this.state;
+        let currentCellId = state.activeCellId;
+        if (currentCellId) {
+            const anchorIdx = this.getCellIndex(currentCellId)!;
+            const afterIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx + 1;
+            // trigger the move
+            if (afterIdx >= 0 && afterIdx < state.cellOrder.length) {
+                //TODO: why does moveCell not work?
+                //const afterId = this.getCellIdAtIndex(afterIdx);
+                //this.updateHandler.moveCell(currentCellId, afterId!);
+                this.update(state => {
+                    return {
+                        cellOrder: moveArrayValue(anchorIdx, afterIdx)
+                    }
+                }, this, 'cellOrder');
+            }
+        }
+        return currentCellId;
     }
 
     /**

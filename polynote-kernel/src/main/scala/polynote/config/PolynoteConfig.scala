@@ -139,8 +139,21 @@ object Security {
   implicit val decoder: Decoder[Security] = deriveConfigDecoder
 }
 
+final case class HotkeyInfo(
+  key: String,
+  description: String,
+  hide: Boolean = false,
+  vimOnly: Boolean = false
+)
+
+object HotkeyInfo {
+  implicit val encoder: Encoder.AsObject[HotkeyInfo] = deriveEncoder
+  implicit val decoder: Decoder[HotkeyInfo] = deriveDecoder
+}
+
 final case class UI(
-  baseUri: String = "/"
+  baseUri: String = "/",
+  customKeybindings: Map[String, HotkeyInfo] = Map()
 )
 
 object UI {

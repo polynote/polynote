@@ -65,7 +65,7 @@ import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
 import {cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
-import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
+import {Error, TaskInfo, TaskStatus, HotkeyInfo} from "../../../data/messages";
 import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import {
     availableResultValues,
@@ -88,7 +88,8 @@ import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
 import {UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
-
+import { logger } from "vega";
+import { keycodeToKeybinding } from "../../input/hotkeys";
 
 export type CodeCellModel = editor.ITextModel & {
     requestCompletion(pos: number): Promise<CompletionList>,
@@ -366,14 +367,7 @@ export class CellContainer extends Disposable {
     }
 }
 
-export interface HotkeyInfo {
-    key: string,
-    description: string,
-    hide?: boolean,
-    vimOnly?: boolean
-}
-
-export const cellHotkeys: Record<string, HotkeyInfo> = {
+export const cellHotkeys: Record<number, HotkeyInfo> = {
     [monaco.KeyCode.UpArrow]: {key: "MoveUp", description: "Move to previous cell."},
     [monaco.KeyCode.DownArrow]: {key: "MoveDown", description: "Move to next cell. If there is no cell below, create it."},
     [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {key: "RunAndSelectNext", description: "Run cell and select the next cell. If there is no cell, create one."},
@@ -541,7 +535,10 @@ abstract class Cell extends Disposable {
         } else {
             keybinding = new StandardKeyboardEvent(evt)._asKeybinding;
         }
-        const hotkey = cellHotkeys[keybinding]
+        let hotkey = cellHotkeys[keybinding];
+        if (!hotkey) hotkey = ServerStateHandler.state.customKeybindings[keybinding];
+        // TODO: remove
+        if (!hotkey && (keybinding & 255) > 0) console.log("keybinding not found", keycodeToKeybinding(keybinding));
         if (hotkey && (!hotkey.vimOnly || UserPreferencesHandler.state['vim'].value)) {
             const key = hotkey.key;
             const pos = this.getPosition();
@@ -576,6 +573,10 @@ abstract class Cell extends Disposable {
             .when("MoveDownJ", () => {
                 this.notebookState.selectCell(this.id, {relative: "below", editing: true})
             })
+            .when("RunActive", () => {
+                this.dispatcher.runActiveCell()
+                return ["stopPropagation", "preventDefault"]
+            })
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
                 this.selectOrInsertCell("below")
@@ -609,6 +610,34 @@ abstract class Cell extends Disposable {
             .when("RunToCursor", () => {
                 this.dispatcher.runToActiveCell()
             })
+            .when("MoveAbove", () => {
+                this.notebookState.moveCell("above");
+                return ["stopPropagation", "preventDefault"]
+            })
+            .when("MoveBelow", () => {
+                this.notebookState.moveCell("below");
+                return ["stopPropagation", "preventDefault"]
+            })     
+            .when("Merge", () => {
+                const nextCellId = this.notebookState.getNextCellId(this.id);
+                if (nextCellId) {
+                    const nextCellContent = this.notebookState.state.cells[nextCellId].content;
+                    this.appendText(nextCellContent);
+                    this.notebookState.deleteCell(nextCellId);
+                }
+                return ["stopPropagation", "preventDefault"]
+            })        
+            .when("Split", () => {
+                const textForNextCell = this.splitCellAtCursor();
+                if (textForNextCell && textForNextCell.length > 0) {
+                const editInsert = new Insert(0, textForNextCell);
+                    this.notebookState.insertCell("below")
+                        .then(newId => {
+                            this.notebookState.cellsHandler.updateField(newId, cellState => ({content: editString([editInsert])}), this)
+                        });
+                }
+                return ["stopPropagation", "preventDefault"]
+            })
             .otherwise(null) ?? undefined
     }
 
@@ -617,6 +646,13 @@ abstract class Cell extends Disposable {
     protected abstract getRange(): IRange
 
     protected abstract getCurrentSelection(): string
+
+    /**
+     * Removes text from cursor position to end of cell from and returns it, in order to create a new cell with it.
+     */
+    protected abstract splitCellAtCursor(): string | undefined
+
+    protected abstract appendText(text: string): void
 
     abstract setDisabled(disabled: boolean): void
 
@@ -707,7 +743,8 @@ export class CodeCell extends Cell {
         this.editor.onDidBlurEditorWidget(() => {
             this.editor.updateOptions({ renderLineHighlight: "none" });
             if (!this.commentHandler.activeComment() && !this.el.contains(document.getSelection()?.anchorNode ?? null)) {
-                this.doDeselect();
+                //TODO: if cell is moved when editor was active, this triggers setting activeCellId=undefined, which is not as it should be! Disabling it showed no negative impact. To discuss.
+                //this.doDeselect();
             }
         });
         this.editor.onDidChangeCursorSelection(evt => {
@@ -1414,6 +1451,23 @@ export class CodeCell extends Cell {
         return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
     }
 
+    splitCellAtCursor() {
+        const pos = this.getPosition();
+        const range = this.getRange().setStartPosition(pos.lineNumber, pos.column);
+        const textForNextCell = this.editor.getModel()!.getValueInRange(range).trimStart();
+        // delete text in editor
+        this.editor.executeEdits("splitCellAtCursor-delete", [{range: range, text: ''}])
+        // return deleted text
+        return textForNextCell;
+    }
+
+    appendText(text: string): void {
+        const fullRange = this.getRange();
+        const endRange = fullRange.setStartPosition(fullRange.endLineNumber, fullRange.endColumn);
+        // insert text in editor
+        this.editor.executeEdits("appendText-insert", [{range: endRange, text: '\r\n'+text}]);
+    }    
+
     get path() {
         return this.notebookState.state.path
     }
@@ -1999,6 +2053,15 @@ export class TextCell extends Cell {
         return document.getSelection()!.toString()
     }
 
+    splitCellAtCursor() {
+        console.error("splitCellAtCursor not implemented");
+        return undefined;
+    }
+
+    appendText(text: string): void {
+        console.error("appendText not implemented");
+    }    
+
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
         return matchS<PostKeyAction[]>(key)
             .when("MoveUp", () => {
@@ -2391,6 +2454,15 @@ export class VizCell extends Cell {
     protected getCurrentSelection(): string {
         return "";
     }
+
+    protected splitCellAtCursor() {
+        console.error("splitCellAtCursor not implemented");
+        return undefined;
+    }
+
+    protected appendText(text: string): void {
+        console.error("appendText not implemented");
+    }     
 
     protected getPosition(): IPosition {
         // plots don't really have a position.

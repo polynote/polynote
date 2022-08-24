@@ -47,6 +47,9 @@ import {
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
+import { logger } from "vega";
+import { HotkeyInfo } from "../data/messages";
+import { keybindingFromString } from "../ui/input/hotkeys";
 
 export class MessageReceiver<S> extends Disposable {
     protected readonly socket: SocketStateHandler;
@@ -578,7 +581,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             })
             return { notebooks: setValue(notebooks) }
         });
-        this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
+        this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates, customKeybindings) => {
             // First, we need to check to see if versions match. If they don't, we need to reload to clear out any
             // messed up state!
             if (s.serverVersion !== "unknown" && serverVersion !== s.serverVersion) {
@@ -591,12 +594,23 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                     interpreters[key] = ClientInterpreters[key].languageTitle;
             });
 
+            // parse custom keybindings
+            const parsedCustomKeybindings: Record<number, HotkeyInfo> = {};
+            Object.keys(customKeybindings).forEach(key => {
+                const parsedKeybinding = keybindingFromString(key);
+                parsedCustomKeybindings[parsedKeybinding] = customKeybindings[key];
+            })
+
+            //TODO: remove
+            console.log("parsedCustomKeybindings", parsedCustomKeybindings);
+
             return {
                 interpreters: setValue(interpreters),
                 serverVersion: setValue(serverVersion),
                 serverCommit: setValue(serverCommit),
                 identity: setValue(identity ?? new Identity("Unknown User", null)),
                 sparkTemplates: setValue(sparkTemplates),
+                customKeybindings: setValue(parsedCustomKeybindings)
             }
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {
