@@ -104,6 +104,7 @@ object SocketSession {
         config  <- Config.access.map(_.behavior.notebookTemplates)
         content <- maybeTemplatePath match {
           case Some(templatePath) if config.contains(templatePath) => readFromTemplatePath(templatePath)
+          case Some(templatePath) => ZIO.fail(new IllegalArgumentException(s"$templatePath is not a configured notebook template"))
           case _ => ZIO.succeed(None)
         }
       } yield content

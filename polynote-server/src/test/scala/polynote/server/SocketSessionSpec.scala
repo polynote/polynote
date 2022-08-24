@@ -50,22 +50,22 @@ class SocketSessionSpec extends FreeSpec with Matchers with MockFactory with Con
       }
 
       "fails with bad maybeTemplatePath" in {
-        getMaybeContent(None, Some("a/bad/path")) isFailure
+        getMaybeContent(None, Some("a/bad/path")).isFailure
       }
     }
-  }
 
-  "readFromTemplatePath" - {
-    "returns file contents with valid templatePath" in {
-      fileManager(goodDir, fileName, goodContent)
-      readFromTemplatePath(goodPath).runIO() shouldBe Some(goodContent)
+    "readFromTemplatePath" - {
+      "returns file contents with valid templatePath" in {
+        fileManager(goodDir, fileName, goodContent)
+        readFromTemplatePath(goodPath).runIO() shouldBe Some(goodContent)
 
-      fileManager(anotherGoodDir, fileName, anotherGoodContent)
-      readFromTemplatePath(anotherGoodPath).runIO() shouldBe Some(anotherGoodContent)
-    }
+        fileManager(anotherGoodDir, fileName, anotherGoodContent)
+        readFromTemplatePath(anotherGoodPath).runIO() shouldBe Some(anotherGoodContent)
+      }
 
-    "fails with bad templatePath" in {
-      readFromTemplatePath("a/bad/path") isFailure
+      "fails with bad templatePath" in {
+        readFromTemplatePath("a/bad/path").isFailure
+      }
     }
   }
 }
