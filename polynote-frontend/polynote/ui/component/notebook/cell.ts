@@ -860,9 +860,11 @@ export class CodeCell extends Cell {
             if (metadata.splitDisplay) {
                 this.el.classList.add("split-display");
                 grandparent?.classList.add("split-display-container");
+                this.layout(0, false); // force the editor to resize to its container
             } else {
                 this.el.classList.remove("split-display");
                 grandparent?.classList.remove("split-display-container");
+                this.layout(0, false); // force the editor to resize to its container
             }
 
             if (metadata.wrapOutput) {
