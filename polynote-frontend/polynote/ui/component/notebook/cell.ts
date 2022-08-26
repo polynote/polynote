@@ -86,7 +86,7 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
-import {UserPreferencesHandler} from "../../../state/preferences";
+import {UserPreferences, UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
 import {MarkdownIt} from "../../input/markdown-it";
 
@@ -283,6 +283,8 @@ export class CellContainer extends Disposable {
     private path: string;
     private cellState: StateHandler<CellState>;
 
+    private prevInMarkdownMode: boolean;
+
     constructor(
         newCellDivider: TagElement<'div'>,
         private dispatcher: NotebookMessageDispatcher,
@@ -293,8 +295,46 @@ export class CellContainer extends Disposable {
         const cellState = this.cellState = state.fork(this);
         const id = cellState.state.id;
         this.cellId = `Cell${id}`;
-        this._cell = this.cellFor(cellState.state.language);
         this.path = notebookState.state.path;
+
+        this.prevInMarkdownMode = UserPreferencesHandler.state.markdown.value;
+
+        const markdownStateHandler = (pref: typeof UserPreferences["markdown"]) => {
+            // TODO:
+            // 1. Fix not being able to click on cells
+            // 2. Add documentation for the markdown editing mode
+            if (!this._cell) { // if cell hasn't been created yet, don't do anything special
+                this._cell = this.cellFor(cellState.state.language);
+                if (this.cellState.state.language === "text") {
+                    this.cellState.state.content = MarkdownIt.render(this.cellState.state.content);
+                    this._cell.onBlur();
+                }
+                // if (this.cellState.state.language === "text") this._cell.onBlur(); // TODO: Fix #1
+            } else if (this.cellState.state.language === "text") {
+                // If the cell's mode did not change, do nothing
+                if (pref.value == this.prevInMarkdownMode) return;
+
+                const newCell = this.cellFor(cellState.state.language);
+
+                // Replace the old cell
+                newCell.replace(this._cell).then(cell => {
+                    this._cell = cell;
+                    this._cell.layout();
+
+                    // If going from RTE to Markdown mode, compile the HTML into markdown and blur the cell to avoid it going into the editor view
+                    if (pref.value && !this.prevInMarkdownMode) {
+                        this.cellState.state.content = MarkdownIt.render(this.cellState.state.content);
+                        this._cell.onBlur();
+                    }
+
+                    this.prevInMarkdownMode = pref.value;
+                })
+            }
+        }
+
+        const markdownState = UserPreferencesHandler.view("markdown")
+        markdownStateHandler(markdownState.state)
+        markdownState.addObserver(state => markdownStateHandler(state)).disposeWith(this)
 
         const dragHandle = new CellDragHandle(
             this,
@@ -326,8 +366,7 @@ export class CellContainer extends Disposable {
         this.el.mousedown(evt => this._cell.doSelect());
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
-            if (updateResult.oldValue && (updateResult.oldValue === "text" || updateResult.oldValue === "markdown" ||
-                newLang === "text" || newLang === "markdown")) {
+            if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "markdown")) {
                 const newCell = this.cellFor(newLang)
                 newCell.replace(this._cell).then(cell => {
                     this._cell = cell
@@ -350,9 +389,7 @@ export class CellContainer extends Disposable {
     private cellFor(lang: string) {
         switch (lang) {
             case "text":
-                return new TextCell(this.dispatcher, this.notebookState, this.cellState);
-            case "markdown":
-                return new MarkdownCell(this.dispatcher, this.notebookState, this.cellState);
+                return UserPreferencesHandler.state.markdown.value ? new MarkdownCell(this.dispatcher, this.notebookState, this.cellState) : new TextCell(this.dispatcher, this.notebookState, this.cellState);
             case "viz":
                 return new VizCell(this.dispatcher, this.notebookState, this.cellState);
             default:
@@ -491,6 +528,9 @@ abstract class Cell extends Disposable {
     protected onDeselected() {
         this.removeCellClass("active");
     }
+
+    // Method for deselecting markdown cells
+    onBlur() {}
 
     protected onDisposed() {
 
@@ -916,17 +956,7 @@ export class MarkdownCell extends MonacoCell {
         this.editorEl.insertAdjacentElement("afterend", this.renderedMarkdown);
 
         this.editor.onDidBlurEditorWidget(() => {
-            this.editor.updateOptions({renderLineHighlight: "none"});
-            if (!this.el.contains(document.getSelection()?.anchorNode ?? null)) {
-                this.renderedMarkdown.innerHTML = MarkdownIt.render(this.cellState.state.content);
-
-                // Hide the editor and show the rendered markdown in a text-cell
-                this.editorEl.classList.add('hide');
-                this.renderedMarkdown.classList.remove('hide');
-                this.el.classList.replace('code-cell', 'text-cell');
-
-                this.doDeselect();
-            }
+            this.onBlur();
         });
 
         this.el.addEventListener('focus', () => {
@@ -966,6 +996,20 @@ export class MarkdownCell extends MonacoCell {
             return;
 
         this.updateCellContent(event);
+    }
+
+    onBlur() {
+        this.editor.updateOptions({renderLineHighlight: "none"});
+        if (!this.el.contains(document.getSelection()?.anchorNode ?? null)) {
+            this.renderedMarkdown.innerHTML = MarkdownIt.render(this.cellState.state.content);
+
+            // Hide the editor and show the rendered markdown in a text-cell
+            this.editorEl.classList.add('hide');
+            this.renderedMarkdown.classList.remove('hide');
+            this.el.classList.replace('code-cell', 'text-cell');
+        }
+
+        this.doDeselect();
     }
 
     protected onDisposed() {

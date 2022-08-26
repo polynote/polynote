@@ -77,6 +77,7 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
         const storageKey = "UserPreferences";
         const fromBrowser = storage.get(storageKey) ?? { // try the previous storage format.
             vim: storage.get("preferences")?.["VIM"] ?? {},
+            markdown: storage.get("preferences")?.["Markdown"] ?? {},
             theme: storage.get("preferences")?.["Theme"] ?? {},
             notifications: storage.get("preferences")?.["Notifications"] ?? {},
         };
@@ -122,6 +123,7 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
 type UserPreference<T extends Record<string, any>> = {name: string, value: T[keyof T], description: string, possibleValues: T}
 export const UserPreferences: {[k: string]: UserPreference<Record<string, any>>} = {
     vim: {name: "VIM", value: false, description: "Whether VIM input mode is enabled for Code cells", possibleValues: {true: true, false: false}},
+    markdown: {name: "Markdown", value: false, description: "Whether raw markdown or rich text editing mode is enabled.", possibleValues: {true: true, false: false}},
     notifications: {
         name: "Notifications",
         value: false,

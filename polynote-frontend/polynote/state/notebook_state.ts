@@ -342,11 +342,11 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         this.cellsHandler.updateField(id, () => ({
             language,
             // clear a bunch of stuff if we're changing to text... hm, maybe we need to do something else when it's a text cell...
-            output: language === "text" || language === "markdown" ? clearArray() : NoUpdate,
-            results: language === "text" || language === "markdown" ? clearArray() : NoUpdate,
-            error: language === "text" || language === "markdown" ? false : NoUpdate,
-            compileErrors: language === "text" || language === "markdown" ? clearArray() : NoUpdate,
-            runtimeError: language === "text" || language === "markdown" ? setValue(undefined) : NoUpdate,
+            output: language === "text" ? clearArray() : NoUpdate,
+            results: language === "text" ? clearArray() : NoUpdate,
+            error: language === "text" ? false : NoUpdate,
+            compileErrors: language === "text" ? clearArray() : NoUpdate,
+            runtimeError: language === "text" ? setValue(undefined) : NoUpdate,
         }), source)
     }
 

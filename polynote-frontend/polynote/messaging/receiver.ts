@@ -593,7 +593,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
 
 
             return {
-                interpreters: setValue({'markdown': 'Markdown', ...interpreters}), // inject the client markdown interpreter here
+                interpreters: setValue(interpreters),
                 serverVersion: setValue(serverVersion),
                 serverCommit: setValue(serverCommit),
                 identity: setValue(identity ?? new Identity("Unknown User", null)),
