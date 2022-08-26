@@ -75,7 +75,7 @@ export class Notebook extends Disposable {
 
             Object.entries(cellOrderUpdate.addedValues!).forEach(([idx, id]) => {
                 const handler = cellsHandler.lens(id)
-                const cell = new CellContainer(this.newCellDivider(), dispatcher, notebookState, handler);
+                const cell = new CellContainer(this.newCellDivider(), dispatcher, notebookState, handler, layoutNewCells);
                 const el = cell.el;
                 this.cells[id] = {cell, handler, el};
                 const cellIdx = parseInt(idx);

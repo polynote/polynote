@@ -289,7 +289,8 @@ export class CellContainer extends Disposable {
         newCellDivider: TagElement<'div'>,
         private dispatcher: NotebookMessageDispatcher,
         private notebookState: NotebookStateHandler,
-        state: StateHandler<CellState>
+        state: StateHandler<CellState>,
+        insertedCell: boolean
     ) {
         super()
         const cellState = this.cellState = state.fork(this);
@@ -305,8 +306,8 @@ export class CellContainer extends Disposable {
             // 2. Add documentation for the markdown editing mode
             if (!this._cell) { // if cell hasn't been created yet, don't do anything special
                 this._cell = this.cellFor(cellState.state.language);
-                if (this.cellState.state.language === "text") {
-                    this.cellState.state.content = MarkdownIt.render(this.cellState.state.content);
+                if (this.cellState.state.language === "text" && !insertedCell) {
+                    // this.cellState.state.content = MarkdownIt.render(this.cellState.state.content);
                     this._cell.onBlur();
                 }
                 // if (this.cellState.state.language === "text") this._cell.onBlur(); // TODO: Fix #1
@@ -366,7 +367,7 @@ export class CellContainer extends Disposable {
         this.el.mousedown(evt => this._cell.doSelect());
         cellState.view("language").addObserver((newLang, updateResult) => {
             // Need to create a whole new cell if the language switches between code and text
-            if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "markdown")) {
+            if (updateResult.oldValue && (updateResult.oldValue === "text" || newLang === "text")) {
                 const newCell = this.cellFor(newLang)
                 newCell.replace(this._cell).then(cell => {
                     this._cell = cell
