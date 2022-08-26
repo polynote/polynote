@@ -358,9 +358,9 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
             this.socket.send(new messages.CreateNotebook(path, content))
             waitForNotebook(path)
         } else {
-            new DialogModal('Create Notebook', (path ?? 'path/to/notebook') + "/", 'Create').show().then(newPath => {
-                this.socket.send(new messages.CreateNotebook(newPath, content))
-                waitForNotebook(newPath)
+            new DialogModal('Create Notebook', (path ?? 'path/to/notebook') + "/", 'Create').show().then(newNbInfo => {
+                this.socket.send(new messages.CreateNotebook(newNbInfo.path, content, newNbInfo.template))
+                waitForNotebook(newNbInfo.path)
             })
         }
     }
@@ -369,8 +369,8 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         if (newPath) {
             this.socket.send(new messages.RenameNotebook(oldPath, newPath))
         } else {
-            new DialogModal('Rename Notebook', oldPath, 'Rename').show().then(newPath => {
-                this.socket.send(new messages.RenameNotebook(oldPath, newPath))
+            new DialogModal('Rename Notebook', oldPath, 'Rename').show().then(newNbInfo => {
+                this.socket.send(new messages.RenameNotebook(oldPath, newNbInfo.path))
             })
         }
     }
@@ -379,8 +379,8 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         if (newPath) {
             this.socket.send(new messages.CopyNotebook(oldPath, newPath))
         } else {
-            new DialogModal('Copy Notebook', oldPath, 'Copy').show().then(newPath => {
-                this.socket.send(new messages.CopyNotebook(oldPath, newPath))
+            new DialogModal('Copy Notebook', oldPath, 'Copy').show().then(newNbInfo => {
+                this.socket.send(new messages.CopyNotebook(oldPath, newNbInfo.path))
             })
         }
     }

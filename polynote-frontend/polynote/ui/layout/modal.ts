@@ -1,6 +1,7 @@
 "use strict";
 
-import {button, div, iconButton, TagElement, textbox} from "../tags"
+import {button, div, dropdown, iconButton, label, para, TagElement, textbox} from "../tags"
+import {ServerStateHandler} from "../../state/server_state";
 
 interface ModalOptions {
     title?: string | string[],
@@ -68,29 +69,46 @@ export class FullScreenModal extends Modal {
     }
 }
 
+export class DialogModalResult {
+    constructor(readonly path: string, readonly template?: string) {}
+}
+
 export class DialogModal extends Modal {
     private pathInput: TagElement<"input">;
-    private onSubmit: (value: string) => void;
+    private onSubmit: (value: DialogModalResult) => void;
 
     constructor(title: string, inputPlaceholder: string, okButtonText: string) {
-        const input = textbox([], "", inputPlaceholder)
+        const input = textbox(['create-notebook-section'], "", inputPlaceholder)
         input.select();
-        input.addEventListener('Accept', evt => this.submit());
+        input.addEventListener('Accept', evt => this.submit(selectedNotebookTemplate));
         input.addEventListener('Cancel', evt => this.hide());
 
+        // Convert list of notebook templates to an object for the dropdown
+        let selectedNotebookTemplate = '';
+        let options = ServerStateHandler.state.notebookTemplates.reduce((obj, v) => ({...obj, [v]: v}), {})
+
+        // Adds a blank string as the first (default) option
+        const notebookTemplateEl = dropdown(['notebook-templates'], Object.assign({'': 'None'}, options), '')
+            .change(() => {
+                selectedNotebookTemplate = notebookTemplateEl.options[notebookTemplateEl.selectedIndex].value;
+            })
+
         const wrapper = div(['input-dialog'], [
-            input,
+            label([], 'Notebook Name', input, true),
+            title === 'Create Notebook' ?
+                label([], 'Notebook Template', notebookTemplateEl, true) : '',
+            para(['create-notebook-section'], 'To add templates, edit your config.yml file.'),
             div(['buttons'], [
                 button(['dialog-button'], {}, 'Cancel').click(evt => this.hide()),
                 ' ',
-                button(['dialog-button'], {}, okButtonText).click(evt => this.submit())])
+                button(['dialog-button'], {}, okButtonText).click(evt => this.submit(selectedNotebookTemplate))])
         ]);
         super(wrapper, { title });
 
         this.pathInput = input;
     }
 
-    show(): Promise<string> {
+    show(): Promise<DialogModalResult> {
         super.show();
         return new Promise(resolve => {
             this.pathInput.focus();
@@ -98,8 +116,8 @@ export class DialogModal extends Modal {
         })
     }
 
-    private submit() {
+    private submit(selectedNotebookTemplate: string) {
         this.hide()
-        this.onSubmit(this.pathInput.value)
+        this.onSubmit(new DialogModalResult(this.pathInput.value, selectedNotebookTemplate === "" ? undefined : selectedNotebookTemplate));
     }
 }

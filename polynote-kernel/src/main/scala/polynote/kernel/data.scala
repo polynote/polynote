@@ -2,7 +2,7 @@ package polynote.kernel
 
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
-import polynote.messages.{CellID, ShortString, TinyList, TinyMap, TinyString}
+import polynote.messages.{CellID, ShortList, ShortString, TinyList, TinyMap, TinyString}
 import polynote.runtime.CellRange
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import scodec.{Attempt, Codec, Err}
@@ -225,7 +225,7 @@ object TaskInfo {
 }
 
 final case class UpdatedTasks(
-  tasks: TinyList[TaskInfo]
+  tasks: ShortList[TaskInfo]
 ) extends KernelStatusUpdate with AlwaysRelevant
 
 object UpdatedTasks extends KernelStatusUpdateCompanion[UpdatedTasks](1) {

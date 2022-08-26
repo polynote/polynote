@@ -180,7 +180,7 @@ object CoursierFetcher {
   }
 
   private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking with Logging, List[(Boolean, String, File)]] = {
-    ZIO.foreachPar(uris) {
+    ZIO.foreachParN(16)(uris) {
       uri =>
         for {
           download <- TaskManager.runSubtask(uri.toString, uri.toString) {

@@ -275,6 +275,14 @@ select {
 
 }
 
+.create-notebook-section {
+  margin-bottom: 1.25em;
+}
+
+.notebook-templates {
+  width: 100%;
+}
+
 .new-cell-divider {
   height: 0.75em;
   text-align: center;
@@ -500,6 +508,21 @@ select {
 
     .cell-input .copy-output {
       display: none;
+    }
+  }
+
+  &.wrap-output {
+    .cell-output .output {
+      padding-right: 1em;
+      &[mime-type='text/plain'] {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+
+    .cell-input .toggle-wrap {
+      border-width: 1px;
+      border-style: solid;
     }
   }
 

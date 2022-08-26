@@ -554,10 +554,10 @@ abstract class Cell extends Disposable {
         }
     }
 
-    protected selectOrInsertCell(direction: "above" | "below", doInsert = true) {
+    protected selectOrInsertCell(direction: "above" | "below") {
         const selected = this.notebookState.selectCell(this.id, {relative: direction, editing: true})
-        // if a new cell wasn't selected, we probably need to insert a cell
-        if (doInsert && (selected === undefined || selected === this.id)) {
+        // if a new cell wasn't selected, we need to insert a cell
+        if (selected === undefined || selected === this.id) {
             this.notebookState.insertCell(direction).then(id => this.notebookState.selectCell(id))
         }
     }
@@ -578,7 +578,7 @@ abstract class Cell extends Disposable {
             })
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
-                this.selectOrInsertCell("below", false)
+                this.selectOrInsertCell("below")
                 return ["stopPropagation", "preventDefault"]
             })
             .when("RunAndInsertBelow", () => {
@@ -812,7 +812,8 @@ export class CodeCell extends Cell {
                     div(["options"], [
                         button(['toggle-code'], {title: 'Show/Hide Code'}, ['{}']).click(evt => this.toggleCode()),
                         iconButton(['toggle-output'], 'Show/Hide Output', 'align-justify', 'Show/Hide Output').click(evt => this.toggleOutput()),
-                        copyCellOutputBtn
+                        iconButton(['toggle-wrap'], 'Don\'t Wrap/Wrap Output', 'turn-down-solid', 'Don\'t Wrap/Wrap Output').click(evt => this.toggleWrap()),
+                        copyCellOutputBtn,
                     ])
                 ]),
                 this.editorEl
@@ -845,6 +846,12 @@ export class CodeCell extends Cell {
                 this.el.classList.add("hide-output");
             } else {
                 this.el.classList.remove("hide-output");
+            }
+
+            if (metadata.wrapOutput) {
+                this.el.classList.add("wrap-output");
+            } else {
+                this.el.classList.remove("wrap-output");
             }
 
             if (metadata.executionInfo) {
@@ -1145,6 +1152,10 @@ export class CodeCell extends Cell {
 
     private toggleOutput() {
         this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({hideOutput: !prevMetadata.hideOutput})))
+    }
+
+    private toggleWrap() {
+        this.cellState.updateField("metadata", prevMetadata => setValue(prevMetadata.copy({wrapOutput: !prevMetadata.wrapOutput})))
     }
 
     private copyOutput() {
@@ -2171,7 +2182,7 @@ export class VizCell extends Cell {
             watchValues();
         }
 
-        // watch metadata to show/hide code/output
+        // watch metadata to show/hide code/output/wrapping
         // TODO: this is duplicated from CodeCell; should extract a common base for code-like cells
         const updateMetadata = (metadata: CellMetadata) => {
             if (metadata.hideSource) {
@@ -2185,6 +2196,12 @@ export class VizCell extends Cell {
                 this.el.classList.add("hide-output");
             } else {
                 this.el.classList.remove("hide-output");
+            }
+
+            if (metadata.wrapOutput) {
+                this.el.classList.add("wrap-output");
+            } else {
+                this.el.classList.remove("wrap-output");
             }
 
             if (metadata.executionInfo) {

@@ -578,7 +578,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             })
             return { notebooks: setValue(notebooks) }
         });
-        this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates) => {
+        this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates, notebookTemplates) => {
             // First, we need to check to see if versions match. If they don't, we need to reload to clear out any
             // messed up state!
             if (s.serverVersion !== "unknown" && serverVersion !== s.serverVersion) {
@@ -597,6 +597,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 serverCommit: setValue(serverCommit),
                 identity: setValue(identity ?? new Identity("Unknown User", null)),
                 sparkTemplates: setValue(sparkTemplates),
+                notebookTemplates: setValue(notebookTemplates)
             }
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {

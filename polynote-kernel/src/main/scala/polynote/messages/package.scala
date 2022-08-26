@@ -57,6 +57,7 @@ package object messages {
     def of[A](elems: A*): ShortList[A] = apply(elems.toList)
     val Nil: ShortList[Nothing] = apply(List.empty)
     def empty[A]: ShortList[A] = ShortList(List.empty[A])
+    def unapply[A](list: ShortList[A]): Option[List[A]] = Option(list)
   }
 
   implicit def shortListCodec[A](implicit ca: Lazy[Codec[A]]): Codec[ShortList[A]] =

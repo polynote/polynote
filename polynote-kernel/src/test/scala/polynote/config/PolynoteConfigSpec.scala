@@ -172,6 +172,18 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       "^(com.esotericsoftware.kryo|org.myclass|scala|javax?|jdk|sun|com.sun|com.oracle|polynote|org.w3c|org.xml|org.omg|org.ietf|org.jcp|org.apache.spark|org.spark_project|org.glassfish.jersey|org.jvnet.hk2|org.apache.hadoop|org.codehaus|org.slf4j|org.log4j|org.apache.log4j)\\."
   }
 
+  it should "Parse template notebooks" in {
+    val yamlStr =
+      """
+        |behavior:
+        |   notebook_templates:
+        |     - hello_world.ipynb
+        |     - another_template_notebook.ipynb
+        |""".stripMargin
+    val parsed = PolynoteConfig.parse(yamlStr)
+    parsed.right.value.behavior.notebookTemplates shouldEqual List("hello_world.ipynb", "another_template_notebook.ipynb")
+  }
+
   it should "handle empty configurations" in {
     val yamlStr = ""
 
