@@ -438,6 +438,14 @@ object RunningKernels extends MessageCompanion[RunningKernels](24)
 final case class KeepAlive(payload: Byte) extends Message
 object KeepAlive extends MessageCompanion[KeepAlive](32)
 
+final case class NotebookSearchResult(
+  path: ShortString,
+  cellID: CellID,
+  content: ShortString
+)
+final case class SearchNotebooks(query: ShortString, notebookSearchResults: List[NotebookSearchResult]) extends Message
+object SearchNotebooks extends MessageCompanion[SearchNotebooks](34)
+
 /*****************************************
  ** Stuff for stream-ish value handling **
  *****************************************/

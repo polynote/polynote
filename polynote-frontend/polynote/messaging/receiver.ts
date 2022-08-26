@@ -612,5 +612,9 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             })
             return { serverOpenNotebooks: notebooks }
         })
+        this.receive(messages.SearchNotebooks, (s, query, notebookSearchResults) => {
+            console.log("RECEIVING SEARCH RESPONSE:", query, notebookSearchResults)
+            return {  }
+        })
     }
 }

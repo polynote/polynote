@@ -66,6 +66,8 @@ object SocketSession {
       // echo received KeepAlive message back to client.
       ZIO.succeed(Option(KeepAlive(payload)))
 
+    case SearchNotebooks(query, _) => NotebookManager.search(query).map { results => Some(SearchNotebooks(query, results)) }
+
     case other =>
       ZIO.succeed(None)
   }

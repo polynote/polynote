@@ -391,6 +391,10 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
         }
     }
 
+    searchNotebooks(query: string) {
+        this.socket.send(new messages.SearchNotebooks(query, []));
+    }
+
     /*******************************
      ** UI methods (which don't   **
      ** really belong here)       **

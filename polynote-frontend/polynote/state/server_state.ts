@@ -12,7 +12,7 @@ import {
     StateView,
     updateProperty
 } from ".";
-import {Identity} from "../data/messages";
+import {Identity, NotebookSearchResult} from "../data/messages";
 import {SocketSession} from "../messaging/comms";
 import {NotebookMessageReceiver} from "../messaging/receiver";
 import {NotebookMessageDispatcher,} from "../messaging/dispatcher";
@@ -42,7 +42,8 @@ export interface ServerState {
     // ephemeral states
     currentNotebook?: string,
     openNotebooks: string[],
-    serverOpenNotebooks: string[]
+    serverOpenNotebooks: string[],
+    searchResults: NotebookSearchResult[] // TODO: This should be an array of type SearchResult (which must be created)
 }
 
 export class ServerStateHandler extends BaseHandler<ServerState> {
@@ -65,7 +66,8 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 sparkTemplates: [],
                 currentNotebook: undefined,
                 openNotebooks: [],
-                serverOpenNotebooks: []
+                serverOpenNotebooks: [],
+                searchResults: []
             }))
         }
         return ServerStateHandler.inst;
@@ -107,7 +109,8 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 sparkTemplates: [],
                 currentNotebook: undefined,
                 openNotebooks: [],
-                serverOpenNotebooks: []
+                serverOpenNotebooks: [],
+                searchResults: []
             }))
         }
     }

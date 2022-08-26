@@ -152,7 +152,7 @@ class NotebookToolbar extends ToolbarElement {
                     .click(_ => this.dispatcher?.cancelTasks()),
                 iconButton(["branch"], "Create branch", "code-branch", "Branch").disable().withKey('alwaysDisabled', true),
                 iconButton(["download"], "Download", "download", "Download").click(() => this.dispatcher?.downloadNotebook()),
-                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.clearOutput())
+                iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.clearOutput()),
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "clock", "Schedule").disable().withKey('alwaysDisabled', true),
             ]
@@ -509,6 +509,7 @@ class SettingsToolbar extends ToolbarElement {
                     this.dispatcher.viewAbout("Hotkeys")
                 })
                 .withKey('neverDisabled', true),
+            iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.searchNotebooks("requests"))
         ]]);
 
         this.floatingMenu = div(['floating-menu'], []);
