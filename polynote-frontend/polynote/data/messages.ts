@@ -968,16 +968,16 @@ export class NotebookSearchResult {
     static codec = combined(shortStr, uint16, shortStr).to(NotebookSearchResult);
 
     static unapply(inst: NotebookSearchResult): ConstructorParameters<typeof NotebookSearchResult> {
-        return [inst.path, inst.cellID, inst.line];
+        return [inst.path, inst.cellID, inst.cellContent];
     }
 
-    constructor(readonly path: string, readonly cellID: number, readonly line: string) {
+    constructor(readonly path: string, readonly cellID: number, readonly cellContent: string) {
         Object.freeze(this);
     }
 }
 
 export class SearchNotebooks extends Message {
-    static codec = combined(shortStr, arrayCodec(int32, NotebookSearchResult.codec)).to(SearchNotebooks); // TODO: Add codec for NotebookSearchResult here and on receiver
+    static codec = combined(shortStr, arrayCodec(int32, NotebookSearchResult.codec)).to(SearchNotebooks);
     static get msgTypeId() { return 34; }
 
     static unapply(inst: SearchNotebooks): ConstructorParameters<typeof SearchNotebooks> {

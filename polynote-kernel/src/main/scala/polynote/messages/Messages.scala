@@ -443,7 +443,7 @@ object KeepAlive extends MessageCompanion[KeepAlive](32)
 final case class NotebookSearchResult(
   path: ShortString,
   cellID: CellID,
-  content: ShortString
+  cellContent: ShortString
 )
 final case class SearchNotebooks(query: ShortString, notebookSearchResults: List[NotebookSearchResult]) extends Message
 object SearchNotebooks extends MessageCompanion[SearchNotebooks](34)

@@ -236,7 +236,7 @@ package object server {
         }
 
         override def search(query: String): RIO[BaseEnv with GlobalEnv, List[NotebookSearchResult]] = {
-          val validCells = repository.listNotebooks.flatMap(nbs => ZIO.foreachPar(nbs) { nb => {
+          val validCells = repository.listNotebooks.flatMap(nbs => ZIO.foreachParN(16)(nbs) { nb => {
             for {
               loadedNB <- repository.loadNotebook(nb)
               cells    <- ZIO(loadedNB.cells.filter(c => c.content.toString.contains(query)))

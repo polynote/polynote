@@ -6,6 +6,7 @@ import {ServerStateHandler} from "../../state/server_state";
 import {FakeSelect} from "../display/fake_select";
 import {LaTeXEditor} from "../input/latex_editor";
 import {ClientInterpreters} from "../../interpreter/client_interpreter";
+import {SearchModal} from "./search";
 
 /**
  * The Toolbar. Its contents change depending on the current cell selected, and buttons are disabled when there is
@@ -18,7 +19,7 @@ export class Toolbar extends Disposable {
 
         const connectionStatus = ServerStateHandler.get.view("connectionStatus");
 
-        let nb = new NotebookToolbar(connectionStatus);
+        let nb = new NotebookToolbar(dispatcher, connectionStatus);
         let cell = new CellToolbar(connectionStatus);
         let code = new CodeToolbar(connectionStatus);
         let text = new TextToolbar(connectionStatus);
@@ -141,8 +142,13 @@ class NotebookToolbar extends ToolbarElement {
     private dispatcher?: NotebookMessageDispatcher;
     private handler?: NotebookStateHandler;
     private cancelButton: TagElement<'button'>;
-    constructor(connectionStatus: StateView<"disconnected" | "connected">) {
+    constructor(serverMessageDispatcher: ServerMessageDispatcher, connectionStatus: StateView<"disconnected" | "connected">) {
         super(connectionStatus);
+
+        // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
+        const searchModal = new SearchModal(serverMessageDispatcher);
+        searchModal.show();
+        searchModal.hide();
 
         this.el = this.toolbarElem("notebook", [
             [
@@ -155,6 +161,8 @@ class NotebookToolbar extends ToolbarElement {
                 iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.clearOutput()),
             ], [
                 iconButton(["schedule-notebook"], "Schedule notebook", "clock", "Schedule").disable().withKey('alwaysDisabled', true),
+            ], [
+                iconButton(["search"], "Search Notebooks", "search", "Search").click(() => searchModal.showUI()),
             ]
         ]);
     }
@@ -509,7 +517,6 @@ class SettingsToolbar extends ToolbarElement {
                     this.dispatcher.viewAbout("Hotkeys")
                 })
                 .withKey('neverDisabled', true),
-            iconButton(["clear"], "Clear notebook output", "minus-circle", "Clear").click(() => this.dispatcher?.searchNotebooks("requests"))
         ]]);
 
         this.floatingMenu = div(['floating-menu'], []);
