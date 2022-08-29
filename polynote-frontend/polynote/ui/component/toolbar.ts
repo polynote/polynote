@@ -300,9 +300,13 @@ class CodeToolbar extends ToolbarElement {
                     .click(() => {
                         if (this.dispatcher) this.dispatcher.runActiveCell();
                     }),
-                this.runToButton = iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "fast-forward", "Run to cursor")
+                this.runToButton = iconButton(["run-cell", "to-cursor"], "Run all cells above, then this cell", "backward-fast", "Run to cursor")
                     .click(() => {
                         if (this.dispatcher) this.dispatcher.runToActiveCell()
+                    }),
+                this.runToButton = iconButton(["run-cell", "from-cursor"], "Run this cell, then all cells below", "fast-forward", "Run from cursor")
+                    .click(() => {
+                        if (this.dispatcher) this.dispatcher.runFromActiveCell()
                     }),
                 this.cancelButton = iconButton(["stop-cell"], "Stop/cancel this cell", "stop", "Cancel")
                     .click(() => {
