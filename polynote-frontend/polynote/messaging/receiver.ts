@@ -591,6 +591,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                     interpreters[key] = ClientInterpreters[key].languageTitle;
             });
 
+
             return {
                 interpreters: setValue(interpreters),
                 serverVersion: setValue(serverVersion),

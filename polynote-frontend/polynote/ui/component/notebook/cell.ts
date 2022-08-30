@@ -86,8 +86,9 @@ import IModelContentChangedEvent = editor.IModelContentChangedEvent;
 import IIdentifiedSingleEditOperation = editor.IIdentifiedSingleEditOperation;
 import TrackedRangeStickiness = editor.TrackedRangeStickiness;
 import IMarkerData = editor.IMarkerData;
-import {UserPreferencesHandler} from "../../../state/preferences";
+import {UserPreferences, UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
+import {MarkdownIt} from "../../input/markdown-it";
 
 
 export type CodeCellModel = editor.ITextModel & {
@@ -282,18 +283,52 @@ export class CellContainer extends Disposable {
     private path: string;
     private cellState: StateHandler<CellState>;
 
+    private prevInMarkdownMode: boolean;
+
     constructor(
         newCellDivider: TagElement<'div'>,
         private dispatcher: NotebookMessageDispatcher,
         private notebookState: NotebookStateHandler,
-        state: StateHandler<CellState>
+        state: StateHandler<CellState>,
+        insertedCell: boolean
     ) {
         super()
         const cellState = this.cellState = state.fork(this);
         const id = cellState.state.id;
         this.cellId = `Cell${id}`;
-        this._cell = this.cellFor(cellState.state.language);
         this.path = notebookState.state.path;
+
+        this.prevInMarkdownMode = UserPreferencesHandler.state.markdown.value;
+
+        const markdownStateHandler = (pref: typeof UserPreferences["markdown"]) => {
+            if (!this._cell) { // if cell hasn't been created yet, don't do anything special
+                this._cell = this.cellFor(cellState.state.language);
+                if (this.cellState.state.language === "text" && !insertedCell) {
+                    this._cell.onBlur();
+                }
+            } else if (this.cellState.state.language === "text") {
+                // If the cell's mode did not change, do nothing
+                if (pref.value == this.prevInMarkdownMode) return;
+
+                const newCell = this.cellFor(cellState.state.language);
+
+                // Replace the old cell
+                newCell.replace(this._cell).then(cell => {
+                    this._cell = cell;
+                    this._cell.layout();
+
+                    // If going from RTE to Markdown mode, compile the HTML into markdown and blur the cell to avoid it going into the editor view
+                    if (pref.value && !this.prevInMarkdownMode) {
+                        this._cell.onBlur();
+                    }
+
+                    this.prevInMarkdownMode = pref.value;
+                })
+            }
+        }
+        const markdownState = UserPreferencesHandler.view("markdown")
+        markdownStateHandler(markdownState.state)
+        markdownState.addObserver(state => markdownStateHandler(state)).disposeWith(this)
 
         const dragHandle = new CellDragHandle(
             this,
@@ -350,7 +385,7 @@ export class CellContainer extends Disposable {
     private cellFor(lang: string) {
         switch (lang) {
             case "text":
-                return new TextCell(this.dispatcher, this.notebookState, this.cellState);
+                return UserPreferencesHandler.state.markdown.value ? new MarkdownCell(this.dispatcher, this.notebookState, this.cellState) : new TextCell(this.dispatcher, this.notebookState, this.cellState);
             case "viz":
                 return new VizCell(this.dispatcher, this.notebookState, this.cellState);
             default:
@@ -493,6 +528,9 @@ abstract class Cell extends Disposable {
     protected onDeselected() {
         this.removeCellClass("active");
     }
+
+    // Method for deselecting markdown cells
+    onBlur() {}
 
     protected onDisposed() {
 
@@ -637,41 +675,23 @@ abstract class Cell extends Disposable {
 
 type ErrorMarker = {error: CompileErrors | RuntimeError, markers: IMarkerData[]};
 
-export class CodeCell extends Cell {
-    private readonly editor: IStandaloneCodeEditor;
-    readonly editorEl: TagElement<"div">;
-    private cellInputTools: TagElement<"div">;
-    private applyingServerEdits: boolean;
-    private execDurationUpdater?: number;
-    private highlightDecorations: string[] = [];
-    private vim?: any;
-    private commentHandler: CommentHandler;
-
-    private errorMarkers: ErrorMarker[] = [];
-
-    // TODO (overflow widgets)
-    // private overflowDomNode: TagElement<"div">;
+abstract class MonacoCell extends Cell {
+    protected readonly editor: IStandaloneCodeEditor;
+    protected applyingServerEdits: boolean;
+    editorEl: TagElement<"div">;
+    protected vim?: any;
 
     constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
         super(dispatcher, notebookState, cell);
         const cellState = this.cellState;
-        const langSelector = dropdown(['lang-selector'], ServerStateHandler.state.interpreters);
-        langSelector.setSelectedValue(this.state.language);
-        langSelector.addEventListener("input", evt => {
-            const selectedLang = langSelector.getSelectedValue();
-            if (selectedLang !== this.state.language) {
-                notebookState.setCellLanguage(this.id, selectedLang)
-            }
-        });
-
-        const execInfoEl = div(["exec-info"], []);
 
         this.editorEl = div(['cell-input-editor'], [])
 
         // TODO (overflow widgets)
         // this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
 
-        const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
+        const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ??
+                                  (this.state.language === "text" ? "markdown" : this.state.language);
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
             value: this.state.content,
@@ -704,18 +724,7 @@ export class CodeCell extends Cell {
             // overflowWidgetsDomNode: this.overflowDomNode
         });
 
-        this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
 
-        this.editor.onDidFocusEditorWidget(() => {
-            this.editor.updateOptions({ renderLineHighlight: "all" });
-            this.doSelect();
-        });
-        this.editor.onDidBlurEditorWidget(() => {
-            this.editor.updateOptions({ renderLineHighlight: "none" });
-            if (!this.commentHandler.activeComment() && !this.el.contains(document.getSelection()?.anchorNode ?? null)) {
-                this.doDeselect();
-            }
-        });
         this.editor.onDidChangeCursorSelection(evt => {
             if (this.applyingServerEdits) return // ignore when applying server edits.
 
@@ -734,24 +743,333 @@ export class CodeCell extends Cell {
                 }
             }
         });
-        (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
-            foldingModel => foldingModel?.onDidChange(() => this.layout(this.previousWidth))
-        );
-        this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
-        // we need to do this hack in order for completions to work :(
-        (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
-        (this.editor.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
+        this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
 
         // NOTE: this uses some private monaco APIs. If this ever ends up breaking after we update monaco it's a signal
         //       we'll need to rethink this stuff.
         this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
+
+        this.el = div(['cell-container', this.state.language, 'code-cell'], [
+            div(['cell-input'], [
+                div(['cell-input-tools'], []),
+                this.editorEl
+            ])
+        ]);
 
         cellState.observeKey("editing", editing => {
             if (editing) {
                 this.editor.focus()
             }
         })
+
+        cellState.observeKey("content", (content, updateResult, src) => {
+            if (src === this)   // ignore edits that originated from monaco
+                return;
+
+            const edits = purematch<UpdateLike<string>, ContentEdit[]>(updateResult.update)
+                .when(EditString, edits => edits)
+                .whenInstance(SetValue, update => updateResult.oldValue ? diffEdits(updateResult.oldValue as string, update.value as string) : [])
+                .otherwiseThrow
+
+            if (edits && edits.length > 0) {
+                this.applyEdits(edits);
+            }
+        })
+    }
+
+    protected applyEdits(edits: ContentEdit[]) {
+        // can't listen to these edits or they'll be sent to the server again
+        // TODO: is there a better way to silently apply these edits? This seems like a hack; only works because of
+        //       single-threaded JS, which I don't know whether workers impact that assumption (JS)
+        this.applyingServerEdits = true;
+
+        try {
+            const monacoEdits: IIdentifiedSingleEditOperation[] = [];
+            const model = this.editor.getModel()!;
+            edits.forEach((edit) => {
+                if (edit.isEmpty()) {
+                    return;
+                }
+
+                const pos = model.getPositionAt(edit.pos);
+                if (edit instanceof Delete) {
+                    const endPos = model.getPositionAt(edit.pos + edit.length);
+                    monacoEdits.push({
+                        range: new monaco.Range(pos.lineNumber, pos.column, endPos.lineNumber, endPos.column),
+                        text: null
+                    });
+                } else if (edit instanceof Insert) {
+                    monacoEdits.push({
+                        range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+                        text: edit.content,
+                        forceMoveMarkers: true
+                    });
+                }
+            });
+
+            //this.editor.getModel().applyEdits(monacoEdits);
+            // TODO: above API call won't put the edits on the undo stack. Should other people's edits go on my undo stack?
+            //       below calls implement that. It is weird to have other peoples' edits in your undo stack, but it
+            //       also gets weird when they aren't – your undos get out of sync with the document.
+            //       Maybe there's something different that can be done with undo stops – I don't really know what they
+            //       are because it's not well documented (JS)
+            this.editor.pushUndoStop();
+            this.editor.executeEdits("Anonymous", monacoEdits);
+            this.editor.pushUndoStop();
+            // TODO: should show some UI thing to indicate whose edits they are, rather than just having them appear
+        } finally {
+            this.applyingServerEdits = false;
+        }
+        // this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
+    }
+
+    getPosition() {
+        return this.editor.getPosition()!;
+    }
+
+    getRange() {
+        return this.editor.getModel()!.getFullModelRange();
+    }
+
+    getCurrentSelection() {
+        return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
+    }
+
+    setDisabled(disabled: boolean) {
+        this.editor.updateOptions({readOnly: disabled});
+    }
+
+    /**
+     * Update the layout of the editor and cell. Height and Width are treated differently:
+     *      The height of the editor and cell expands to fit the text.
+     *          So, height data goes from editor -> cell.
+     *          No vertical scrollbar should be visible.
+     *      The width of the editor is based on the width of the cell, which is determined by the space available in the viewport.
+     *          So, width data goes from cell -> editor.
+     *          A horizontal scrollbar is necessary if the text content overflows.
+     *
+     *      Returns whether a layout was triggered.
+     */
+    protected previousHeight: number = 0;
+    protected previousWidth: number = 0;
+
+    layout(forceWidth?: number, onlyHeight?: boolean): boolean {
+        // no point in doing anything if we're not in the DOM.
+        if (!this.el.isConnected) {
+            return false;
+        }
+        const editorLayout = this.editor.getLayoutInfo();
+        // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
+        const lineHeight = this.editor.getOption(editor.EditorOption.lineHeight);
+        // if the editor height is less than one line we need to initialize the height with both the content height as well as the horizontal scrollbar height.
+        const shouldAddScrollbarHeight = editorLayout.height < lineHeight;
+        const height = this.editor.getContentHeight() + (shouldAddScrollbarHeight ? editorLayout.horizontalScrollbarHeight : 0);
+
+        // avoid measuring width if only height changes are to be considered
+        if (onlyHeight && this.previousHeight === height) {
+            return false;
+        }
+
+        // the editor width is determined by the container's width.
+        // if the width was passed from above, we can avoid measuring the width of the container (which forces a reflow)
+        let width = forceWidth ?? (onlyHeight ? this.previousWidth : this.editorEl.clientWidth);
+        if (width === 0) { // if width is 0 we need to measure, unfortunately.
+            width = this.editorEl.clientWidth
+        }
+
+        // avoid doing a layout if size hasn't changed
+        if (this.previousHeight === height && this.previousWidth === width) {
+            return false;
+        }
+        this.previousHeight = height;
+        this.previousWidth = width;
+
+        // Update height and width on the editor.
+        this.editor.layout({width, height});
+
+        // TODO (overflow widgets)
+        // this.layoutWidgets();
+
+        return true
+    }
+
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string): PostKeyAction[] | undefined {
+        return super.keyAction(key, pos, range, selection);
+    }
+
+    protected updateCellContent(event: IModelContentChangedEvent) {
+        const edits = event.changes.flatMap((contentChange) => {
+            if (contentChange.rangeLength > 0 && contentChange.text.length > 0) {
+                return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
+            } else if (contentChange.rangeLength > 0) {
+                return [new Delete(contentChange.rangeOffset, contentChange.rangeLength)];
+            } else if (contentChange.text.length > 0) {
+                return [new Insert(contentChange.rangeOffset, contentChange.text)];
+            } else return [];
+        });
+        this.cellState.updateField("content", () => editString(edits), this);
+    }
+
+    protected onSelected() {
+        super.onSelected();
+        // TODO (overflow widgets)
+        // this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode);
+        // this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', this.scrollListener);
+        this.vim = VimStatus.get.activate(this.editor);
+    }
+
+    protected onDeselected() {
+        super.onDeselected();
+    }
+
+    delete() {
+        super.delete()
+        VimStatus.get.deactivate(this.editor.getId())
+    }
+
+    protected calculateHash(maybeSelection?: Range): URL {
+        const currentURL = super.calculateHash(maybeSelection);
+
+        const model = this.editor.getModel()
+        if (model && maybeSelection && !maybeSelection.isEmpty()) {
+            const pos = PosRange.fromRange(maybeSelection, model)
+            currentURL.hash += `,${pos.rangeStr}`
+        }
+        return currentURL
+    }
+
+    protected onDisposed() {
+        super.onDisposed();
+        this.editor.dispose();
+    }
+
+    protected abstract onChangeModelContent(event: IModelContentChangedEvent): void
+}
+
+
+export class MarkdownCell extends MonacoCell {
+    private renderedMarkdown: TagElement<"div">;
+
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
+        super(dispatcher, notebookState, cell);
+        this.renderedMarkdown = div(['cell-input-editor', 'hide', 'markdown-body'], []);
+        this.editorEl.insertAdjacentElement("afterend", this.renderedMarkdown);
+
+        this.editor.onDidBlurEditorWidget(() => {
+            this.onBlur();
+        });
+
+        this.el.addEventListener('focus', () => {
+            this.editor.updateOptions({renderLineHighlight: "all"});
+            // Hide the rendered markdown and show the editor in a code-cell
+            this.renderedMarkdown.classList.add('hide');
+            this.editorEl.classList.remove('hide');
+            this.layout(); // re-calculate the layout for the editor, as sometimes it fails to render otherwise
+            this.el.classList.replace('text-cell', 'code-cell');
+
+            this.doSelect();
+        });
+    }
+
+    protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
+        return matchS<PostKeyAction[]>(key)
+            .when("MoveUp", () => {
+                if (!selection && pos.lineNumber <= range.startLineNumber && pos.column <= range.startColumn) {
+                    this.notebookState.selectCell(this.id, {relative: "above", editing: true})
+                }
+            })
+            .when("MoveUpK", () => {
+                // do nothing
+            })
+            .when("MoveDown", () => {
+                if (!selection && pos.lineNumber >= range.endLineNumber && pos.column >= range.endColumn) {
+                    this.notebookState.selectCell(this.id, {relative: "below", editing: true})
+                }
+            })
+            .when("MoveDownJ", () => {
+                // do nothing
+            })
+            .otherwise(() => super.keyAction(key, pos, range, selection)) ?? undefined
+    }
+
+    protected onChangeModelContent(event: IModelContentChangedEvent) {
+        this.layout(this.previousWidth, true);
+        if (this.applyingServerEdits)
+            return;
+
+        this.updateCellContent(event);
+    }
+
+    onBlur() {
+        this.editor.updateOptions({renderLineHighlight: "none"});
+        if (!this.el.contains(document.getSelection()?.anchorNode ?? null)) {
+            this.renderedMarkdown.innerHTML = MarkdownIt.render(this.cellState.state.content);
+
+            // Hide the editor and show the rendered markdown in a text-cell
+            this.editorEl.classList.add('hide');
+            this.renderedMarkdown.classList.remove('hide');
+            this.el.classList.replace('code-cell', 'text-cell');
+        }
+
+        this.doDeselect();
+    }
+
+    protected onDisposed() {
+        super.onDisposed();
+        this.editor.dispose();
+    }
+}
+
+export class CodeCell extends MonacoCell {
+    private cellInputTools: TagElement<"div">;
+    private execDurationUpdater?: number;
+    private highlightDecorations: string[] = [];
+    private commentHandler: CommentHandler;
+
+    private errorMarkers: ErrorMarker[] = [];
+
+    // TODO (overflow widgets)
+    // private overflowDomNode: TagElement<"div">;
+
+    constructor(dispatcher: NotebookMessageDispatcher, notebookState: NotebookStateHandler, cell: StateHandler<CellState>) {
+        super(dispatcher, notebookState, cell);
+        const cellState = this.cellState;
+
+        // Remove markdown from the list of languages that a code cell can turn into via the toolbar dropdown
+        const dropdownInterpreters = ServerStateHandler.state.interpreters;
+        delete dropdownInterpreters.markdown;
+        const langSelector = dropdown(['lang-selector'], dropdownInterpreters);
+        langSelector.setSelectedValue(this.state.language);
+        langSelector.addEventListener("input", evt => {
+            const selectedLang = langSelector.getSelectedValue();
+            if (selectedLang !== this.state.language) {
+                notebookState.setCellLanguage(this.id, selectedLang)
+            }
+        });
+
+        const execInfoEl = div(["exec-info"], []);
+
+        this.editorEl.setAttribute('spellcheck', 'false');  // so code won't be spellchecked
+
+        this.editor.onDidFocusEditorWidget(() => {
+            this.editor.updateOptions({renderLineHighlight: "all"});
+            this.doSelect();
+        });
+        this.editor.onDidBlurEditorWidget(() => {
+            this.editor.updateOptions({renderLineHighlight: "none"});
+            if (!this.el.contains(document.getSelection()?.anchorNode ?? null)) {
+                this.doDeselect();
+            }
+        });
+
+        (this.editor.getContribution('editor.contrib.folding') as FoldingController).getFoldingModel()?.then(
+            foldingModel => foldingModel?.onDidChange(() => this.layout(this.previousWidth))
+        );
+
+        // we need to do this hack in order for completions to work :(
+        (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
+        (this.editor.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
 
         const compileErrorsState = cellState.view("compileErrors");
         compileErrorsState.addObserver(errors => {
@@ -879,21 +1197,6 @@ export class CodeCell extends Cell {
         }
         updateMetadata(this.state.metadata);
         cellState.observeKey("metadata", metadata => updateMetadata(metadata));
-
-        cellState.observeKey("content", (content, updateResult, src) => {
-            if (src === this)   // ignore edits that originated from monaco
-                return;
-
-            const edits = purematch<UpdateLike<string>, ContentEdit[]>(updateResult.update)
-                .when(EditString, edits => edits)
-                .whenInstance(SetValue, update => updateResult.oldValue ? diffEdits(updateResult.oldValue as string, update.value as string) : [])
-                .otherwiseThrow
-
-            if (edits && edits.length > 0) {
-                // console.log("applying edits", edits)
-                this.applyEdits(edits);
-            }
-        })
 
         const updateError = (error: boolean | undefined) => {
             if (error) {
@@ -1034,7 +1337,7 @@ export class CodeCell extends Cell {
 
     }
 
-    private onChangeModelContent(event: IModelContentChangedEvent) {
+    protected onChangeModelContent(event: IModelContentChangedEvent) {
         this.layout(this.previousWidth, true);
         if (this.applyingServerEdits)
             return;
@@ -1051,16 +1354,7 @@ export class CodeCell extends Cell {
 
         // TODO: remove cell highlights here?
 
-        const edits = event.changes.flatMap((contentChange) => {
-            if (contentChange.rangeLength > 0 && contentChange.text.length > 0) {
-                return [new Delete(contentChange.rangeOffset, contentChange.rangeLength), new Insert(contentChange.rangeOffset, contentChange.text)];
-            } else if (contentChange.rangeLength > 0) {
-                return [new Delete(contentChange.rangeOffset, contentChange.rangeLength)];
-            } else if (contentChange.text.length > 0) {
-                return [new Insert(contentChange.rangeOffset, contentChange.text)];
-            } else return [];
-        });
-        this.cellState.updateField("content", () => editString(edits), this);
+        this.updateCellContent(event);
 
         // update comments
         this.commentHandler.triggerCommentUpdate()
@@ -1204,59 +1498,6 @@ export class CodeCell extends Cell {
         }
     }
 
-    /**
-     * Update the layout of the editor and cell. Height and Width are treated differently:
-     *      The height of the editor and cell expands to fit the text.
-     *          So, height data goes from editor -> cell.
-     *          No vertical scrollbar should be visible.
-     *      The width of the editor is based on the width of the cell, which is determined by the space available in the viewport.
-     *          So, width data goes from cell -> editor.
-     *          A horizontal scrollbar is necessary if the text content overflows.
-     *
-     *      Returns whether a layout was triggered.
-     */
-    private previousHeight: number = 0;
-    private previousWidth: number = 0;
-    layout(forceWidth?: number, onlyHeight?: boolean): boolean {
-        // no point in doing anything if we're not in the DOM.
-        if (!this.el.isConnected) {
-            return false;
-        }
-        const editorLayout = this.editor.getLayoutInfo();
-        // set the height to the height of the text content. If there's a scrollbar, give it some room so it doesn't cover any text
-        const lineHeight = this.editor.getOption(editor.EditorOption.lineHeight);
-        // if the editor height is less than one line we need to initialize the height with both the content height as well as the horizontal scrollbar height.
-        const shouldAddScrollbarHeight = editorLayout.height < lineHeight;
-        const height = this.editor.getContentHeight() + (shouldAddScrollbarHeight ? editorLayout.horizontalScrollbarHeight : 0);
-
-        // avoid measuring width if only height changes are to be considered
-        if (onlyHeight && this.previousHeight === height) {
-            return false;
-        }
-
-        // the editor width is determined by the container's width.
-        // if the width was passed from above, we can avoid measuring the width of the container (which forces a reflow)
-        let width = forceWidth ?? (onlyHeight ? this.previousWidth : this.editorEl.clientWidth);
-        if (width === 0) { // if width is 0 we need to measure, unfortunately.
-            width = this.editorEl.clientWidth
-        }
-
-        // avoid doing a layout if size hasn't changed
-        if (this.previousHeight === height && this.previousWidth === width) {
-            return false;
-        }
-        this.previousHeight = height;
-        this.previousWidth = width;
-
-        // Update height and width on the editor.
-        this.editor.layout({width, height});
-
-        // TODO (overflow widgets)
-        // this.layoutWidgets();
-
-        return true
-    }
-
     // TODO (overflow widgets)
     // private layoutWidgets() {
     //     if (this.overflowDomNode.parentNode) {
@@ -1294,52 +1535,6 @@ export class CodeCell extends Cell {
                 }
             }
         }
-    }
-
-    private applyEdits(edits: ContentEdit[]) {
-        // can't listen to these edits or they'll be sent to the server again
-        // TODO: is there a better way to silently apply these edits? This seems like a hack; only works because of
-        //       single-threaded JS, which I don't know whether workers impact that assumption (JS)
-        this.applyingServerEdits = true;
-
-        try {
-            const monacoEdits: IIdentifiedSingleEditOperation[] = [];
-            const model = this.editor.getModel()!;
-            edits.forEach((edit) => {
-                if (edit.isEmpty()) {
-                    return;
-                }
-
-                const pos = model.getPositionAt(edit.pos);
-                if (edit instanceof Delete) {
-                    const endPos = model.getPositionAt(edit.pos + edit.length);
-                    monacoEdits.push({
-                        range: new monaco.Range(pos.lineNumber, pos.column, endPos.lineNumber, endPos.column),
-                        text: null
-                    });
-                } else if (edit instanceof Insert) {
-                    monacoEdits.push({
-                        range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
-                        text: edit.content,
-                        forceMoveMarkers: true
-                    });
-                }
-            });
-
-            //this.editor.getModel().applyEdits(monacoEdits);
-            // TODO: above API call won't put the edits on the undo stack. Should other people's edits go on my undo stack?
-            //       below calls implement that. It is weird to have other peoples' edits in your undo stack, but it
-            //       also gets weird when they aren't – your undos get out of sync with the document.
-            //       Maybe there's something different that can be done with undo stops – I don't really know what they
-            //       are because it's not well documented (JS)
-            this.editor.pushUndoStop();
-            this.editor.executeEdits("Anonymous", monacoEdits);
-            this.editor.pushUndoStop();
-            // TODO: should show some UI thing to indicate whose edits they are, rather than just having them appear
-        } finally {
-            this.applyingServerEdits = false;
-        }
-        // this.editListener = this.editor.onDidChangeModelContent(event => this.onChangeModelContent(event));
     }
 
     protected keyAction(key: string, pos: IPosition, range: IRange, selection: string) {
@@ -1425,16 +1620,13 @@ export class CodeCell extends Cell {
         }
     }
 
-    getPosition() {
-        return this.editor.getPosition()!;
-    }
-
-    getRange() {
-        return this.editor.getModel()!.getFullModelRange();
-    }
-
-    getCurrentSelection() {
-        return this.editor.getModel()!.getValueInRange(this.editor.getSelection()!)
+    setDisabled(disabled: boolean) {
+        super.setDisabled(disabled);
+        if (disabled) {
+            this.cellInputTools.classList.add("disabled")
+        } else {
+            this.cellInputTools.classList.remove("disabled")
+        }
     }
 
     get path() {
@@ -1463,10 +1655,6 @@ export class CodeCell extends Cell {
 
     protected onSelected() {
         super.onSelected();
-        // TODO (overflow widgets)
-        // this.editorEl.closest('.notebook-content')!.appendChild(this.overflowDomNode);
-        // this.editorEl.closest('.notebook-cells')!.addEventListener('scroll', this.scrollListener);
-        this.vim = VimStatus.get.activate(this.editor)
     }
 
     protected onDeselected() {
@@ -1479,33 +1667,15 @@ export class CodeCell extends Cell {
         this.editor.trigger('keyboard', 'closeParameterHints', null);
     }
 
-    setDisabled(disabled: boolean) {
-        this.editor.updateOptions({readOnly: disabled});
-        if (disabled) {
-            this.cellInputTools.classList.add("disabled")
-        } else {
-            this.cellInputTools.classList.remove("disabled")
-        }
-    }
-
     delete() {
         super.delete()
-        VimStatus.get.deactivate(this.editor.getId())
     }
 
     protected calculateHash(maybeSelection?: Range): URL {
-        const currentURL = super.calculateHash(maybeSelection);
-
-        const model = this.editor.getModel()
-        if (model && maybeSelection && !maybeSelection.isEmpty()) {
-            const pos = PosRange.fromRange(maybeSelection, model)
-            currentURL.hash += `,${pos.rangeStr}`
-        }
-        return currentURL
+        return super.calculateHash(maybeSelection);
     }
 
     protected onDisposed() {
-        super.onDisposed();
         // TODO (overflow widgets)
         // this.overflowDomNode.parentElement?.removeChild(this.overflowDomNode);
         this.commentHandler.dispose();
@@ -1513,6 +1683,7 @@ export class CodeCell extends Cell {
             this.setModelMarkers([], marker.owner)
         });
         this.editor.dispose();
+        super.onDisposed();
     }
 }
 

@@ -341,7 +341,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         const cell = this.cellsHandler.state[id];
         this.cellsHandler.updateField(id, () => ({
             language,
-            // clear a bunch of stuff if we're changing to text... hm, maybe we need to do something else when it's a a text cell...
+            // clear a bunch of stuff if we're changing to text... hm, maybe we need to do something else when it's a text cell...
             output: language === "text" ? clearArray() : NoUpdate,
             results: language === "text" ? clearArray() : NoUpdate,
             error: language === "text" ? false : NoUpdate,
