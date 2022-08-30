@@ -301,16 +301,11 @@ export class CellContainer extends Disposable {
         this.prevInMarkdownMode = UserPreferencesHandler.state.markdown.value;
 
         const markdownStateHandler = (pref: typeof UserPreferences["markdown"]) => {
-            // TODO:
-            // 1. Fix not being able to click on cells
-            // 2. Add documentation for the markdown editing mode
             if (!this._cell) { // if cell hasn't been created yet, don't do anything special
                 this._cell = this.cellFor(cellState.state.language);
                 if (this.cellState.state.language === "text" && !insertedCell) {
-                    // this.cellState.state.content = MarkdownIt.render(this.cellState.state.content);
                     this._cell.onBlur();
                 }
-                // if (this.cellState.state.language === "text") this._cell.onBlur(); // TODO: Fix #1
             } else if (this.cellState.state.language === "text") {
                 // If the cell's mode did not change, do nothing
                 if (pref.value == this.prevInMarkdownMode) return;
@@ -324,7 +319,6 @@ export class CellContainer extends Disposable {
 
                     // If going from RTE to Markdown mode, compile the HTML into markdown and blur the cell to avoid it going into the editor view
                     if (pref.value && !this.prevInMarkdownMode) {
-                        this.cellState.state.content = MarkdownIt.render(this.cellState.state.content);
                         this._cell.onBlur();
                     }
 
@@ -332,7 +326,6 @@ export class CellContainer extends Disposable {
                 })
             }
         }
-
         const markdownState = UserPreferencesHandler.view("markdown")
         markdownStateHandler(markdownState.state)
         markdownState.addObserver(state => markdownStateHandler(state)).disposeWith(this)
@@ -961,9 +954,11 @@ export class MarkdownCell extends MonacoCell {
         });
 
         this.el.addEventListener('focus', () => {
+            this.editor.updateOptions({renderLineHighlight: "all"});
             // Hide the rendered markdown and show the editor in a code-cell
             this.renderedMarkdown.classList.add('hide');
             this.editorEl.classList.remove('hide');
+            this.layout(); // re-calculate the layout for the editor, as sometimes it fails to render otherwise
             this.el.classList.replace('text-cell', 'code-cell');
 
             this.doSelect();
