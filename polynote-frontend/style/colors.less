@@ -551,7 +551,7 @@ button {
   border-left-color: @ui-background;
 }
 
-.notebook-config {
+.notebook-config, .notebook-config-section{
   background-color: @ui-background;
   color: fade(@ui-text, 30%);
 
@@ -581,6 +581,10 @@ button {
 
   .notebook-config-section {
     border-color: @ui-border;
+  }
+
+  .notebook-config-section.open {
+    color: @ui-text;
   }
 
   .add .icon {
