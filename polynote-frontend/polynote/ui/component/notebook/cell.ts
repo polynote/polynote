@@ -684,7 +684,8 @@ abstract class MonacoCell extends Cell {
         // TODO (overflow widgets)
         // this.overflowDomNode = div(['monaco-overflow', 'monaco-editor', this.cellId], []);
 
-        const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ?? this.state.language;
+        const highlightLanguage = ClientInterpreters[this.state.language]?.highlightLanguage ??
+                                  (this.state.language === "text" ? "markdown" : this.state.language);
         // set up editor and content
         this.editor = monaco.editor.create(this.editorEl, {
             value: this.state.content,
