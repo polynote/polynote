@@ -1580,14 +1580,18 @@ button.inspect.icon-button {
         }
       }
 
-      .close-button {
-        display: none;
-      }
-
-      &:hover .close-button {
+      .close-button, .jump-to-cell-button {
         display: block;
         position: absolute;
+        cursor: pointer;
+      }
+
+      .close-button {
         right: 1em;
+      }
+
+      .jump-to-cell-button {
+        right: 2.5em;
       }
 
       &.error {
