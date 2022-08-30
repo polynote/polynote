@@ -285,6 +285,7 @@ select {
 
 .new-cell-divider {
   height: 0.75em;
+  width: 100%;
   text-align: center;
   line-height: 0.5em;
   padding-top: 1px; // correct '+' location
@@ -295,6 +296,11 @@ select {
 
   &:hover:after, .cell-and-divider:last-child &:after {
     content: '+';
+  }
+
+  // Disable the new cell button on split cells
+  .split-display-container &:hover:after, .split-display-container:last-child &:after {
+    content: '';
   }
 }
 
@@ -405,6 +411,13 @@ select {
 
         &.output {
           display: block;
+
+          // If small screen while trying to split, hide the exec-info to avoid the cell's toolbar becoming extremely tall.
+          .split-display-container & {
+            @media screen and (max-width: 1600px) {
+              display: none;
+            }
+          }
         }
 
         .exec-start::before {
@@ -508,6 +521,13 @@ select {
 
     .cell-input .copy-output {
       display: none;
+    }
+  }
+
+  &.split-display {
+    .cell-input .toggle-split {
+      border-width: 1px;
+      border-style: solid;
     }
   }
 
@@ -1414,6 +1434,18 @@ button.inspect.icon-button {
     padding-bottom: 50vh; // allow last cell to scroll up to midpoint
     overflow-y: auto;
     position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    flex-grow: 1;
+
+    .cell-and-divider {
+      width: 100%;
+    }
+
+    .split-display-container {
+      width: 50%;
+    }
   }
 
 }
@@ -1828,6 +1860,7 @@ button.inspect.icon-button {
 .notebook-config {
   border-radius: 6px;
   padding: 1em;
+  width: 100%;
   /*margin: 1em;*/
 
   h2 {
@@ -2760,6 +2793,7 @@ button.dialog-button {
   text-align: center;
   border-radius: 1em;
   position: relative;
+  width: 100%;
 
   .undo-link {
     font-weight: bold;

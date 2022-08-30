@@ -79,6 +79,11 @@ select {
   &:hover, .cell-and-divider:last-child & {
     background-color: @new-cell-divider-hover-bg;
   }
+
+  // Disable the new cell button background color on split cells
+  .split-display-container &:hover, .split-display-container:last-child & {
+    background-color: @notebook-background;
+  }
 }
 
 .cell-component:hover .cell-container {
@@ -172,6 +177,13 @@ select {
 
   &.hide-output {
     .cell-input .toggle-output {
+      border-color: @ui-border;
+      background-color: @button-selected-bg;
+    }
+  }
+
+  &.split-display {
+    .cell-input .toggle-split {
       border-color: @ui-border;
       background-color: @button-selected-bg;
     }

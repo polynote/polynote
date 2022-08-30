@@ -56,6 +56,7 @@ final case class CellMetadata(
   disableRun: Boolean = false,
   hideSource: Boolean = false,
   hideOutput: Boolean = false,
+  splitDisplay: Boolean = false,
   wrapOutput: Boolean = false,
   executionInfo: Option[ExecutionInfo] = None
 )
