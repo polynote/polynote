@@ -269,6 +269,18 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
         }
     }
 
+    runFromActiveCell() {
+        const state = this.handler.state;
+        const id = state.activeCellId;
+        if (id !== undefined) {
+            const activeIdx = state.cellOrder.indexOf(id)
+            const cellsToRun = state.cellOrder.slice(activeIdx);
+            if (cellsToRun.length > 0) {
+                this.runCells(cellsToRun)
+            }
+        }
+    }
+
     /*******************************
      ** Data streaming methods **
      *******************************/
