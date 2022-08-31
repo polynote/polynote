@@ -236,19 +236,14 @@ package object server {
         }
 
         override def search(query: String): RIO[BaseEnv with GlobalEnv, List[NotebookSearchResult]] = {
-          val validCells = repository.listNotebooks.flatMap(nbs => ZIO.foreachParN(16)(nbs) { nb => {
+          repository.listNotebooks.flatMap(nbs => ZIO.foreachParN(16)(nbs) { nb => {
             for {
               loadedNB <- repository.loadNotebook(nb)
               cells    <- ZIO(loadedNB.cells.filter(c => c.content.toString.contains(query)))
-            } yield (loadedNB.path, cells)
-          }})
-
-          validCells.map(nb => {
-            for {
-              cells <- nb
-              cell   <- cells._2
-            } yield NotebookSearchResult(cells._1, cell.id, cell.content.toString)
-          })
+            } yield for {
+              cell <- cells
+            } yield NotebookSearchResult(loadedNB.path, cell.id, cell.content.toString)
+          }}).map(_.flatten)
         }
 
         def close(): RIO[BaseEnv, Unit] = openNotebooks.values.flatMap {
