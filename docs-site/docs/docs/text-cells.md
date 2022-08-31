@@ -1,7 +1,3 @@
-TODO: 
-- Add notebook searching to notebook list
-- Add two new cell icons for splitting and text wrapping 
-
 Text Cells provide you the option of a Rich Text Editing or a traditional markdown editing experience.  
 
 

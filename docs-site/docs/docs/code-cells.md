@@ -5,7 +5,12 @@ In addition to providing a code editor, code cells show the output and results o
 ![Code Cell](images/code-cell.png)
 
 The top of a code cell has a small toolbar of cell-related functions: a button to run the cell, a drop-down for 
-switching languages, buttons for hiding the code or output and a button to copy output to the clipboard (if present).
+switching languages, and buttons for the following functions: 
+- Hiding the cell code 
+- Hiding the cell output 
+- Splitting the cell (this will allow you to place two cells side by side)  
+- Wrapping the cell's output (this will prevent any horizontal output overflow) 
+- Copying the output to clipboard (if present) 
 
 ### Code Editing
 
