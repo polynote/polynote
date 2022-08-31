@@ -40,4 +40,4 @@ the [About menu](about-menu.md).
 To view an example of markdown in Polynote, see the example notebook on
 [Writing Markdown](https://github.com/polynote/polynote/blob/master/docs-site/docs/docs/examples/Writing%20Markdown.ipynb).
 
-![Markdown Editor](images/markdown-editor.gif) {: .centered-image }
+![Markdown Editor](images/markdown-editor.gif){: .centered-image }
