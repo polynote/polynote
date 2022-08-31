@@ -126,11 +126,7 @@ class Dependencies extends Disposable {
         dependenciesHandler.addObserver(deps => setDeps(deps)).disposeWith(this)
 
         stateHandler.view('openDependencies').addObserver(open => {
-            if (open) {
-                this.el.classList.add("open")
-            } else {
-                this.el.classList.remove("open")
-            }
+            toggleConfigVisibility(open, this.el);
         }).disposeWith(this)
     }
 
@@ -572,8 +568,8 @@ class KernelConf extends Disposable {
 
 function toggleConfigVisibility(open: boolean, el: HTMLDivElement) {
     if (open) {
-        el.classList.add("open")
+        el.classList.add('open')
     } else {
-        el.classList.remove("open")
+        el.classList.remove('open')
     }
 }
