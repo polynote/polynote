@@ -69,7 +69,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#code-and-links" class="md-skip">
+        <a href="#rich-text-editing" class="md-skip">
           Skip to content
         </a>
       
@@ -520,15 +520,35 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#rich-text-editing" class="md-nav__link">
+    Rich Text Editing
+  </a>
+  
+    <nav class="md-nav" aria-label="Rich Text Editing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#code-and-links" class="md-nav__link">
     Code and Links
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#latex-editor" class="md-nav__link">
     LaTeX Editor
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-editing" class="md-nav__link">
+    Markdown Editing
   </a>
   
 </li>
@@ -782,15 +802,35 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#rich-text-editing" class="md-nav__link">
+    Rich Text Editing
+  </a>
+  
+    <nav class="md-nav" aria-label="Rich Text Editing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#code-and-links" class="md-nav__link">
     Code and Links
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#latex-editor" class="md-nav__link">
     LaTeX Editor
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown-editing" class="md-nav__link">
+    Markdown Editing
   </a>
   
 </li>
@@ -815,8 +855,9 @@
 
   <h1>Text Cells</h1>
 
-<p>Text Cells provide a Rich Text Editing experience, allowing you to edit and format text as you type it, like editing a
-document. </p>
+<p>Text Cells provide you the option of a Rich Text Editing or a traditional markdown editing experience.  </p>
+<h3 id="rich-text-editing">Rich Text Editing<a class="headerlink" href="#rich-text-editing" title="Permanent link">&para;</a></h3>
+<p>Rich Text Editing allows you to edit and format text as you type it, like editing a document.  </p>
 <p>The <a href="../toolbar/#text-cells">Text Toolbar</a> contains standard Rich Text Editing elements: </p>
 <ul>
 <li>Text style (Heading, Paragraph, etc.)</li>
@@ -826,14 +867,22 @@ document. </p>
 </ul>
 <p><img alt="Text Toolbar" src="../images/toolbar-text-cell.png" /></p>
 <p>It also contains a few non-Standard options.</p>
-<h3 id="code-and-links">Code and Links<a class="headerlink" href="#code-and-links" title="Permanent link">&para;</a></h3>
+<h4 id="code-and-links">Code and Links<a class="headerlink" href="#code-and-links" title="Permanent link">&para;</a></h4>
 <p>The <strong>code</strong> button tags the currently-selected text as <code>code</code>, formatting it as monospaced. </p>
 <p>The <strong>link</strong> button tags the currently-selected text as a link. Clinking on a link will reveal the URL in a tooltip, 
 allowing you to navigate to the website. </p>
-<p><img alt="Code and Link" src="../images/text-cell-code-link.gif" /></p>
-<h3 id="latex-editor">LaTeX Editor<a class="headerlink" href="#latex-editor" title="Permanent link">&para;</a></h3>
+<p><img alt="Code and Link" class="centered-image" src="../images/text-cell-code-link.gif" /></p>
+<h4 id="latex-editor">LaTeX Editor<a class="headerlink" href="#latex-editor" title="Permanent link">&para;</a></h4>
 <p>You can also input <code>LaTeX</code> into your text cells, using the button that looks like a Sigma. </p>
-<p><img alt="LaTeX Editor" src="../images/text-cell-latex.gif" /></p>
+<p><img alt="LaTeX Editor" class="centered-image" src="../images/text-cell-latex.gif" /></p>
+<h3 id="markdown-editing">Markdown Editing<a class="headerlink" href="#markdown-editing" title="Permanent link">&para;</a></h3>
+<p>The Markdown Editor allows you to edit your text directly as markdown in a code editor and see it rendered as 
+traditional compiled markdown. </p>
+<p>To enable markdown editing in place of traditional Rich Text Editing, set the <code>markdown</code> setting to <code>true</code> in 
+the <a href="../about-menu/">About menu</a>. </p>
+<p>To view an example of markdown in Polynote, see the example notebook on
+<a href="https://github.com/polynote/polynote/blob/master/docs-site/docs/docs/examples/Writing%20Markdown.ipynb">Writing Markdown</a>.</p>
+<p><img alt="Markdown Editor" src="../images/markdown-editor.gif" /> {: .centered-image }</p>
 
 
 

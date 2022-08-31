@@ -68,6 +68,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#templates" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -606,9 +611,38 @@
       
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          Server Configuration
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         Server Configuration
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#templates" class="md-nav__link">
+    Templates
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -732,6 +766,21 @@
   
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#templates" class="md-nav__link">
+    Templates
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -752,6 +801,14 @@
 
 <p>To change any of the default configuration, you'll need to copy the included <a href="https://github.com/polynote/polynote/blob/master/config-template.yml"><code>config-template.yml</code></a>
 file to <code>config.yml</code>, and uncomment the sections you'd like to change. Check out the template itself for more information. </p>
+<p>Note that any changes will only take effect upon restarting your Polynote instance. </p>
+<h3 id="templates">Templates<a class="headerlink" href="#templates" title="Permanent link">&para;</a></h3>
+<p><img alt="Notebook Templates" src="../images/notebook-templates.png" /></p>
+<p>Templates allow you to clone an existing notebook from the UI. <em>Clone</em> means you will be able to copy the entire contents 
+of the notebook - including its configuration, dependency lists, code cells (and their previous output), etc. </p>
+<p>Templates are specified as absolute file paths, which your file system should have read permission for. To include this path, create a 
+list under <code>notebook_templates</code> under <code>behavior</code> in your <code>config.yml</code> file. </p>
+<p>Once you've included your list, restart Polynote - you should see the options available when creating a notebook. </p>
 
 
 
