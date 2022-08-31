@@ -31,23 +31,13 @@ You can also input `LaTeX` into your text cells, using the button that looks lik
 ![LaTeX Editor](images/text-cell-latex.gif){: .centered-image }
 
 ### Markdown Editing 
-The Markdown Editor allows you to edit text in traditional `atx` style markdown in a code editor and see it rendered neatly
-as traditional compiled markdown.  
+The Markdown Editor allows you to edit your text directly as markdown in a code editor and see it rendered as 
+traditional compiled markdown. 
 
-To enable markdown editing in place of traditional Rich Text Editing, you must set the `markdown` setting to `true` in 
+To enable markdown editing in place of traditional Rich Text Editing, set the `markdown` setting to `true` in 
 the [About menu](about-menu.md). 
 
+To view an example of markdown in Polynote, see the example notebook on
+[Writing Markdown](https://github.com/polynote/polynote/blob/master/docs-site/docs/docs/examples/Writing%20Markdown.ipynb).
+
 ![Markdown Editor](images/markdown-editor.gif) {: .centered-image }
-
-#### Supported Markdown Syntax 
-To view a full list of supported markdown syntax in Polynote, see the example notebook on 
-[Writing Markdown](https://github.com/polynote/polynote/blob/master/docs-site/docs/docs/examples/Writing%20Markdown.ipynb). 
-
-We currently support the following pieces of syntax: 
-- `h1`-`h6` headings 
-- Bold, italics, and strikethrough text (using `**`, `*`, and `~~`, respectively)
-- Blockquotes (using `>`) 
-- Lists, unordered and ordered (using `*`, `-`, or `+` for unordered lists) 
-- Inline code (using a singular backtick) and multiline code blocks (using multiline backticks) 
-- Links (using the `[preview text](actual content url)` format).  
-- Images (using the `[text](actual image url)` format). 

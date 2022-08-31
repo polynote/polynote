@@ -10,7 +10,7 @@ Note that any changes will only take effect upon restarting your Polynote instan
 Templates allow you to clone an existing notebook from the UI. *Clone* means you will be able to copy the entire contents 
 of the notebook - including its configuration, dependency lists, code cells (and their previous output), etc. 
 
-For now, templates can only be absolute file paths available to be read by your system. To include this path, create a 
+Templates are specified as absolute file paths, which your file system should have read permission for. To include this path, create a 
 list under `notebook_templates` under `behavior` in your `config.yml` file. 
 
 Once you've included your list, restart Polynote - you should see the options available when creating a notebook. 
