@@ -165,7 +165,7 @@ class NotebookSession(
     subscriber.checkPermission(Permission.ReadNotebook).flatMap { _ =>
       // make sure to send status first, so client knows whether this notebook is up or not.
       sendStatus *> sendVersion *> sendNotebookContents *> sendTasks *> sendPresence *> sendCellStatuses
-    }.catchAll(err => PublishMessage(Error(0, err)))
+    }.catchAll(err => broadcastAll.publish(Error(0, err)))
 }
 
 object NotebookSession {
@@ -186,7 +186,7 @@ object NotebookSession {
       toFrames(ZStream.fromQueue(output).flattenTake),
       input.handleMessages(closeQueueIf(closed, output)) {
         msg => handler.handleMessage(msg).catchAll {
-          err => Logging.error(err) *> output.offer(Take.single(Error(0, err)))
+          err => Logging.error(err) *> broadcastAll.publish(Error(0, err))
         }.fork.as(None)
       },
       keepaliveStream(closed)
