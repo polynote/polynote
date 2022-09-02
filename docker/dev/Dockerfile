@@ -4,7 +4,7 @@ FROM openjdk:8-slim-buster
 WORKDIR /opt
 
 RUN apt update -y && \
-    apt install -y wget python3 python3-dev python3-pip build-essential
+    apt install -y wget python3 python3-dev python3-pip build-essential git
 
 COPY docker/spark/install_spark.sh .
 RUN ./install_spark.sh
