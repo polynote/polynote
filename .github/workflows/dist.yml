@@ -19,6 +19,7 @@ jobs:
       - name: Create archive
         run: |
           cd $GITHUB_WORKSPACE/polynote-frontend
+          export NODE_OPTIONS="--max_old_space_size=4096"
           npm install
           npm run dist
           cd $GITHUB_WORKSPACE
