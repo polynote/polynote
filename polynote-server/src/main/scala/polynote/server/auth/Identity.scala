@@ -49,8 +49,7 @@ object Permission {
   case class CreateNotebook(path: String) extends Permission(PermissionType.CreateNotebook)
   case class DeleteNotebook(path: String) extends Permission(PermissionType.DeleteNotebook)
 
-  case class PermissionDenied(permission: Permission, reason: String) extends Throwable(s"Permission denied: $permission ($reason). " +
-    "Please ask the notebook owner to see the documentation for instructions on how to edit their sharing permissions.")
+  case class PermissionDenied(permission: Permission, reason: String) extends Throwable(s"Permission denied: $permission ($reason)")
 }
 
 
