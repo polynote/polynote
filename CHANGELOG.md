@@ -1,5 +1,29 @@
 # Unreleased
 
+# 0.4.6 (Sep 2, 2022) 
+**Features:** 
+* Notebook templates for creating new notebooks #1190 
+* Allow raw markdown editing in place of RTE #755
+  * There is a preference to toggle between these two text editing modes in your settings 
+* Add a cell button to wrap output text #1038 
+* Add a cell button to split two cells side-by-side in the UI #1023 
+* Add a button to run this cell and all the cells below #1283 
+* Various documentation updates ([new about menu page](https://polynote.org/latest/docs/about-menu/), 
+[templates](https://polynote.org/latest/docs/server-configuration/#templates), 
+[markdown cells](https://polynote.org/latest/docs/text-cells/#markdown-editing), 
+[setting up Polynote's development environment](https://github.com/polynote/polynote/blob/master/DEVELOPING.md), 
+[local Spark setup](https://polynote.org/latest/docs/installation/#spark-support), and more! 
+
+**Bugfixes:** 
+* Fix MRO issue with Python cells having a problem interfacing with Scala collections #1249 
+  * This fix should greatly improve the polyglot experience between Python and Scala! 
+* Fix formatting of intersection types
+* Make it a bit more obvious on how to add a new cell through the UI #1262 
+* Increase the number of dependencies a notebook can have (from 255 to 32767!) #1275 
+  * To handle these larger dependency counts, we've capped the number of concurrent downloads to 16. 
+* Fix `Shift+Enter` not creating the next cell to jump to if none exists #1270 
+* Change 'Open Kernel' to 'Open Notebooks' and add a description of what the pane does #1280  
+
 # 0.4.5 (Feb 15, 2022)
 * Fix bug preventing addition of new cells in empty notebooks #1229
 * Fix a failure in the notebook runner when the notebook has a 'viz' cell #1236
