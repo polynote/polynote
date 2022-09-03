@@ -1554,8 +1554,17 @@ button.inspect.icon-button {
       margin: 4px 0;
       white-space: pre-line;
       position: relative;
+
+      &:hover {
+        cursor: pointer;
+      }
+
       h4 {
         margin-top: 0;
+
+        &:hover {
+          text-decoration: underline;
+        }
       }
 
       .progress {
@@ -1580,18 +1589,14 @@ button.inspect.icon-button {
         }
       }
 
-      .close-button, .jump-to-cell-button {
+      .close-button {
+        display: none;
+      }
+
+      &:hover .close-button {
         display: block;
         position: absolute;
-        cursor: pointer;
-      }
-
-      .close-button {
         right: 1em;
-      }
-
-      .jump-to-cell-button {
-        right: 2.5em;
       }
 
       &.error {

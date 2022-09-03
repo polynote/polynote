@@ -325,13 +325,15 @@ class KernelTasksEl extends Disposable {
             remove()
         } else {
             const taskEl: KernelTask = Object.assign(div(['task', (Object.keys(TaskStatus)[status] || 'unknown').toLowerCase()], [
-                icon(['close-button'], 'times', 'close icon').click(() => remove()),
-                icon(['jump-to-cell-button'], 'location-dot', 'jump to cell icon').click(() => this.jumpToCell(id)),
+                icon(['close-button'], 'times', 'close icon').click(evt => {
+                    evt.stopPropagation();
+                    remove();
+                }),
                 h4([], [label]),
                 div(['detail'], detail),
                 div(['progress'], [div(['progress-bar'], [])]),
                 div(['child-tasks'], [])
-            ]), {
+            ]).click(() => this.jumpToCell(id)), {
                 labelText: label,
                 detailText: detail,
                 status: status,
@@ -364,8 +366,9 @@ class KernelTasksEl extends Disposable {
     private jumpToCell(id: string) {
         const nbInfo = ServerStateHandler.getOrCreateNotebook(this.notebookPathHandler.state);
         const idNum = id.split(" ").pop(); // extract the actual id number
-        if (!idNum) return; // pop can return undefined - if it does, do nothing
-        nbInfo.handler.selectCell(parseInt(idNum));
+        if (idNum != undefined) { // pop can return undefined - if it doesn't, select the cell
+            nbInfo.handler.selectCell(parseInt(idNum));
+        }
     }
 
     private setProgress(el: KernelTask, progress: number) {
