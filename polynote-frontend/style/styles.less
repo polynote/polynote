@@ -1273,6 +1273,13 @@ select {
       .errors {
         padding-left: 1em;
         padding-right: 1em;
+
+        .copy-button {
+          display: inline-block;
+          position: absolute;
+          cursor: pointer;
+          right: 1.75em;
+        }
       }
     }
   }
@@ -1581,13 +1588,10 @@ button.inspect.icon-button {
       }
 
       .close-button {
-        display: none;
-      }
-
-      &:hover .close-button {
         display: block;
         position: absolute;
         right: 1em;
+        cursor: pointer;
       }
 
       &.error {
@@ -1595,10 +1599,22 @@ button.inspect.icon-button {
           display: none;
         }
 
-        .close-button {
+        .close-button, .copy-button, .expand-button {
           display: block;
           position: absolute;
+          cursor: pointer;
+        }
+
+        .close-button {
           right: 1em;
+        }
+
+        .copy-button {
+          right: 2.75em;
+        }
+
+        .expand-button {
+          right: 4.5em;
         }
       }
 
