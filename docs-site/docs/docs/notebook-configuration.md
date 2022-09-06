@@ -98,3 +98,12 @@ In the second section, you can also add **Environment Variables** that will be m
 
 Finally, in the last section you can add any additional **JVM Arguments** that Polynote will set when it launches the 
 Kernel process. 
+
+### Copying Configurations 
+
+The copy and paste buttons below the last section offer easy access to copy all three sections between notebooks. 
+
+When you click the `Copy Configurations` button, your selections will automatically be saved and copied to your clipboard. 
+
+When you click the `Paste Configurations` button, your selections will automatically update and save if the 
+contents of your clipboard represent a valid notebook configuration. 
