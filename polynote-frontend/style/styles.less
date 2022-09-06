@@ -2042,8 +2042,17 @@ button {
     }
   }
 
+  .sticky-left-bar {
+    width: 3em;
+    height: 100%;
+
+    button {
+      margin-top: 1em;
+    }
+  }
+
   &.left-collapsed {
-    grid-template-columns: 2em 1px auto 1px max-content;
+    grid-template-columns: 2.75em 1px auto 1px max-content;
 
     .left {
 
@@ -2052,9 +2061,7 @@ button {
         border: unset;
 
         h2 {
-          transform: translateY(-100%) rotate(90deg);
-          transform-origin: bottom left;
-          width: fit-content;
+          display: none;
 
           .buttons {
             display: none;
@@ -2079,7 +2086,7 @@ button {
   }
 
   &.left-collapsed.right-collapsed {
-    grid-template-columns: 2em 1px auto 1px 2em;
+    grid-template-columns: 2.75em 1px auto 1px 2em;
   }
 }
 
