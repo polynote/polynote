@@ -49,7 +49,6 @@ export class Main {
         }).disposeWith(this.receiver)
 
         const nbList = new NotebookList(dispatcher)
-        const leftPane = { header: nbList.header, el: nbList.el };
         const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
@@ -58,7 +57,7 @@ export class Main {
 
         this.el = div(['main-ui'], [
             div(['header'], [new Toolbar(dispatcher).el]),
-            div(['body'], [this.splitView = new SplitView(leftPane, center, rightPane)]),
+            div(['body'], [this.splitView = new SplitView(nbList, center, rightPane)]),
             div(['footer'], []) // no footer yet!
         ]);
 

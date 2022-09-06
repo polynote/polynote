@@ -1,7 +1,14 @@
-import {div, TagElement} from "../tags";
-import {Disposable, IDisposable, mkDisposable, setProperty, StateHandler, updateProperty} from "../../state";
+import {div, h2, iconButton, TagElement} from "../tags";
+import {Disposable, IDisposable, mkDisposable, setProperty, setValue, StateHandler, updateProperty} from "../../state";
 import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 import {safeForEach} from "../../util/helpers";
+import {NotebookList} from "../component/notebooklist";
+
+export interface LeftMenuSections {
+    files: boolean,
+    toc: boolean,
+    search: boolean
+}
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.
@@ -85,11 +92,17 @@ export class SplitView extends Disposable {
     private leftDragger: Dragger;
     private rightDragger: Dragger;
 
-    constructor(leftPane: Pane, private center: TagElement<"div">, rightPane: Pane) {
+    private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
+    private readonly stickyLeftMenu: StateHandler<ViewPreferences["stickyLeftMenu"]>;
+
+    constructor(nbList: NotebookList, private center: TagElement<"div">, rightPane: Pane) {
         super()
 
-        const leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
+        const leftPane = { header: nbList.header, el: nbList.el };
+
+        this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
+        this.stickyLeftMenu = ViewPrefsHandler.lens("stickyLeftMenu").disposeWith(this);
 
         const resizeObserver = this.centerResizeObserver = new ResizeObserver(([entry]) => this.triggerResize(entry.contentRect.width));
         resizeObserver.observe(center);
@@ -104,14 +117,23 @@ export class SplitView extends Disposable {
             this.endResizeObservers = [];
         })
 
+        const filesIcon = iconButton(['file-system'], 'View Files', 'folder', '[View Files]').click(() => this.toggleSection("files", this.stickyLeftMenu, this.leftView));
+        const tocIcon = iconButton(['list-ul'], 'Table of Contents', 'list-ul', '[Table of Contents]').click(() => this.toggleSection("toc", this.stickyLeftMenu, this.leftView));
+        const searchIcon = iconButton(['search'], 'Search Files', 'search', '[Search Files]').click(() => this.toggleSection("search", this.stickyLeftMenu, this.leftView))
+
         const left = div(['grid-shell'], [
+            div(['sticky-left-bar'], [
+                filesIcon,
+                tocIcon,
+                searchIcon
+            ]),
             div(['ui-panel'], [
-                leftPane.header.click(() => this.togglePanel(leftView)),
+                leftPane.header.click(() => this.togglePanel(this.leftView, true)),
                 div(['ui-panel-content', 'left'], [leftPane.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
-                rightPane.header.click(() => this.togglePanel(rightView)),
+                rightPane.header.click(() => this.togglePanel(rightView, false)),
                 div(['ui-panel-content', 'right'], [rightPane.el])])]);
 
         const initialPrefs = ViewPrefsHandler.state;
@@ -126,7 +148,7 @@ export class SplitView extends Disposable {
         let rightX = 0;
 
         // left dragger
-        const leftDragger = this.leftDragger = new Dragger('left', leftView, left, this);
+        const leftDragger = this.leftDragger = new Dragger('left', this.leftView, left, this);
 
         // right pane
         right.classList.add('right');
@@ -139,6 +161,23 @@ export class SplitView extends Disposable {
         this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 
         const collapseStatus = (prefs: ViewPreferences) => {
+            if (prefs.stickyLeftMenu.files) {
+                filesIcon.classList.add('active');
+            } else {
+                filesIcon.classList.remove('active');
+            }
+            if (prefs.stickyLeftMenu.toc) {
+                tocIcon.classList.add('active');
+                leftPane.header.outerHTML = h2([], ["yo"]).outerHTML;
+            } else {
+                tocIcon.classList.remove('active');
+            }
+            if (prefs.stickyLeftMenu.search) {
+                searchIcon.classList.add('active');
+            } else {
+                searchIcon.classList.remove('active');
+            }
+
             if (prefs.leftPane.collapsed) {
                 this.el.classList.add('left-collapsed');
             } else {
@@ -154,10 +193,13 @@ export class SplitView extends Disposable {
         ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
     }
 
-    private togglePanel(state: StateHandler<{collapsed: boolean}>): void {
+    private togglePanel(state: StateHandler<{ collapsed: boolean }>, canToggleSection: boolean): void {
         this.triggerStartResize(this.centerWidth);
         state.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(() => {
             window.dispatchEvent(new CustomEvent('resize'));
+            if (canToggleSection && state.state.collapsed) {
+                this.toggleSection("none", this.stickyLeftMenu, this.leftView);
+            }
         })
     }
 
@@ -209,5 +251,15 @@ export class SplitView extends Disposable {
         const width = w ?? (this.centerWidth || this.center.clientWidth);
         this._centerWidth = width;
         safeForEach(this.endResizeObservers, obs => obs(width));
+    }
+
+    private toggleSection(section: string, state: StateHandler<{ files: boolean, toc: boolean, search: boolean }>, leftPanelState: StateHandler<{ collapsed: boolean }>) {
+        const newSections = ViewPrefsHandler.state.stickyLeftMenu;
+        if (section !== "none" && !newSections[<keyof LeftMenuSections> section] && leftPanelState.state.collapsed || newSections[<keyof LeftMenuSections> section] && !leftPanelState.state.collapsed)
+            this.togglePanel(this.leftView, false);
+
+        state.updateAsync(state => setProperty("files", section === 'files' ? !state.files : false))
+        state.updateAsync(state => setProperty("toc", section === 'toc' ? !state.toc : false))
+        state.updateAsync(state => setProperty("search", section === 'search' ? !state.search : false))
     }
 }
