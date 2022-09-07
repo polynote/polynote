@@ -38,17 +38,11 @@ export class NotebookConfigEl extends Disposable {
         this.stateHandler = stateHandler;
 
         const configState = stateHandler.view("config");
-        const dependenciesHandler = configState.view("dependencies");
-        const exclusionsHandler = configState.view("exclusions");
-        const resolversHandler = configState.view("repositories");
-        const sparkServerTemplatesHandler = ServerStateHandler.view("sparkTemplates").disposeWith(configState);
-        const sparkConfigHandler = configState.view("sparkConfig");
-        const sparkConfigTemplatesHandler = configState.view("sparkTemplate");
-
-        const dependencies = new Dependencies(dependenciesHandler);
-        const exclusions = new Exclusions(exclusionsHandler);
-        const resolvers = new Resolvers(resolversHandler);
-        const spark = new SparkConf(sparkConfigHandler, sparkConfigTemplatesHandler, sparkServerTemplatesHandler);
+        const dependencies = new Dependencies(configState.view("dependencies"));
+        const exclusions = new Exclusions(configState.view("exclusions"));
+        const resolvers = new Resolvers(configState.view("repositories"));
+        const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates").disposeWith(configState);
+        const spark = new SparkConf(configState.view("sparkConfig"), configState.view("sparkTemplate"), serverTemplatesHandler);
         const kernel = new KernelConf(configState);
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
