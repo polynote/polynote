@@ -760,6 +760,8 @@ abstract class MonacoCell extends Cell {
         cellState.observeKey("editing", editing => {
             if (editing) {
                 this.editor.focus()
+            } else {
+                this.onBlur();
             }
         })
 
@@ -945,6 +947,7 @@ abstract class MonacoCell extends Cell {
     }
 
     protected abstract onChangeModelContent(event: IModelContentChangedEvent): void
+    abstract onBlur(): void; // special method for extra changes that need to occur when blurring this cell
 }
 
 
@@ -1619,6 +1622,8 @@ export class CodeCell extends MonacoCell {
                 .otherwise(() => super.keyAction(key, pos, range, selection)) ?? undefined
         }
     }
+
+    onBlur() {} // special method for extra changes that need to occur when blurring this cell
 
     setDisabled(disabled: boolean) {
         super.setDisabled(disabled);
