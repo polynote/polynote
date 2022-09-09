@@ -19,6 +19,7 @@ import {SocketStateHandler} from "./state/socket_state";
 import {ServerStateHandler} from "./state/server_state";
 import {OpenNotebooksHandler, RecentNotebooks, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
+import {TableOfContents} from "./ui/component/table_of_contents";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -49,6 +50,7 @@ export class Main {
         }).disposeWith(this.receiver)
 
         const nbList = new NotebookList(dispatcher)
+        const toc = new TableOfContents();
         const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
@@ -57,7 +59,7 @@ export class Main {
 
         this.el = div(['main-ui'], [
             div(['header'], [new Toolbar(dispatcher).el]),
-            div(['body'], [this.splitView = new SplitView(nbList, center, rightPane)]),
+            div(['body'], [this.splitView = new SplitView(nbList, toc, center, rightPane)]),
             div(['footer'], []) // no footer yet!
         ]);
 

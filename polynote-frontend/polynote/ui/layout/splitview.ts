@@ -3,6 +3,7 @@ import {Disposable, IDisposable, mkDisposable, setProperty, setValue, StateHandl
 import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 import {safeForEach} from "../../util/helpers";
 import {NotebookList} from "../component/notebooklist";
+import {TableOfContents} from "../component/table_of_contents";
 
 export interface LeftMenuSections {
     files: boolean,
@@ -95,10 +96,10 @@ export class SplitView extends Disposable {
     private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
     private readonly stickyLeftMenu: StateHandler<ViewPreferences["stickyLeftMenu"]>;
 
-    constructor(nbList: NotebookList, private center: TagElement<"div">, rightPane: Pane) {
+    constructor(nbList: NotebookList, toc: TableOfContents, private center: TagElement<"div">, rightPane: Pane) {
         super()
 
-        const leftPane = { header: nbList.header, el: nbList.el };
+        const leftPane = { header: toc.header, el: toc.el };
 
         this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);

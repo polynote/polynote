@@ -75,6 +75,12 @@ export interface KernelState {
     tasks: KernelTasks
 }
 
+export interface TOCState {
+    title: string,
+    cellId: number,
+    heading: number,
+}
+
 export type PresenceState = { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}};
 
 export interface NotebookState {
@@ -84,6 +90,7 @@ export interface NotebookState {
     cellOrder: number[], // this is the canonical ordering of the cells.
     config: NBConfig,
     kernel: KernelState,
+    toc: Record<number, TOCState[]>,
     // ephemeral states
     activeCellId: number | undefined,
     activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
@@ -167,6 +174,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 info: {},
                 tasks: {},
             },
+            toc: [],
             activePresence: {},
             activeCellId: undefined,
             activeCompletion: undefined,
@@ -468,11 +476,17 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
         this.addUpdate(update);
     }
 
+
+    /*
+        If cell type is text, re-evaluate the entire cell for #'s and then let the toc listener know
+     */
     updateCell(id: number, changed: {edits?: ContentEdit[], metadata?: CellMetadata}) {
         this.localVersion++;
         const update = new messages.UpdateCell(this.globalVersion, this.localVersion, id, changed.edits ?? [], changed.metadata)
         this.addUpdate(update)
     }
+
+    // updateTOC()
 
     createComment(cellId: number, comment: CellComment): void {
         this.addUpdate(new messages.CreateComment(this.globalVersion, this.localVersion, cellId, comment));

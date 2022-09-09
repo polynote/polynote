@@ -2318,6 +2318,43 @@ button {
   }
 }
 
+.table-of-contents {
+  h1, h2, h3, h4, h5, h6 {
+    font-size: 1.25em;
+    margin: 1em 1.5em 1em 0.75em;
+    padding: 0 0 0 0.75em;
+    font-weight: normal;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  h2 {
+    text-indent: 0.75em;
+  }
+
+  h3 {
+    text-indent: 1.25em;
+    background-color: transparent !important;
+  }
+
+  h4 {
+    text-indent: 1.75em;
+  }
+
+  h5 {
+    text-indent: 2.25em;
+  }
+
+  h6 {
+    text-indent: 2.75em;
+  }
+
+  .active {
+    font-weight: bold;
+    border-left: 4px solid;
+  }
+}
+
 .notebooks-list-header {
   &.disabled {
     pointer-events: none;
