@@ -50,7 +50,7 @@ export class Main {
         }).disposeWith(this.receiver)
 
         const nbList = new NotebookList(dispatcher)
-        const toc = new TableOfContents();
+        const toc = new TableOfContents(dispatcher);
         const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;

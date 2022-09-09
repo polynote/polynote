@@ -122,7 +122,13 @@ export class NotebookList extends Disposable {
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
-                })
+                }),
+                iconButton(["search"], "Search Notebooks", "folder", "Search").click(evt => {
+                    console.log();
+                }),
+                iconButton(["search"], "Search Notebooks", "search", "Search").click(evt => {
+                    console.log();
+                }),
             ])
         ]);
 

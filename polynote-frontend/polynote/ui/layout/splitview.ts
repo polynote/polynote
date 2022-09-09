@@ -169,7 +169,7 @@ export class SplitView extends Disposable {
             }
             if (prefs.stickyLeftMenu.toc) {
                 tocIcon.classList.add('active');
-                leftPane.header.outerHTML = h2([], ["yo"]).outerHTML;
+                // leftPane.header.outerHTML = h2([], ["yo"]).outerHTML;
             } else {
                 tocIcon.classList.remove('active');
             }

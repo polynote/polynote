@@ -2043,7 +2043,7 @@ button {
   }
 
   .sticky-left-bar {
-    width: 3em;
+    width: 0em;
     height: 100%;
 
     button {
@@ -2052,7 +2052,7 @@ button {
   }
 
   &.left-collapsed {
-    grid-template-columns: 2.75em 1px auto 1px max-content;
+    grid-template-columns: 0em 1px auto 1px max-content;
 
     .left {
 
@@ -2410,6 +2410,13 @@ button.dialog-button {
   &:active {
     padding: 9px 7px 7px 9px;
   }
+}
+
+.create-notebook-modal {
+  border-width: 1px;
+  border-style: solid;
+  min-width: 15em;
+  padding: 1em;
 }
 
 .input-dialog {

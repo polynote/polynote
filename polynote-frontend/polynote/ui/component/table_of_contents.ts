@@ -1,7 +1,9 @@
-import {div, h1, h2, h3, h4, h5, h6, TagElement} from "../tags";
+import {div, h1, h2, h3, h4, h5, h6, iconButton, span, TagElement} from "../tags";
 import {ServerStateHandler} from "../../state/server_state";
 import {Disposable, IDisposable, NoUpdate, setValue} from "../../state";
 import {CellState, NotebookStateHandler, TOCState} from "../../state/notebook_state";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {NotebookListModal} from "./notebook_list";
 
 /* TODO:
     1. Fix disposeWith statements
@@ -18,13 +20,34 @@ export class TableOfContents extends Disposable {
     private notebookState: NotebookStateHandler;
     private cellOrder: number[];
 
-    constructor() {
+    constructor(readonly dispatcher: ServerMessageDispatcher) {
         super();
 
         this.curNBTOC = undefined;
         this.cellOrder = [];
 
-        this.header = h2([], ["Table of Contents"]);
+        const nbListModal = new NotebookListModal(dispatcher);
+        nbListModal.show();
+        nbListModal.hide();
+
+        this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
+            'Table of Contents',
+            span(['buttons'], [
+                iconButton(["search"], "Search Notebooks", "search", "Search").click(evt => {
+                    evt.stopPropagation();
+                    console.log();
+                }),
+                iconButton(["search"], "Search Notebooks", "folder", "Search").click(evt => {
+                    evt.stopPropagation();
+                    nbListModal.showUI();
+                }),
+                iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
+                    evt.stopPropagation();
+                    dispatcher.createNotebook()
+                }),
+            ])
+        ]);
+
         this.el = div(["table-of-contents"], []);
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
