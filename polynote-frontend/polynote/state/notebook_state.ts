@@ -77,7 +77,6 @@ export interface KernelState {
 
 export interface TOCState {
     title: string,
-    cellId: number,
     heading: number,
 }
 

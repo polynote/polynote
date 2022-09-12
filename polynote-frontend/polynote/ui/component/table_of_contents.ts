@@ -1,11 +1,9 @@
 import {div, h1, h2, h3, h4, h5, h6, TagElement} from "../tags";
 import {ServerStateHandler} from "../../state/server_state";
-import {Disposable, IDisposable, NoUpdate, setValue} from "../../state";
+import {Disposable, setValue, UpdateResult} from "../../state";
 import {CellState, NotebookStateHandler, TOCState} from "../../state/notebook_state";
 
 /* TODO:
-    1. Fix disposeWith statements
-    2. Fix tab switching (could be related to #1). We should probably try to have an array of observers we manually clear instead on tab switch.
     3. The "cellId" doesn't have to be a part of the document, just the key in the key-value pair
  */
 
@@ -13,7 +11,6 @@ export class TableOfContents extends Disposable {
     readonly el: TagElement<"div">;
     readonly header: TagElement<"h2">;
 
-    private curNBObserver: IDisposable;
     private curNBTOC: Record<number, TOCState[]> | undefined;
     private notebookState: NotebookStateHandler;
     private cellOrder: number[];
@@ -21,70 +18,74 @@ export class TableOfContents extends Disposable {
     constructor() {
         super();
 
-        this.curNBTOC = undefined;
         this.cellOrder = [];
 
         this.header = h2([], ["Table of Contents"]);
         this.el = div(["table-of-contents"], []);
 
-        ServerStateHandler.get.view("currentNotebook").addObserver(path => {
-            if (!path) return;
-            if (this.curNBObserver) {
-                this.curNBObserver.dispose().then(() => {
-                    this.curNBTOC = undefined;
-                    this.observeTOC(path);
-                });
-            } else {
-                this.observeTOC(path);
+        ServerStateHandler.get.view("currentNotebook").addObserver((newPath, update) => {
+            if (newPath !== undefined && update.newValue !== "home") {
+                this.curNBTOC = undefined;
+                this.cellOrder = [];
+
+                const nb = ServerStateHandler.getOrCreateNotebook(newPath);
+                if (nb?.handler) {
+                    if (this.notebookState === undefined) {
+                        this.notebookState = nb.handler;
+                        this.initTOC();
+                    } else {
+                        this.notebookState = nb.handler;
+                        this.changeCellOrder(this.notebookState.state.cellOrder);
+                        this.changeCells(this.notebookState.state.cells);
+                    }
+                }
             }
         }).disposeWith(this)
     }
 
-    private observeTOC(path: string) {
-        const nb = ServerStateHandler.getOrCreateNotebook(path);
-        if (nb?.handler) {
-            this.notebookState = nb.handler;
+    private initTOC() {
+        // this.notebookState.view("activeCellId").addObserver(activeCellId => {
+        //     // TODO: Uncomment this after fixing the findAndSelectNearestHeader method
+        //     // this.findAndSelectNearestHeader(activeCellId);
+        // }).disposeWith(this);
 
-            this.notebookState.view("activeCellId").addObserver(activeCellId => {
-                // TODO: Uncomment this after fixing the findAndSelectNearestHeader method
-                // this.findAndSelectNearestHeader(activeCellId);
-            }).disposeWith(this);
+        this.notebookState.view("cellOrder").addObserver((newOrder) => this.changeCellOrder(newOrder)).disposeWith(this);
 
-            this.notebookState.view("cellOrder").addObserver((newOrder, update) => {
-                let order = [];
+        this.notebookState.view("cells").addObserver((newCells, update) => this.changeCells(newCells, update)).disposeWith(this);
+    }
 
-                for (const [id, location] of Object.entries(newOrder)) {
-                    order.push(location);
+    private changeCellOrder(newOrder: number[]) {
+        let order = [];
+
+        for (const [id, location] of Object.entries(newOrder)) {
+            order.push(location);
+        }
+
+        this.cellOrder = order;
+        this.generateTOCHTML();
+    }
+
+    private changeCells(newCells: Record<number, CellState>, update?: UpdateResult<Record<number, CellState>>) {
+        let newTOC: Record<number, TOCState[]> = [];
+        let cellsToUpdate: Record<number, CellState> = {};
+
+        // Gather a list of all cells that must be updated
+        if (this.curNBTOC === undefined)
+            cellsToUpdate = newCells;
+        else if (update?.fieldUpdates) {
+            for (const [id, fieldUpdate] of Object.entries(update.fieldUpdates)) {
+                if (fieldUpdate?.fieldUpdates?.content && fieldUpdate.newValue?.language === "text") {
+                    cellsToUpdate[parseInt(id)] = this.notebookState.state.cells[parseInt(id)];
                 }
+            }
+        }
 
-                this.cellOrder = order;
-                this.generateTOCHTML();
-            }).disposeWith(this);
-
-
-            this.notebookState.view("cells").addObserver((newCells, update) => {
-                let newTOC: Record<number, TOCState[]> = [];
-                let cellsToUpdate: Record<number, CellState> = {};
-
-                // Gather a list of all cells that must be updated
-                if (this.curNBTOC === undefined)
-                    cellsToUpdate = newCells;
-                else if (update.fieldUpdates) {
-                    for (const [id, fieldUpdate] of Object.entries(update.fieldUpdates)) {
-                        if (fieldUpdate?.fieldUpdates?.content && fieldUpdate.newValue?.language === "text") {
-                            cellsToUpdate[parseInt(id)] = this.notebookState.state.cells[parseInt(id)];
-                        }
-                    }
-                }
-
-                // If there were any text cells with new content, update them in the TOC
-                if (Object.keys(cellsToUpdate).length > 0) {
-                    newTOC = this.updateTOC(cellsToUpdate);
-                    this.curNBTOC = newTOC;
-                    this.notebookState.updateField("toc", () => setValue(this.curNBTOC ?? {}));
-                    this.generateTOCHTML();
-                }
-            }).disposeWith(this);
+        // If there were any text cells with new content, update them in the TOC
+        if (Object.keys(cellsToUpdate).length > 0) {
+            newTOC = this.updateTOC(cellsToUpdate);
+            this.curNBTOC = newTOC;
+            this.notebookState.updateField("toc", () => setValue(this.curNBTOC ?? {}));
+            this.generateTOCHTML();
         }
     }
 
@@ -112,7 +113,6 @@ export class TableOfContents extends Disposable {
             if (heading !== null && title !== null) {
                 results.push({
                     title,
-                    cellId,
                     heading: heading.length
                 })
             }
@@ -128,7 +128,7 @@ export class TableOfContents extends Disposable {
                 if (this.curNBTOC === undefined) return;
                 if (this.curNBTOC[num] !== undefined && this.notebookState.state.cells[num].language === "text") {
                     for (const [id, tocEl] of Object.entries(this.curNBTOC[num])) {
-                        this.el.appendChild(this.tocElToTag(tocEl));
+                        this.el.appendChild(this.tocElToTag(id, tocEl));
                     }
                 }
             });
@@ -137,34 +137,34 @@ export class TableOfContents extends Disposable {
         }
     }
 
-    private tocElToTag(tocEl: TOCState): HTMLHeadingElement {
+    private tocElToTag(id: string, tocEl: TOCState): HTMLHeadingElement {
         let h: HTMLHeadingElement;
 
         switch (tocEl.heading) {
             case 1:
-                h = h1([], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+                h = h1([], tocEl.title).dataAttr('data-cellid', id.toString());
                 break;
             case 2:
-                h = h2([], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+                h = h2([], tocEl.title).dataAttr('data-cellid', id.toString());
                 break;
             case 3:
-                h = h3([], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+                h = h3([], tocEl.title).dataAttr('data-cellid', id.toString());
                 break;
             case 4:
-                h = h4([], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+                h = h4([], tocEl.title).dataAttr('data-cellid', id.toString());
                 break;
             case 5:
-                h = h5([], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+                h = h5([], tocEl.title).dataAttr('data-cellid', id.toString());
                 break;
             case 6:
-                h = h6([], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+                h = h6([], tocEl.title).dataAttr('data-cellid', id.toString());
                 break;
             default:
-                h = h1([], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+                h = h1([], tocEl.title).dataAttr('data-cellid', id.toString());
                 break;
         }
 
-        this.onHeadingClick(tocEl.cellId, h);
+        this.onHeadingClick(parseInt(id), h);
         return h;
     }
 
@@ -212,7 +212,7 @@ export class TableOfContents extends Disposable {
             console.log(i);
             console.log(this.curNBTOC);
             console.log(this.curNBTOC[i]);
-            this.selectHeader(this.curNBTOC[i][0].cellId);
+            // this.selectHeader(this.curNBTOC[i][0].cellId);
         }
     }
 }
