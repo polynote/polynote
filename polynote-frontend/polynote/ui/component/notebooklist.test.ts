@@ -239,6 +239,8 @@ test("stress test", () => {
 });
 
 
+// We have to mock the creation of iconButtons here because we are inspecting the entire notebookList, and sometimes
+// the iconButtons will fail to load and return null, which causes the querySelector to crash
 jest.mock("../tags", () => {
     const original = jest.requireActual("../tags");
     return {
