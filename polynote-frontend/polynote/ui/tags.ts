@@ -448,10 +448,6 @@ export function radio(classes: string[], label: string, name: string, value: boo
     ]);
 }
 
-export function h1(classes: string[], content: Content) {
-    return tag('h1', classes, {}, content)
-}
-
 export function h2(classes: string[], content: Content) {
     return tag('h2', classes, {}, content)
 }
@@ -462,14 +458,6 @@ export function h3(classes: string[], content: Content) {
 
 export function h4(classes: string[], content: Content) {
     return tag('h4', classes, {}, content);
-}
-
-export function h5(classes: string[], content: Content) {
-    return tag('h5', classes, {}, content);
-}
-
-export function h6(classes: string[], content: Content) {
-    return tag('h6', classes, {}, content);
 }
 
 export function label(classes: string[], label: string, input: TagElement<"input" | "select" | "textarea">, largeLabel: boolean = false): TagElement<"label"> {
