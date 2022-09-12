@@ -75,11 +75,6 @@ export interface KernelState {
     tasks: KernelTasks
 }
 
-export interface TOCState {
-    title: string,
-    heading: number,
-}
-
 export type PresenceState = { id: number, name: string, color: string, avatar?: string, selection?: { cellId: number, range: PosRange}};
 
 export interface NotebookState {
@@ -89,7 +84,6 @@ export interface NotebookState {
     cellOrder: number[], // this is the canonical ordering of the cells.
     config: NBConfig,
     kernel: KernelState,
-    toc: Record<number, TOCState[]>,
     // ephemeral states
     activeCellId: number | undefined,
     activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
@@ -173,7 +167,6 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 info: {},
                 tasks: {},
             },
-            toc: [],
             activePresence: {},
             activeCellId: undefined,
             activeCompletion: undefined,

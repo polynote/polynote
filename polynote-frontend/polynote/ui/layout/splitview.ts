@@ -92,14 +92,13 @@ export class SplitView extends Disposable {
     private centerResizeObserver: ResizeObserver;
     private leftDragger: Dragger;
     private rightDragger: Dragger;
+    private leftPane: HTMLDivElement;
 
     private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
     private readonly stickyLeftMenu: StateHandler<ViewPreferences["stickyLeftMenu"]>;
 
     constructor(nbList: NotebookList, toc: TableOfContents, private center: TagElement<"div">, rightPane: Pane) {
         super()
-
-        const leftPane = { header: toc.header, el: toc.el };
 
         this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
@@ -129,8 +128,8 @@ export class SplitView extends Disposable {
                 searchIcon
             ]),
             div(['ui-panel'], [
-                leftPane.header.click(() => this.togglePanel(this.leftView, true)),
-                div(['ui-panel-content', 'left'], [leftPane.el])])]);
+                nbList.header.click(() => this.togglePanel(this.leftView, true)),
+                div(['ui-panel-content', 'left'], [nbList.el])])]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
@@ -164,11 +163,13 @@ export class SplitView extends Disposable {
         const collapseStatus = (prefs: ViewPreferences) => {
             if (prefs.stickyLeftMenu.files) {
                 filesIcon.classList.add('active');
+                this.setLeftPane(nbList.header, nbList.el);
             } else {
                 filesIcon.classList.remove('active');
             }
             if (prefs.stickyLeftMenu.toc) {
                 tocIcon.classList.add('active');
+                this.setLeftPane(toc.header, toc.el);
             } else {
                 tocIcon.classList.remove('active');
             }
@@ -191,6 +192,15 @@ export class SplitView extends Disposable {
         }
         collapseStatus(initialPrefs)
         ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
+    }
+
+    private setLeftPane(header: TagElement<"h2">, el: TagElement<"div">): void {
+        const oldEl = this.el.querySelector('.ui-panel');
+        if (oldEl !== null) {
+            oldEl.innerHTML = "";
+            oldEl.appendChild(header.click(() => this.togglePanel(this.leftView, true)));
+            oldEl.appendChild(div(['ui-panel-content', 'left'], [el]));
+        }
     }
 
     private togglePanel(state: StateHandler<{ collapsed: boolean }>, canToggleSection: boolean): void {
