@@ -285,7 +285,7 @@ sealed trait NotebookUpdate extends Message {
           (myRebased, nextUpdate.copy(edits = ContentEdits(theirRebased)) :: newUpdates)
       }
 
-      self.copy(edits = result) -> updatedPrev.reverse\
+      self.copy(edits = result) -> updatedPrev.reverse
 
     case _ => (prev.foldLeft(this)(_ rebase _), Nil)
   }

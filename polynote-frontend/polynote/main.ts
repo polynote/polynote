@@ -59,7 +59,7 @@ export class Main {
 
         this.el = div(['main-ui'], [
             div(['header'], [new Toolbar(dispatcher).el]),
-            div(['body'], [this.splitView = new SplitView(nbList, toc, center, rightPane)]),
+            div(['body'], [this.splitView = new SplitView(nbList, toc, center, rightPane, dispatcher)]),
             div(['footer'], []) // no footer yet!
         ]);
 

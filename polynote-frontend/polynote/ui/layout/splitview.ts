@@ -4,11 +4,12 @@ import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
 import {safeForEach} from "../../util/helpers";
 import {NotebookList} from "../component/notebooklist";
 import {TableOfContents} from "../component/table_of_contents";
+import {SearchModal} from "../component/search";
+import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 
 export interface LeftMenuSections {
     files: boolean,
     toc: boolean,
-    search: boolean
 }
 
 /**
@@ -97,7 +98,7 @@ export class SplitView extends Disposable {
     private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
     private readonly stickyLeftMenu: StateHandler<ViewPreferences["stickyLeftMenu"]>;
 
-    constructor(nbList: NotebookList, toc: TableOfContents, private center: TagElement<"div">, rightPane: Pane) {
+    constructor(nbList: NotebookList, toc: TableOfContents, private center: TagElement<"div">, rightPane: Pane, dispatcher: ServerMessageDispatcher) {
         super()
 
         this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
@@ -117,15 +118,33 @@ export class SplitView extends Disposable {
             this.endResizeObservers = [];
         })
 
-        const filesIcon = iconButton(['file-system'], 'View Files', 'folder', '[View Files]').click(() => this.toggleSection("files", this.stickyLeftMenu, this.leftView));
-        const tocIcon = iconButton(['list-ul'], 'Table of Contents', 'list-ul', '[Table of Contents]').click(() => this.toggleSection("toc", this.stickyLeftMenu, this.leftView));
-        const searchIcon = iconButton(['search'], 'Search Files', 'search', '[Search Files]').click(() => this.toggleSection("search", this.stickyLeftMenu, this.leftView))
+        // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
+        const searchModal = new SearchModal(dispatcher);
+        searchModal.show();
+        searchModal.hide();
+
+        const filesIcon = iconButton(['file-system'], 'View Files', 'folder', '[View Files]');
+        const tocIcon = iconButton(['list-ul'], 'Table of Contents', 'list-ul', '[Table of Contents]');
+        const searchIcon = iconButton(['search'], 'Search Files', 'search', '[Search Files]');
+
+        const notebooksBundle = div(["notebooks-bundle"], [
+                h2([], ["Notebooks"]),
+                filesIcon,
+            ]).click(() => this.toggleSection("files", this.stickyLeftMenu, this.leftView));
+        const tocBundle = div(["toc-bundle"], [
+                h2([], ["Summary"]),
+                tocIcon,
+            ]).click(() => this.toggleSection("toc", this.stickyLeftMenu, this.leftView));
+        const searchBundle = div(["search-bundle"], [
+                h2([], ["Search"]),
+                searchIcon
+            ]).click(() => searchModal.showUI())
 
         const left = div(['grid-shell'], [
             div(['sticky-left-bar'], [
-                filesIcon,
-                tocIcon,
-                searchIcon
+                notebooksBundle,
+                tocBundle,
+                searchBundle,
             ]),
             div(['ui-panel'], [
                 nbList.header.click(() => this.togglePanel(this.leftView, true)),
@@ -162,21 +181,16 @@ export class SplitView extends Disposable {
 
         const collapseStatus = (prefs: ViewPreferences) => {
             if (prefs.stickyLeftMenu.files) {
-                filesIcon.classList.add('active');
+                notebooksBundle.classList.add('active');
                 this.setLeftPane(nbList.header, nbList.el);
             } else {
-                filesIcon.classList.remove('active');
+                notebooksBundle.classList.remove('active');
             }
             if (prefs.stickyLeftMenu.toc) {
-                tocIcon.classList.add('active');
+                tocBundle.classList.add('active');
                 this.setLeftPane(toc.header, toc.el);
             } else {
-                tocIcon.classList.remove('active');
-            }
-            if (prefs.stickyLeftMenu.search) {
-                searchIcon.classList.add('active');
-            } else {
-                searchIcon.classList.remove('active');
+                tocBundle.classList.remove('active');
             }
 
             if (prefs.leftPane.collapsed) {
@@ -263,13 +277,12 @@ export class SplitView extends Disposable {
         safeForEach(this.endResizeObservers, obs => obs(width));
     }
 
-    private toggleSection(section: string, state: StateHandler<{ files: boolean, toc: boolean, search: boolean }>, leftPanelState: StateHandler<{ collapsed: boolean }>) {
+    private toggleSection(section: string, state: StateHandler<{ files: boolean, toc: boolean }>, leftPanelState: StateHandler<{ collapsed: boolean }>) {
         const newSections = ViewPrefsHandler.state.stickyLeftMenu;
         if (section !== "none" && !newSections[<keyof LeftMenuSections> section] && leftPanelState.state.collapsed || newSections[<keyof LeftMenuSections> section] && !leftPanelState.state.collapsed)
             this.togglePanel(this.leftView, false);
 
         state.updateAsync(state => setProperty("files", section === 'files' ? !state.files : false))
         state.updateAsync(state => setProperty("toc", section === 'toc' ? !state.toc : false))
-        state.updateAsync(state => setProperty("search", section === 'search' ? !state.search : false))
     }
 }

@@ -117,22 +117,13 @@ export class NotebookList extends Disposable {
     constructor(readonly dispatcher: ServerMessageDispatcher) {
         super();
 
-        // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
-        const searchModal = new SearchModal(dispatcher);
-        searchModal.show();
-        searchModal.hide();
-
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
-                    dispatcher.createNotebook()
-                }),
-                iconButton(["search"], "Search Notebooks", "search", "Search").click(evt => {
-                    evt.stopPropagation();
-                    searchModal.showUI()
-                }),
+                    dispatcher.createNotebook();
+                })
             ])
         ]);
 
