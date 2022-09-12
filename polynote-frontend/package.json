@@ -27,9 +27,9 @@
   "devDependencies": {
     "@testing-library/dom": "7.29.1",
     "@testing-library/jest-dom": "5.11.8",
+    "@types/css-font-loading-module": "0.0.7",
     "@types/jest": "26.0.19",
     "@types/node": "14.14.20",
-    "@types/css-font-loading-module": "0.0.7",
     "babel-jest": "26.6.3",
     "copy-webpack-plugin": "7.0.0",
     "css-loader": "3.4.2",
@@ -38,6 +38,7 @@
     "file-loader": "5.1.0",
     "html-webpack-plugin": "4.5.1",
     "jest": "26.6.3",
+    "jest-canvas-mock": "2.4.0",
     "jest-environment-jsdom": "27.0.0-next.1",
     "jest-websocket-mock": "2.2.0",
     "less": "3.13.1",

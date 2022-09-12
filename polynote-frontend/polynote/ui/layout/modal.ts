@@ -9,7 +9,7 @@ interface ModalOptions {
 }
 
 export class Modal {
-    private container: TagElement<"div">;
+    protected container: TagElement<"div">;
     private background: TagElement<"div">;
     private window: TagElement<"div">;
     private titleBar: TagElement<"div">;

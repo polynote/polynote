@@ -3,6 +3,7 @@ import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray} from "../../util/helpers";
 import {Disposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state"
 import {ServerStateHandler} from "../../state/server_state";
+import {SearchModal} from "./search";
 
 export class NotebookListContextMenu{
     readonly el: TagElement<"div">;
@@ -114,7 +115,12 @@ export class NotebookList extends Disposable {
     private tree: BranchEl;
 
     constructor(readonly dispatcher: ServerMessageDispatcher) {
-        super()
+        super();
+
+        // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
+        const searchModal = new SearchModal(dispatcher);
+        searchModal.show();
+        searchModal.hide();
 
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
@@ -122,7 +128,11 @@ export class NotebookList extends Disposable {
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
-                })
+                }),
+                iconButton(["search"], "Search Notebooks", "search", "Search").click(evt => {
+                    evt.stopPropagation();
+                    searchModal.showUI()
+                }),
             ])
         ]);
 

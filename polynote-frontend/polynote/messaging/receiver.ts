@@ -614,5 +614,8 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             })
             return { serverOpenNotebooks: notebooks }
         })
+        this.receive(messages.SearchNotebooks, (s, query, notebookSearchResults) => {
+            return { searchResults: notebookSearchResults }
+        })
     }
 }

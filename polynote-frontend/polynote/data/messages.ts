@@ -964,6 +964,36 @@ export class MoveCell extends NotebookUpdate {
     }
 }
 
+export class NotebookSearchResult {
+    static codec = combined(shortStr, uint16, shortStr).to(NotebookSearchResult);
+
+    static unapply(inst: NotebookSearchResult): ConstructorParameters<typeof NotebookSearchResult> {
+        return [inst.path, inst.cellID, inst.cellContent];
+    }
+
+    constructor(readonly path: string, readonly cellID: number, readonly cellContent: string) {
+        Object.freeze(this);
+    }
+}
+
+export class SearchNotebooks extends Message {
+    static codec = combined(shortStr, arrayCodec(int32, NotebookSearchResult.codec)).to(SearchNotebooks);
+    static get msgTypeId() { return 34; }
+
+    static unapply(inst: SearchNotebooks): ConstructorParameters<typeof SearchNotebooks> {
+        return [inst.query, inst.results];
+    }
+
+    constructor(readonly query: string, readonly results: NotebookSearchResult[]) {
+        super();
+        Object.freeze(this);
+    }
+
+    isResponse(other: Message): boolean {
+        return other instanceof SearchNotebooks
+    }
+}
+
 Message.codecs = [
     Error,            // 0
     LoadNotebook,     // 1
@@ -998,7 +1028,8 @@ Message.codecs = [
     UpdateComment,    // 30
     DeleteComment,    // 31
     KeepAlive,        // 32
-    MoveCell          // 33
+    MoveCell,         // 33
+    SearchNotebooks   // 34
 ];
 
 

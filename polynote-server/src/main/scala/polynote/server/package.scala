@@ -5,7 +5,7 @@ import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.{RefMap, UPublish}
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
-import polynote.messages.{CreateNotebook, DeleteNotebook, Message, RenameNotebook, ShortString}
+import polynote.messages.{CreateNotebook, DeleteNotebook, Message, NotebookCell, NotebookSearchResult, RenameNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.FileSystems
@@ -119,6 +119,7 @@ package object server {
     def rename(path: String, newPath: String): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.rename(path, newPath))
     def copy(path: String, newPath: String): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.copy(path, newPath))
     def delete(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Unit] = access.flatMap(_.delete(path))
+    def search(query: String): RIO[NotebookManager with BaseEnv with GlobalEnv, List[NotebookSearchResult]] = access.flatMap(_.search(query))
 
     trait Service {
       def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
@@ -132,6 +133,7 @@ package object server {
       def copy(path: String, newPath: String): RIO[BaseEnv with GlobalEnv, String]
       def delete(path: String): RIO[BaseEnv with GlobalEnv, Unit]
       def close(): RIO[BaseEnv, Unit]
+      def search(query: String): RIO[BaseEnv with GlobalEnv, List[NotebookSearchResult]]
     }
 
     object Service {
@@ -231,6 +233,17 @@ package object server {
         override def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState] = openNotebooks.get(path).flatMap {
           case None => ZIO.succeed(KernelBusyState(busy = false, alive = false))
           case Some(publisher) => publisher.kernelStatus()
+        }
+
+        override def search(query: String): RIO[BaseEnv with GlobalEnv, List[NotebookSearchResult]] = {
+          repository.listNotebooks.flatMap(nbs => ZIO.foreachParN(16)(nbs) { nb => {
+            for {
+              loadedNB <- repository.loadNotebook(nb)
+              cells    <- ZIO(loadedNB.cells.filter(c => c.content.toString.contains(query)))
+            } yield for {
+              cell <- cells
+            } yield NotebookSearchResult(loadedNB.path, cell.id, cell.content.toString)
+          }}).map(_.flatten)
         }
 
         def close(): RIO[BaseEnv, Unit] = openNotebooks.values.flatMap {

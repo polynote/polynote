@@ -2383,6 +2383,14 @@ button.dialog-button {
     text-align: right;
     padding: .5em 0;
   }
+
+  .inline-input-row {
+    display: flex;
+  }
+
+  .inline-input {
+    flex: 1;
+  }
 }
 
 .left-collapsed .notebooks-list {
@@ -2971,6 +2979,37 @@ button.dialog-button {
   }
 }
 
+.modal-window.search {
+  table {
+    min-width: 40em;
+    max-width: 60em;
+
+    tbody {
+      max-height: 30em;
+      display: block;
+      overflow-y: scroll;
+    }
+
+    tr:hover {
+      cursor: pointer;
+    }
+
+    td {
+      padding: 0.75em 0.5em;
+      border-bottom: 1px solid;
+    }
+  }
+
+  .line {
+    width: 70%;
+    font-family: @code-fonts;
+  }
+
+  .file_cell {
+    text-align: right;
+    font-weight: bold;
+  }
+}
 
 .modal-window.about {
   line-height: 2;

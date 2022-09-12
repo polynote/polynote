@@ -8,6 +8,8 @@ import {ServerMessageReceiver} from "../../messaging/receiver";
 import {SocketStateHandler} from "../../state/socket_state";
 import {ServerStateHandler} from "../../state/server_state";
 
+import 'jest-canvas-mock'; // mocks canvas for loading search icon for e2e test
+
 jest.mock("../../messaging/comms");
 
 const mockSocket = SocketSession.fromRelativeURL("notebookpath");
@@ -234,6 +236,17 @@ test("stress test", () => {
         branchHandler.addPath(p)
     });
     expect(branchHandler.state).toMatchSnapshot();
+});
+
+
+// We have to mock the creation of iconButtons here because we are inspecting the entire notebookList, and sometimes
+// the iconButtons will fail to load and return null, which causes the querySelector to crash
+jest.mock("../tags", () => {
+    const original = jest.requireActual("../tags");
+    return {
+        ...original,
+        iconButton: jest.fn().mockReturnValue(document.createElement("img"))
+    }
 });
 
 test("NotebookList e2e test", done => {
