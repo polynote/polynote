@@ -8,6 +8,8 @@ import {ServerMessageReceiver} from "../../messaging/receiver";
 import {SocketStateHandler} from "../../state/socket_state";
 import {ServerStateHandler} from "../../state/server_state";
 
+import 'jest-canvas-mock'; // mocks canvas for loading search icon for e2e test
+
 jest.mock("../../messaging/comms");
 
 const mockSocket = SocketSession.fromRelativeURL("notebookpath");
