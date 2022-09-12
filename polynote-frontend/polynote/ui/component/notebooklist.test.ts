@@ -238,6 +238,15 @@ test("stress test", () => {
     expect(branchHandler.state).toMatchSnapshot();
 });
 
+
+jest.mock("../tags", () => {
+    const original = jest.requireActual("../tags");
+    return {
+        ...original,
+        iconButton: jest.fn().mockReturnValue(document.createElement("img"))
+    }
+});
+
 test("NotebookList e2e test", done => {
     const nbList = new NotebookList(dispatcher);
     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
