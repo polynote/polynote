@@ -468,17 +468,11 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
         this.addUpdate(update);
     }
 
-
-    /*
-        If cell type is text, re-evaluate the entire cell for #'s and then let the toc listener know
-     */
     updateCell(id: number, changed: {edits?: ContentEdit[], metadata?: CellMetadata}) {
         this.localVersion++;
         const update = new messages.UpdateCell(this.globalVersion, this.localVersion, id, changed.edits ?? [], changed.metadata)
         this.addUpdate(update)
     }
-
-    // updateTOC()
 
     createComment(cellId: number, comment: CellComment): void {
         this.addUpdate(new messages.CreateComment(this.globalVersion, this.localVersion, cellId, comment));

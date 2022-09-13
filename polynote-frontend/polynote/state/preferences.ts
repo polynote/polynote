@@ -14,12 +14,13 @@ export interface ViewPreferences {
         size: string,
         collapsed: boolean
     },
+};
+export interface LeftBarPreferences {
     stickyLeftMenu: {
         files: boolean,
         toc: boolean,
-        search: boolean
     }
-}
+};
 
 export class LocalStorageHandler<T extends object> extends BaseHandler<T> {
     private static defaultHandler<T extends object>(key: string, defaultState: T): StateHandler<T> {
@@ -73,13 +74,14 @@ export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPr
     rightPane: {
         size: '300px',
         collapsed: false,
-    },
+    }
+});
+export const LeftBarPrefsHandler = new LocalStorageHandler<LeftBarPreferences>("LeftBarPreferences", {
     stickyLeftMenu: {
         files: true,
         toc: false,
-        search: false
     }
-});
+})
 
 class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPreferences> {
     constructor(initial: typeof UserPreferences) {
@@ -91,7 +93,6 @@ class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPrefe
             theme: storage.get("preferences")?.["Theme"] ?? {},
             notifications: storage.get("preferences")?.["Notifications"] ?? {},
         };
-        // TODO: This doesn't play nicely with the new sticky left menu preference
         // In order to handle schema changes over time, we compare the locally stored values with `initial`.
         // The schema in `initial` is the currently expected schema, so we need to handle added and removed keys.
         const [added, removed] = diffArray(Object.keys(initial), Object.keys(fromBrowser))

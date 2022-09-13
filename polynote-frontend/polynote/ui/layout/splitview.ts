@@ -1,6 +1,17 @@
 import {div, h2, iconButton, TagElement} from "../tags";
-import {Disposable, IDisposable, mkDisposable, setProperty, setValue, StateHandler, updateProperty} from "../../state";
-import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
+import {
+    Disposable,
+    IDisposable,
+    mkDisposable,
+    setProperty,
+    StateHandler,
+} from "../../state";
+import {
+    LeftBarPreferences,
+    LeftBarPrefsHandler,
+    ViewPreferences,
+    ViewPrefsHandler
+} from "../../state/preferences";
 import {safeForEach} from "../../util/helpers";
 import {NotebookList} from "../component/notebooklist";
 import {TableOfContents} from "../component/table_of_contents";
@@ -93,17 +104,16 @@ export class SplitView extends Disposable {
     private centerResizeObserver: ResizeObserver;
     private leftDragger: Dragger;
     private rightDragger: Dragger;
-    private leftPane: HTMLDivElement;
 
     private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
-    private readonly stickyLeftMenu: StateHandler<ViewPreferences["stickyLeftMenu"]>;
+    private readonly stickyLeftMenu: StateHandler<LeftBarPreferences["stickyLeftMenu"]>;
 
     constructor(nbList: NotebookList, toc: TableOfContents, private center: TagElement<"div">, rightPane: Pane, dispatcher: ServerMessageDispatcher) {
         super()
 
         this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
-        this.stickyLeftMenu = ViewPrefsHandler.lens("stickyLeftMenu").disposeWith(this);
+        this.stickyLeftMenu = LeftBarPrefsHandler.lens("stickyLeftMenu").disposeWith(this);
 
         const resizeObserver = this.centerResizeObserver = new ResizeObserver(([entry]) => this.triggerResize(entry.contentRect.width));
         resizeObserver.observe(center);
@@ -155,12 +165,13 @@ export class SplitView extends Disposable {
                 rightPane.header.click(() => this.togglePanel(rightView, false)),
                 div(['ui-panel-content', 'right'], [rightPane.el])])]);
 
-        const initialPrefs = ViewPrefsHandler.state;
+        const intialViewPrefs = ViewPrefsHandler.state;
+        const initialLeftBarPrefs = LeftBarPrefsHandler.state;
 
         // left pane
         left.classList.add('left');
         left.style.gridArea = 'left';
-        left.style.width = initialPrefs.leftPane.size;
+        left.style.width = intialViewPrefs.leftPane.size;
 
         let dragTimeout = 0;
         let leftX = 0;
@@ -172,7 +183,7 @@ export class SplitView extends Disposable {
         // right pane
         right.classList.add('right');
         right.style.gridArea = 'right';
-        right.style.width = initialPrefs.rightPane.size;
+        right.style.width = intialViewPrefs.rightPane.size;
 
         // right dragger
         const rightDragger = this.rightDragger = new Dragger('right', rightView, right, this);
@@ -180,19 +191,6 @@ export class SplitView extends Disposable {
         this.el = div(['split-view'], [left, leftDragger, center, rightDragger, right]);
 
         const collapseStatus = (prefs: ViewPreferences) => {
-            if (prefs.stickyLeftMenu.files) {
-                notebooksBundle.classList.add('active');
-                this.setLeftPane(nbList.header, nbList.el);
-            } else {
-                notebooksBundle.classList.remove('active');
-            }
-            if (prefs.stickyLeftMenu.toc) {
-                tocBundle.classList.add('active');
-                this.setLeftPane(toc.header, toc.el);
-            } else {
-                tocBundle.classList.remove('active');
-            }
-
             if (prefs.leftPane.collapsed) {
                 this.el.classList.add('left-collapsed');
             } else {
@@ -204,8 +202,25 @@ export class SplitView extends Disposable {
                 this.el.classList.remove('right-collapsed');
             }
         }
-        collapseStatus(initialPrefs)
-        ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
+        collapseStatus(intialViewPrefs);
+        ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this);
+
+        const leftBarStatus = (leftBarPrefs: LeftBarPreferences) => {
+            if (leftBarPrefs.stickyLeftMenu.files) {
+                notebooksBundle.classList.add('active');
+                this.setLeftPane(nbList.header, nbList.el);
+            } else {
+                notebooksBundle.classList.remove('active');
+            }
+            if (leftBarPrefs.stickyLeftMenu.toc) {
+                tocBundle.classList.add('active');
+                this.setLeftPane(toc.header, toc.el);
+            } else {
+                tocBundle.classList.remove('active');
+            }
+        }
+        leftBarStatus(initialLeftBarPrefs);
+        LeftBarPrefsHandler.addObserver(leftBarStatus).disposeWith(this);
     }
 
     private setLeftPane(header: TagElement<"h2">, el: TagElement<"div">): void {
@@ -278,7 +293,7 @@ export class SplitView extends Disposable {
     }
 
     private toggleSection(section: string, state: StateHandler<{ files: boolean, toc: boolean }>, leftPanelState: StateHandler<{ collapsed: boolean }>) {
-        const newSections = ViewPrefsHandler.state.stickyLeftMenu;
+        const newSections = LeftBarPrefsHandler.state.stickyLeftMenu;
         if (section !== "none" && !newSections[<keyof LeftMenuSections> section] && leftPanelState.state.collapsed || newSections[<keyof LeftMenuSections> section] && !leftPanelState.state.collapsed)
             this.togglePanel(this.leftView, false);
 

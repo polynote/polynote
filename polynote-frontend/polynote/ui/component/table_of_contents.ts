@@ -32,6 +32,10 @@ export class TableOfContents extends Disposable {
     constructor() {
         super();
 
+        this.onDispose.then(() => {
+            this.observers.forEach(obs => obs.dispose());
+        });
+
         this.observers = [];
         this.cellOrder = [];
 
@@ -111,7 +115,6 @@ export class TableOfContents extends Disposable {
 
         // If there were any text cells with new content, update them in the TOC
         if (Object.keys(cellsToUpdate).length > 0) {
-            console.log(cellsToUpdate);
             newTOC = this.updateTOC(cellsToUpdate);
             this.curNBTOC = newTOC;
             this.generateTOCHTML();
@@ -184,7 +187,6 @@ export class TableOfContents extends Disposable {
      * Converts a given table of contents element into the proper HTML semantic tag
      */
     private tocElToTag(tocEl: TOCState): HTMLHeadingElement {
-        console.log("creating something new");
         let h = h2([tocEl.heading], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
         this.onHeadingClick(tocEl.cellId, h);
         return h;
@@ -239,7 +241,6 @@ export class TableOfContents extends Disposable {
         }
 
         if (i !== -1) {
-            console.log("find and select");
             this.selectHeaderFromCell(this.curNBTOC[i][0].cellId);
         }
     }

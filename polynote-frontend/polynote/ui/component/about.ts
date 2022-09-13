@@ -11,7 +11,7 @@ import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 import {ServerStateHandler} from "../../state/server_state";
 import {
-    clearStorage,
+    clearStorage, LeftBarPrefsHandler,
     LocalStorageHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
     UserPreferencesHandler, ViewPrefsHandler
@@ -180,6 +180,7 @@ export class About extends FullScreenModal implements IDisposable {
         addStorageEl(NotebookScrollLocationsHandler)
         addStorageEl(OpenNotebooksHandler)
         addStorageEl(ViewPrefsHandler)
+        addStorageEl(LeftBarPrefsHandler)
 
         storageInfoEl.appendChild(storageTable);
 
