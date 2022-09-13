@@ -11,10 +11,9 @@ import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 import {ServerStateHandler} from "../../state/server_state";
 import {
-    clearStorage, LeftBarPrefsHandler,
-    LocalStorageHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
-    RecentNotebooksHandler,
-    UserPreferencesHandler, ViewPrefsHandler
+    clearStorage,
+    LocalStorageHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler, RecentNotebooksHandler,
+    UserPreferencesHandler, ViewPrefsHandler, LeftBarPrefsHandler
 } from "../../state/preferences";
 import {ClientBackup} from "../../state/client_backup";
 

@@ -111,8 +111,8 @@ export class SplitView extends Disposable {
     constructor(nbList: NotebookList, toc: TableOfContents, private center: TagElement<"div">, rightPane: Pane, dispatcher: ServerMessageDispatcher) {
         super()
 
-        this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
+        this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         this.stickyLeftMenu = LeftBarPrefsHandler.lens("stickyLeftMenu").disposeWith(this);
 
         const resizeObserver = this.centerResizeObserver = new ResizeObserver(([entry]) => this.triggerResize(entry.contentRect.width));
@@ -156,6 +156,7 @@ export class SplitView extends Disposable {
                 tocBundle,
                 searchBundle,
             ]),
+            // Default ui-panel to the notebook list
             div(['ui-panel'], [
                 nbList.header.click(() => this.togglePanel(this.leftView, true)),
                 div(['ui-panel-content', 'left'], [nbList.el])])]);
@@ -236,6 +237,8 @@ export class SplitView extends Disposable {
         this.triggerStartResize(this.centerWidth);
         state.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(() => {
             window.dispatchEvent(new CustomEvent('resize'));
+
+            // If the panel was collapsed by something other than the left bar, update the left bar's state
             if (canToggleSection && state.state.collapsed) {
                 this.toggleSection("none", this.stickyLeftMenu, this.leftView);
             }
@@ -294,6 +297,8 @@ export class SplitView extends Disposable {
 
     private toggleSection(section: string, state: StateHandler<{ files: boolean, toc: boolean }>, leftPanelState: StateHandler<{ collapsed: boolean }>) {
         const newSections = LeftBarPrefsHandler.state.stickyLeftMenu;
+
+        // If the left bar selection should change the panel, update it accordingly
         if (section !== "none" && !newSections[<keyof LeftMenuSections> section] && leftPanelState.state.collapsed || newSections[<keyof LeftMenuSections> section] && !leftPanelState.state.collapsed)
             this.togglePanel(this.leftView, false);
 

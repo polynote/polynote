@@ -7,6 +7,7 @@ export interface TOCState {
     title: string,
     cellId: number,
     heading: string,
+    active: boolean
 }
 
 /**
@@ -17,7 +18,8 @@ export interface TOCState {
  * doesn't have to occur on every notebook change.
  *
  * It would also be prudent to not have to do re-render the entire TOC whenever a single text cell changes
- * We only update the state of the new cell, but still re-render the entire TOC today for simplicity (because of cases like insertion in the middle of a list)
+ * We only update the state of the cell that changes state, but we still re-render the entire TOC today for simplicity
+ * (because of cases like insertion in the middle of a list and changing cell order makes DOM manipulation non-trivial)
  */
 export class TableOfContents extends Disposable {
     readonly el: TagElement<"div">;
@@ -57,7 +59,7 @@ export class TableOfContents extends Disposable {
 
                     this.notebookState = nb.handler;
                     this.initTOCObservers();
-                } else {
+                } else { // some error happened loading the notebook, so display an error message
                     this.generateTOCHTML(true);
                 }
             } else { // if not a valid nb, then change the HTML to reflect that
@@ -82,7 +84,7 @@ export class TableOfContents extends Disposable {
     }
 
     /**
-     * Handles a new notebook cell order and re-generates the TOC HTML accordingly
+     * Handles a new notebook cell order and then re-renders the TOC HTML accordingly
      */
     private changeCellOrder(newOrder: number[]) {
         let order = [];
@@ -96,13 +98,13 @@ export class TableOfContents extends Disposable {
     }
 
     /**
-     * Handles a change in a cell(s)' state by finding all updated cells and then re-rendering the TOC
+     * Handles a change in a cell(s)' state by finding all updated cells and then re-renders the TOC HTML accordingly
      */
     private changeCells(newCells: Record<number, CellState>, update?: UpdateResult<Record<number, CellState>>) {
         let newTOC: Record<number, TOCState[]> = [];
         let cellsToUpdate: Record<number, CellState> = {};
 
-        // Gather a list of all cells that must be updated
+        // Gather a list of all text cells that must be updated
         if (this.curNBTOC === undefined) // If the TOC has not been initialized for this notebook yet, use all cells
             cellsToUpdate = newCells;
         else if (update?.fieldUpdates) {
@@ -130,6 +132,12 @@ export class TableOfContents extends Disposable {
         for (const [id, state] of Object.entries(cells)) {
             if (state.language === "text") {
                 const headings = this.extractHeadingsFromCell(state.content, state.id);
+
+                // If this heading was previously active and has been updated, make sure to mark it as active
+                if (newTOC[parseInt(id)] !== undefined && newTOC[parseInt(id)][0].active) {
+                    headings[0].active = true;
+                }
+
                 newTOC[parseInt(id)] = headings;
             }
         }
@@ -152,7 +160,8 @@ export class TableOfContents extends Disposable {
                 results.push({
                     title,
                     cellId,
-                    heading: "h" + heading.length
+                    heading: "h" + heading.length,
+                    active: false
                 })
             }
         })
@@ -188,6 +197,8 @@ export class TableOfContents extends Disposable {
      */
     private tocElToTag(tocEl: TOCState): HTMLHeadingElement {
         let h = h2([tocEl.heading], tocEl.title).dataAttr('data-cellid', tocEl.cellId.toString());
+        if (tocEl.active)
+            h.classList.add('active');
         this.onHeadingClick(tocEl.cellId, h);
         return h;
     }
@@ -196,15 +207,20 @@ export class TableOfContents extends Disposable {
      * Attaches a click handler to a given TOC heading element. This action will:
      *   - Jump to the respective cell ID the heading represents
      *   - Attach a UI visual that that heading is currently selected
+     *   - Mark the previously active heading (if applicable) as not active
      */
     private onHeadingClick(cellId: number, el: TagElement<any>) {
         el.click(() => {
             if (cellId !== this.notebookState.state.activeCellId) {
                 this.notebookState.selectCell(cellId, {editing: true});
+                this.markCellAsActive(cellId);
             } else {
                 const oldActiveEl = this.el.querySelector('.active');
                 oldActiveEl?.classList.remove('active');
+                const oldCellId = oldActiveEl?.getAttribute('data-cellid');
+
                 el.classList.add('active');
+                this.markCellAsActive(cellId, oldCellId);
             }
         })
     }
@@ -212,12 +228,16 @@ export class TableOfContents extends Disposable {
     /**
      * Selects a header by its cell ID (this should only be used for when a cell has been clicked on and a heading needs to be focused)
      */
-    private selectHeaderFromCell(cellId: number) {
+    private selectHeaderFromCell(cellId?: number) {
         const oldActiveEl = this.el.querySelector('.active');
         oldActiveEl?.classList.remove('active');
+        const oldCellId = oldActiveEl?.getAttribute('data-cellid');
 
-        const newActiveEl = document.body.querySelector(`[data-cellid="${cellId}"]`);
-        newActiveEl?.classList.add('active');
+        if (cellId !== undefined) {
+            const newActiveEl = document.body.querySelector(`[data-cellid="${cellId}"]`);
+            newActiveEl?.classList.add('active');
+            this.markCellAsActive(cellId, oldCellId);
+        }
     }
 
     /**
@@ -233,15 +253,26 @@ export class TableOfContents extends Disposable {
         }
 
         let i = this.cellOrder.indexOf(activeCellId);
-        if (this.curNBTOC[i] === undefined || this.curNBTOC[i].length === 0) {
-            while (i >= 0) {
-                if (this.curNBTOC[i] !== undefined && this.curNBTOC[i].length > 0) break;
-                else i--;
+        if (this.curNBTOC[activeCellId] === undefined || this.curNBTOC[activeCellId].length === 0) {
+            i--;
+            while (i >= 0 && (this.curNBTOC[this.cellOrder[i]] === undefined || this.curNBTOC[this.cellOrder[i]].length === 0)) {
+                i--;
             }
         }
 
-        if (i !== -1) {
-            this.selectHeaderFromCell(this.curNBTOC[i][0].cellId);
+        // Select the above markdown cell if it was found, otherwise select nothing and deselect the current selection
+        this.selectHeaderFromCell(i !== -1 ? this.cellOrder[i] : undefined);
+    }
+
+    /**
+     * Helper function for marking a cell as active in the current notebook's TOC that deals with different types of oldCellIds
+     */
+    private markCellAsActive(newCellId: number, oldCellId?: string | null): void {
+        if (this.curNBTOC !== undefined) {
+            if (oldCellId !== undefined && oldCellId !== null) {
+                this.curNBTOC[parseInt(oldCellId)][0].active = false;
+            }
+            this.curNBTOC[newCellId][0].active = true;
         }
     }
 }
