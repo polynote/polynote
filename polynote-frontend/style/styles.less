@@ -2177,6 +2177,12 @@ button {
 }
 
 .tree-view {
+  .highlight-branch {
+    border-width: 2.5px 0px;
+    border-style: dashed;
+    border-radius: 10px;
+    transition: border 200ms;
+  }
 
   ul {
     margin: 0;
@@ -2303,15 +2309,10 @@ button {
 
   &.highlight {
     .tree-view {
-      border-width: 5px;
+      border-width: 2.5px;
       border-style: dashed;
       border-radius: 10px;
       transition: border 200ms;
-      ul {
-        filter: blur(2px);
-        opacity: 0.5;
-        transition: all 200ms;
-      }
     }
   }
 

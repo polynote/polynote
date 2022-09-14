@@ -194,22 +194,7 @@ export class NotebookList extends Disposable {
 
         // actually handle the file
         if (evt.type === "drop") {
-            const xfer = evt.dataTransfer;
-            if (xfer) {
-                const files = xfer.files;
-                [...files].forEach((file) => {
-                    const reader = new FileReader();
-                    reader.readAsText(file);
-                    reader.onloadend = () => {
-                        if (reader.result) {
-                            // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
-                            this.dispatcher.createNotebook(file.name, reader.result as string);
-                        } else {
-                            throw new Error(`Didn't get any file contents when reading ${file.name}! `)
-                        }
-                    }
-                })
-            }
+            handleFileDrop(evt, this.dispatcher);
         }
     }
 }
@@ -303,6 +288,7 @@ export class BranchEl extends Disposable {
     private readonly branchEl: TagElement<"button">;
     private children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
+    private dragEnter: EventTarget | null;
     childrenState: StateView<Record<string, Leaf | Branch>>;
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly branch: StateView<Branch>, private parent?: BranchEl) {
@@ -323,6 +309,11 @@ export class BranchEl extends Disposable {
                 ]),
                 this.childrenEl
             ]);
+
+            // Attach drag n' drop listeners to branch nodes only
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+                this.el.addEventListener(evt, this.fileHandler.bind(this), false)
+            });
         } else {
             this.el = this.childrenEl;
         }
@@ -453,6 +444,43 @@ export class BranchEl extends Disposable {
             current.expanded = false;
         }
     }
+
+    private fileHandler(evt: DragEvent) {
+        // An ugly hack to remove the highlighting effect whenever a file is dropped.
+        // This is necessary because we can't always call `evt.stopPropagation()` since it
+        // will not allow for users to automatically open and close children/nested folders on mouse drag.
+        if (evt.type === "drop") {
+            evt.stopPropagation();
+            evt.preventDefault();
+
+            // Find all parent branches (who are the grandparent node of the branch in the DOM) and remove their highlight property
+            let grandparent = this.el.parentElement?.parentElement;
+            while (grandparent?.classList.contains("highlight-branch")) {
+                grandparent.classList.remove("highlight-branch");
+                grandparent = grandparent?.parentElement?.parentElement;
+            }
+
+            // Remove the highlight property on the entire notebook list itself
+            const nbList = document.body.querySelector('.notebooks-list');
+            nbList?.classList.remove("highlight");
+        }
+
+        // handle highlighting
+        if (evt.type === "dragenter" || evt.type === "dragover") {
+            this.dragEnter = evt.target;
+            this.el.classList.add('highlight-branch');
+            this.expanded = true;
+        } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
+            this.el.classList.remove('highlight-branch');
+            this.expanded = false;
+        }
+
+        // actually handle the file
+        if (evt.type === "drop") {
+            handleFileDrop(evt, this.dispatcher, this.path);
+            this.expanded = true; // keep the folder open so the user can see where their file went
+        }
+    }
 }
 
 export class LeafEl extends Disposable {
@@ -494,6 +522,26 @@ export class LeafEl extends Disposable {
                         ServerStateHandler.selectNotebook(leaf.fullPath)
                     })
             })
+    }
+}
+
+function handleFileDrop(evt: DragEvent, dispatcher: ServerMessageDispatcher, path?: string) {
+    const xfer = evt.dataTransfer;
+    if (xfer) {
+        const files = xfer.files;
+        [...files].forEach((file) => {
+            const reader = new FileReader();
+            reader.readAsText(file);
+            reader.onloadend = () => {
+                if (reader.result) {
+                    const finalPath = (path !== undefined ? path + "/" : "") + file.name;
+                    // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
+                    dispatcher.createNotebook(finalPath, reader.result as string);
+                } else {
+                    throw new Error(`Didn't get any file contents when reading ${file.name}! `)
+                }
+            }
+        })
     }
 }
 
