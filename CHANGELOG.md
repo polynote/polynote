@@ -1,5 +1,22 @@
 # Unreleased
 
+#0.4.7 (Sep 15, 2022) 
+**Features:**
+* Added support for searching across all your notebooks! #983 
+  * You can use the new search icon next to the plus in your notebooks list to search across all of your notebooks for a line of text/code 
+* Clicking on a running task card in your `Tasks` pane will now jump you to the corresponding cell #1274 
+* Added help icons throughout various places of the UI #1305 
+  * These will take you directly to the documentation to explain the section of the UI they represent 
+* Added support for copying and pasting notebook configurations between notebooks 
+  * See [here](https://polynote.org/latest/docs/notebook-configuration/#copying-configurations) for documentation 
+* Added dropdowns for each sub-section in the `Configuration & Dependencies` section for easier navigability #1277 
+* Each error in your `Tasks` pane has a copy button that will copy the error message + stack trace for easy sharability #1294 
+  * The stack trace has also been made easier to read. 
+
+**Bugfixes:**
+* Fixed a bug where running tasks that got converted to errors couldn't be closed in the `Tasks` pane 
+* Added a UI label to explain how to use absolute file paths for JARs #1212 
+
 # 0.4.6 (Sep 2, 2022) 
 **Features:** 
 * Notebook templates for creating new notebooks #1190 
