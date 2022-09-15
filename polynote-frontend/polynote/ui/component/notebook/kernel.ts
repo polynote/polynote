@@ -440,7 +440,7 @@ class KernelTasksEl extends Disposable {
     // Serves as a wrapper for canceling a task - if the cancel button is hit on a task that was running but crashed,
     // its status will be checked so it can be safely removed from the UI.
     private cancelTaskWrapper(id: string) {
-        if (this.tasks[id].status === TaskStatus.Error) {
+        if (this.tasks[id] !== undefined && this.tasks[id].status === TaskStatus.Error) {
             this.removeTask(id);
         } else {
             this.dispatcher.cancelTask(id);
