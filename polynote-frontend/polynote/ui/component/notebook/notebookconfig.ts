@@ -27,12 +27,16 @@ import {KernelStatusString} from "../../../data/messages";
 import {NBConfig} from "../../../state/notebook_state";
 import {joinQuotedArgs, parseQuotedArgs} from "../../../util/helpers";
 import {ServerStateHandler} from "../../../state/server_state";
+import {copyToClipboard} from "./cell";
 
 export class NotebookConfigEl extends Disposable {
     readonly el: TagElement<"div">;
+    private readonly stateHandler: StateHandler<NBConfig>;
 
     constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<NBConfig>, kernelStateHandler: StateView<KernelStatusString>) {
         super()
+
+        this.stateHandler = stateHandler;
 
         const configState = stateHandler.view("config");
         const dependencies = new Dependencies(configState.view("dependencies"));
@@ -43,9 +47,7 @@ export class NotebookConfigEl extends Disposable {
         const kernel = new KernelConf(configState);
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
-            const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs);
-            this.el.classList.remove("open");
-            stateHandler.updateField("config", () => setValue(conf))
+            this.saveConfig(new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs), true);
         })
 
         this.el = div(['notebook-config'], [
@@ -58,10 +60,19 @@ export class NotebookConfigEl extends Disposable {
                 spark.el,
                 kernel.el,
                 div(['controls'], [
-                    saveButton,
-                    button(['cancel'], {}, ['Cancel']).click(evt => {
-                        stateHandler.updateField("open", () => setValue(false))
-                    })
+                    div([], [
+                        saveButton,
+                        button(['cancel'], {}, ['Cancel']).click(evt => {
+                            stateHandler.updateField("open", () => setValue(false))
+                        })
+                    ]),
+                    div([], [
+                        button([], {}, ['Copy Configuration']).click(() => {
+                            const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs);
+                            this.copyConfig(conf);
+                        }),
+                        button([], {}, ['Paste Configuration']).click(() => this.pasteConfig())
+                    ])
                 ])
             ])
         ]);
@@ -86,6 +97,33 @@ export class NotebookConfigEl extends Disposable {
                 this.el.classList.remove("open")
             }
         }).disposeWith(this)
+    }
+
+    private saveConfig(conf: NotebookConfig, closeConfigSection: boolean = false) {
+        if (closeConfigSection)
+            this.el.classList.remove("open");
+        this.stateHandler.updateField("config", () => setValue(conf));
+    }
+
+    private copyConfig(conf: NotebookConfig) {
+        this.saveConfig(conf);
+        copyToClipboard(JSON.stringify(conf));
+    }
+
+    private pasteConfig() {
+        navigator.clipboard.readText().then(clipText => {
+            let paste: NotebookConfig;
+            let conf: NotebookConfig | undefined = undefined;
+
+            try {
+                paste = JSON.parse(clipText);
+                conf = new NotebookConfig(paste.dependencies, paste.exclusions, paste.repositories, paste.sparkConfig, paste.sparkTemplate, paste.env, paste.scalaVersion, paste.jvmArgs);
+                this.saveConfig(conf)
+            } catch (e) {
+                console.error("Paste failed - the following clipboard value is not valid JSON:", paste!);
+                console.error(e);
+            }
+        });
     }
 }
 
