@@ -10,6 +10,7 @@ import {
     h2,
     h3,
     h4,
+    helpIconButton,
     icon,
     iconButton,
     para,
@@ -113,7 +114,10 @@ export class Kernel extends Disposable {
         this.statusEl = h2(['kernel-status'], [
             this.status = span(['status'], ['●']),
             'Kernel',
-            span(['buttons'], [
+            span(['left-buttons'], [
+                helpIconButton([], "https://polynote.org/latest/docs/kernel-pane/"),
+            ]),
+            span(['right-buttons'], [
                 iconButton(['connect'], 'Connect to server', 'plug', 'Connect').click(evt => this.connect(evt)),
                 iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
                 iconButton(['kill'], 'Kill kernel', 'skull', 'Kill').click(evt => this.killKernel(evt))

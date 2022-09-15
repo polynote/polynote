@@ -1393,6 +1393,17 @@ button.inspect.icon-button {
   transform: scale(1, -1);
 }
 
+.help-icon {
+  margin-left: 0.5em;
+  cursor: pointer;
+  padding: 0;
+  vertical-align: unset;
+}
+
+.help-icon, .help-text {
+  display: inline-block;
+}
+
 .insert-cell-above .icon, .insert-cell-below .icon {
   position: relative;
   //font-size: 16px;
@@ -1475,29 +1486,32 @@ button.inspect.icon-button {
     grid-area: head;
     position: relative;
     user-select: none;
-    .buttons {
+    .left-buttons, .right-buttons {
       position: absolute;
-      right: 0;
       top: .1em;
       bottom: .1em;
       line-height: 1.8em;
-      vertical-align: middle;
+    }
+
+    .right-buttons {
+      right: 0;
       text-align: right;
       padding-right: .25em;
+    }
 
-      button.icon-button {
-        font-size: inherit;
-        padding: 2px;
-        box-sizing: border-box;
-        display: inline-block;
-        width: 1.7em;
-        height: 1.7em;
-        margin: -1px .25em 0;
-        vertical-align: middle;
+    button.icon-button {
+      font-size: inherit;
+      padding: 2px;
+      box-sizing: border-box;
+      display: inline-block;
+      width: 1.7em;
+      height: 1.7em;
+      margin: -1px .25em 0;
+      vertical-align: middle;
+      line-height: 0.5em;
 
-        button.icon-button .icon {
-          font-size: 16px;
-        }
+      button.icon-button .icon {
+        font-size: 16px;
       }
     }
   }
@@ -1895,6 +1909,10 @@ button.inspect.icon-button {
     font-family: monospace, monospace;
   }
 
+  .help-icon {
+    display: none;
+  }
+
   .content {
     display: none;
     font-size: 86%;
@@ -1905,7 +1923,11 @@ button.inspect.icon-button {
     display: block;
   }
 
-  .notebook-config-section {
+  &.open .help-icon {
+    display: inline-block;
+  }
+
+.notebook-config-section {
     border-radius: 4px;
     border-width: 1px;
     border-style: solid;

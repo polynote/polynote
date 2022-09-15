@@ -1,4 +1,4 @@
-import {a, button, div, h2, iconButton, span, tag, TagElement} from "../tags";
+import {a, button, div, h2, helpIconButton, iconButton, span, tag, TagElement} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray} from "../../util/helpers";
 import {Disposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state"
@@ -124,7 +124,10 @@ export class NotebookList extends Disposable {
 
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
-            span(['buttons'], [
+            span(['left-buttons'], [
+                helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
+            ]),
+            span(['right-buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
