@@ -1,6 +1,6 @@
 "use strict";
 
-import {button, div, dropdown, iconButton, label, para, TagElement, textbox} from "../tags"
+import {button, div, dropdown, helpIconButton, iconButton, label, para, TagElement, textbox} from "../tags"
 import {ServerStateHandler} from "../../state/server_state";
 
 interface ModalOptions {
@@ -97,7 +97,8 @@ export class DialogModal extends Modal {
             label([], 'Notebook Name', input, true),
             title === 'Create Notebook' ?
                 label([], 'Notebook Template', notebookTemplateEl, true) : '',
-            para(['create-notebook-section'], 'To add templates, edit your config.yml file.'),
+            para(['create-notebook-section', 'help-text'], 'To add templates, edit your config.yml file.'),
+            helpIconButton([], "https://polynote.org/latest/docs/server-configuration/#templates"),
             div(['buttons'], [
                 button(['dialog-button'], {}, 'Cancel').click(evt => this.hide()),
                 ' ',

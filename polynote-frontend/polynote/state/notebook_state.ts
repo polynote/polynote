@@ -62,7 +62,15 @@ export interface CellState {
 
 export type CompletionHint = { cell: number, offset: number; completions: CompletionCandidate[] }
 export type SignatureHint = { cell: number, offset: number, signatures?: Signatures };
-export type NBConfig = {open: boolean, config: NotebookConfig}
+export type NBConfig = {
+    open: boolean,
+    openDependencies: boolean,
+    openResolvers: boolean,
+    openExclusions: boolean,
+    openSpark: boolean,
+    openKernel: boolean,
+    config: NotebookConfig
+}
 
 export type KernelSymbols = Record<string, Record<string, ResultValue>>;
 export type KernelInfo = Record<string, string>;
@@ -160,7 +168,15 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             path,
             cells: {},
             cellOrder: [],
-            config: {open: false, config: NotebookConfig.default},
+            config: {
+                open: false,
+                openDependencies: true,
+                openResolvers: true,
+                openExclusions: true,
+                openSpark: true,
+                openKernel: true,
+                config: NotebookConfig.default
+            },
             kernel: {
                 symbols: {},
                 status: 'disconnected',

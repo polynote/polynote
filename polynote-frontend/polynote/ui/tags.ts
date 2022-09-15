@@ -314,6 +314,13 @@ export function iconButton(classes: string[], title: string, iconName: string, a
     return button(classes, {title: title}, icon([], iconName, alt));
 }
 
+export function helpIconButton(classes: string[], url: string): TagElement<"button"> {
+    classes.push('help-icon');
+    const b = iconButton(classes, "Learn More","circle-help", "Learn More");
+    b.click(() => window.open(url));
+    return b;
+}
+
 export interface InputType {
     text: string
     number: number
