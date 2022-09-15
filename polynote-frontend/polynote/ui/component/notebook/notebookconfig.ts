@@ -139,7 +139,7 @@ class Dependencies extends Disposable {
         this.el = div(['notebook-dependencies', 'notebook-config-section', 'open'], [
             h3([], ['Dependencies']).click(() => stateHandler.updateField('openDependencies', openDependencies => setValue(!openDependencies))),
             div(['notebook-config-section-content'], [
-                para([], ['You can provide Scala / JVM dependencies using  Maven coordinates , e.g. ', span(['pre'], ['org.myorg:package-name_2.11:1.0.1']), ', or URLs like ', span(['pre'], ['s3://path/to/my.jar'])]),
+                para([], ['You can provide Scala / JVM dependencies using Maven coordinates, e.g. ', span(['pre'], ['org.myorg:package-name_2.11:1.0.1']), ', URLs like ', span(['pre'], ['s3://path/to/my.jar']), ', or absolute file paths by prepending ', span(['pre'], ['file:///']), ' to the path.']),
                 para([], ['You can also specify pip packages, e.g. ', span(['pre'], ['requests']), ', or with a version like ', span(['pre'], ['urllib3==1.25.3'])]),
                 this.container = div(['dependency-list'], [])
             ])
