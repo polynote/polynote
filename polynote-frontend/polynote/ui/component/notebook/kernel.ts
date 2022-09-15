@@ -35,6 +35,7 @@ import {displayData, prettyDisplayData, prettyDisplayString} from "../../display
 import {DataReader} from "../../../data/codec";
 import {DataRepr, StreamingDataRepr} from "../../../data/value_repr";
 import {ValueInspector} from "../value_inspector";
+import {copyToClipboard} from "./cell";
 
 // TODO: this should probably handle collapse and expand of the pane, rather than the Kernel itself.
 export class KernelPane extends Disposable {
@@ -303,16 +304,14 @@ class KernelTasksEl extends Disposable {
     }
 
     private addError(id: string, err: ServerErrorWithCause) {
-        const el = ErrorEl.fromServerError(err, undefined).el;
+        const errorEl = ErrorEl.fromServerError(err, undefined);
 
         const message = div(["message"], [
             para([], `${err.className}: ${err.message}`),
-            para([], el)
+            para([], errorEl.el)
         ]);
 
-        this.addTask(id, id, message, TaskStatus.Error, 0, undefined, () => {
-            this.removeError(id)
-        })
+        this.addTask(id, id, message, TaskStatus.Error, 0, undefined, () => {this.removeError(id)}, () => errorEl.copyFromServerError());
     }
 
     private removeError(id: string) {
@@ -323,7 +322,7 @@ class KernelTasksEl extends Disposable {
         }
     }
 
-    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.dispatcher.cancelTask(id)) {
+    private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.cancelTaskWrapper(id), copy?: () => string) {
         // short-circuit if the task coming in is already completed.
         if (status === TaskStatus.Complete) {
             remove()
@@ -346,6 +345,14 @@ class KernelTasksEl extends Disposable {
 
             if (detail && typeof detail === "string") {
                 taskEl.attr('title', detail);
+            }
+
+            if (Object.keys(TaskStatus)[status] === "Error") {
+                taskEl.prepend(icon(['copy-button'], 'copy', 'copy icon').click(() => {
+                    const errCopy = copy?.();
+                    if (errCopy != undefined)
+                        copyToClipboard(errCopy);
+                }));
             }
 
             const container = (typeof parent !== "undefined" && (this.tasks[parent]?.querySelector('.child-tasks'))) || this.taskContainer;
@@ -427,6 +434,16 @@ class KernelTasksEl extends Disposable {
         if (Object.keys(this.tasks).length === 0) {
             this.el.classList.remove('nonempty');
             this.cancelButton.disabled = true;
+        }
+    }
+
+    // Serves as a wrapper for canceling a task - if the cancel button is hit on a task that was running but crashed,
+    // its status will be checked so it can be safely removed from the UI.
+    private cancelTaskWrapper(id: string) {
+        if (this.tasks[id].status === TaskStatus.Error) {
+            this.removeTask(id);
+        } else {
+            this.dispatcher.cancelTask(id);
         }
     }
 }

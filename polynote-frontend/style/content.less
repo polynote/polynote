@@ -6,6 +6,7 @@ ul.stack-trace {
 
   li {
     list-style: none;
+    white-space: nowrap;
   }
 
   li.irrelevant {
@@ -13,7 +14,7 @@ ul.stack-trace {
   }
 
   li::before {
-    content: 'at ';
+    content: '| ';
   }
 }
 
