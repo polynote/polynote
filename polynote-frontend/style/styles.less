@@ -1896,6 +1896,26 @@ button.inspect.icon-button {
   }
 }
 
+.notebook-config-section {
+  h3:before {
+    content: '▶';
+    width: 1.5em;
+    display: inline-block;
+  }
+
+  &.open h3:before {
+    content: '▼';
+  }
+
+  .notebook-config-section-content {
+    display: none;
+  }
+
+  &.open .notebook-config-section-content {
+    display: block;
+  }
+}
+
 .notebook-config {
   border-radius: 6px;
   padding: 1em;
