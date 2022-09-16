@@ -1,6 +1,12 @@
 # Unreleased
 
-#0.4.7 (Sep 15, 2022) 
+# 0.4.8 (Sep 15, 2022) 
+**Bugfixes:**
+* Fixes a bug where there was no max width set on the search modal 
+* Fixes a bug where the kernel pane would not update on notebook switch 
+* Fixes the link on the Configuration & Dependencies `Learn More` icon  
+
+# 0.4.7 (Sep 15, 2022) 
 **Features:**
 * Added support for searching across all your notebooks! #983 
   * You can use the new search icon next to the plus in your notebooks list to search across all of your notebooks for a line of text/code 
