@@ -20,7 +20,7 @@ import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 
 export interface LeftMenuSections {
     files: boolean,
-    toc: boolean,
+    summary: boolean,
 }
 
 /**
@@ -108,7 +108,7 @@ export class SplitView extends Disposable {
     private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
     private readonly stickyLeftMenu: StateHandler<LeftBarPreferences["stickyLeftMenu"]>;
 
-    constructor(nbList: NotebookList, toc: TableOfContents, private center: TagElement<"div">, rightPane: Pane, dispatcher: ServerMessageDispatcher) {
+    constructor(nbList: NotebookList, tableOfContents: TableOfContents, private center: TagElement<"div">, rightPane: Pane, dispatcher: ServerMessageDispatcher) {
         super()
 
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
@@ -134,17 +134,17 @@ export class SplitView extends Disposable {
         searchModal.hide();
 
         const filesIcon = iconButton(['file-system'], 'View Files', 'folder', '[View Files]');
-        const tocIcon = iconButton(['list-ul'], 'Table of Contents', 'list-ul', '[Table of Contents]');
+        const summaryIcon = iconButton(['list-ul'], 'Table of Contents', 'list-ul', '[Table of Contents]');
         const searchIcon = iconButton(['search'], 'Search Files', 'search', '[Search Files]');
 
         const notebooksBundle = div(["notebooks-bundle"], [
                 h2([], ["Notebooks"]),
                 filesIcon,
             ]).click(() => this.toggleSection("files", this.stickyLeftMenu, this.leftView));
-        const tocBundle = div(["toc-bundle"], [
+        const summaryBundle = div(["summary-bundle"], [
                 h2([], ["Summary"]),
-                tocIcon,
-            ]).click(() => this.toggleSection("toc", this.stickyLeftMenu, this.leftView));
+                summaryIcon,
+            ]).click(() => this.toggleSection("summary", this.stickyLeftMenu, this.leftView));
         const searchBundle = div(["search-bundle"], [
                 h2([], ["Search"]),
                 searchIcon
@@ -153,13 +153,17 @@ export class SplitView extends Disposable {
         const left = div(['grid-shell'], [
             div(['sticky-left-bar'], [
                 notebooksBundle,
-                tocBundle,
+                summaryBundle,
                 searchBundle,
             ]),
             // Default ui-panel to the notebook list
             div(['ui-panel'], [
-                nbList.header.click(() => this.togglePanel(this.leftView, true)),
+                nbList.header,
                 div(['ui-panel-content', 'left'], [nbList.el])])]);
+
+        // Attach header listeners for the left bar
+        nbList.header.click(() => this.togglePanel(this.leftView, true));
+        tableOfContents.header.click(() => this.togglePanel(this.leftView, true));
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
@@ -213,11 +217,11 @@ export class SplitView extends Disposable {
             } else {
                 notebooksBundle.classList.remove('active');
             }
-            if (leftBarPrefs.stickyLeftMenu.toc) {
-                tocBundle.classList.add('active');
-                this.setLeftPane(toc.header, toc.el);
+            if (leftBarPrefs.stickyLeftMenu.summary) {
+                summaryBundle.classList.add('active');
+                this.setLeftPane(tableOfContents.header, tableOfContents.el);
             } else {
-                tocBundle.classList.remove('active');
+                summaryBundle.classList.remove('active');
             }
         }
         leftBarStatus(initialLeftBarPrefs);
@@ -228,7 +232,7 @@ export class SplitView extends Disposable {
         const oldEl = this.el.querySelector('.ui-panel');
         if (oldEl !== null) {
             oldEl.innerHTML = "";
-            oldEl.appendChild(header.click(() => this.togglePanel(this.leftView, true)));
+            oldEl.appendChild(header);
             oldEl.appendChild(div(['ui-panel-content', 'left'], [el]));
         }
     }
@@ -295,7 +299,7 @@ export class SplitView extends Disposable {
         safeForEach(this.endResizeObservers, obs => obs(width));
     }
 
-    private toggleSection(section: string, state: StateHandler<{ files: boolean, toc: boolean }>, leftPanelState: StateHandler<{ collapsed: boolean }>) {
+    private toggleSection(section: string, state: StateHandler<{ files: boolean, summary: boolean }>, leftPanelState: StateHandler<{ collapsed: boolean }>) {
         const newSections = LeftBarPrefsHandler.state.stickyLeftMenu;
 
         // If the left bar selection should change the panel, update it accordingly
@@ -303,6 +307,6 @@ export class SplitView extends Disposable {
             this.togglePanel(this.leftView, false);
 
         state.updateAsync(state => setProperty("files", section === 'files' ? !state.files : false))
-        state.updateAsync(state => setProperty("toc", section === 'toc' ? !state.toc : false))
+        state.updateAsync(state => setProperty("summary", section === 'summary' ? !state.summary : false))
     }
 }

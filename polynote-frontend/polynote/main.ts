@@ -50,7 +50,7 @@ export class Main {
         }).disposeWith(this.receiver)
 
         const nbList = new NotebookList(dispatcher)
-        const toc = new TableOfContents();
+        const tableOfContents = new TableOfContents();
         const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
@@ -59,12 +59,23 @@ export class Main {
 
         this.el = div(['main-ui'], [
             div(['header'], [new Toolbar(dispatcher).el]),
-            div(['body'], [this.splitView = new SplitView(nbList, toc, center, rightPane, dispatcher)]),
+            div(['body'], [this.splitView = new SplitView(nbList, tableOfContents, center, rightPane, dispatcher)]),
             div(['footer'], []) // no footer yet!
         ]);
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
-            Main.handlePath(path)
+            Main.handlePath(path);
+
+            if (path !== undefined && path !== "home") {
+                const nb = ServerStateHandler.getOrCreateNotebook(path);
+                if (nb?.handler) {
+                    tableOfContents.setNewNotebook(nb);
+                } else {
+                    tableOfContents.setHTML(true);
+                }
+            } else {
+                tableOfContents.setHTML(true);
+            }
         }).disposeWith(this.receiver)
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));

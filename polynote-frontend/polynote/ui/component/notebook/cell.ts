@@ -724,7 +724,6 @@ abstract class MonacoCell extends Cell {
             // overflowWidgetsDomNode: this.overflowDomNode
         });
 
-
         this.editor.onDidChangeCursorSelection(evt => {
             if (this.applyingServerEdits) return // ignore when applying server edits.
 
@@ -971,6 +970,7 @@ export class MarkdownCell extends MonacoCell {
             this.layout(); // re-calculate the layout for the editor, as sometimes it fails to render otherwise
             this.el.classList.replace('text-cell', 'code-cell');
 
+            this.editor.focus();
             this.doSelect();
         });
     }

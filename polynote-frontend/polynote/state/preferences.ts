@@ -18,7 +18,7 @@ export interface ViewPreferences {
 export interface LeftBarPreferences {
     stickyLeftMenu: {
         files: boolean,
-        toc: boolean,
+        summary: boolean,
     }
 };
 
@@ -79,7 +79,7 @@ export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPr
 export const LeftBarPrefsHandler = new LocalStorageHandler<LeftBarPreferences>("LeftBarPreferences", {
     stickyLeftMenu: {
         files: true,
-        toc: false,
+        summary: false,
     }
 })
 

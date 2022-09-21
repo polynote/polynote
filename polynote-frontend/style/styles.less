@@ -2085,7 +2085,7 @@ button {
       }
     }
 
-    .toc-bundle {
+    .summary-bundle {
       button {
         margin-top: 2.25em;
       }
@@ -2366,34 +2366,37 @@ button {
 }
 
 .table-of-contents {
+  overflow: auto;
+  height: 100%;
+
   h2 {
     font-size: 1.25em;
     margin: 1em 1.5em 1em 0.75em;
     padding: 0 0 0 0.75em;
     font-weight: normal;
     cursor: pointer;
-    width: 100%;
+    overflow-wrap: break-word;
   }
 
   .h2 {
-    text-indent: 0.75em;
+    margin-left: 2em;
   }
 
   .h3 {
-    text-indent: 1.25em;
+    margin-left: 3em;
     background-color: transparent !important;
   }
 
   .h4 {
-    text-indent: 1.75em;
+    margin-left: 4em;
   }
 
   .h5 {
-    text-indent: 2.25em;
+    margin-left: 5em;
   }
 
   .h6 {
-    text-indent: 2.75em;
+    margin-left: 6em;
   }
 
   .active {
