@@ -187,9 +187,9 @@ export class NotebookList extends Disposable {
         // handle highlighting
         if (evt.type === "dragenter" || evt.type === "dragover") {
             this.dragEnter = evt.target;
-            this.el.classList.add('highlight');
+            displayFileDropPlaceholder(this.tree.children, this.tree.childrenEl, this.dispatcher);
         } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
-            this.el.classList.remove('highlight');
+            removeFileDropPlaceholder();
         }
 
         // actually handle the file
@@ -286,7 +286,7 @@ export class BranchEl extends Disposable {
     readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
     private readonly branchEl: TagElement<"button">;
-    private children: (BranchEl | LeafEl)[] = [];
+    readonly children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
     private dragEnter: EventTarget | null;
     childrenState: StateView<Record<string, Leaf | Branch>>;
@@ -446,39 +446,26 @@ export class BranchEl extends Disposable {
     }
 
     private fileHandler(evt: DragEvent) {
-        // An ugly hack to remove the highlighting effect whenever a file is dropped.
-        // This is necessary because we can't always call `evt.stopPropagation()` since it
-        // will not allow for users to automatically open and close children/nested folders on mouse drag.
+        // prevent browser from displaying the ipynb file - we can only do this is if it's a drop, otherwise we need to propagate
         if (evt.type === "drop") {
             evt.stopPropagation();
             evt.preventDefault();
-
-            // Find all parent branches (who are the grandparent node of the branch in the DOM) and remove their highlight property
-            let grandparent = this.el.parentElement?.parentElement;
-            while (grandparent?.classList.contains("highlight-branch")) {
-                grandparent.classList.remove("highlight-branch");
-                grandparent = grandparent?.parentElement?.parentElement;
-            }
-
-            // Remove the highlight property on the entire notebook list itself
-            const nbList = document.body.querySelector('.notebooks-list');
-            nbList?.classList.remove("highlight");
         }
 
-        // handle highlighting
+        // handle displaying the file drop placeholder
         if (evt.type === "dragenter" || evt.type === "dragover") {
             this.dragEnter = evt.target;
-            this.el.classList.add('highlight-branch');
             this.expanded = true;
-        } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
-            this.el.classList.remove('highlight-branch');
+            displayFileDropPlaceholder(this.children, this.childrenEl, this.dispatcher, this.path);
+        } else if (evt.type === "dragleave" && evt.target === this.dragEnter) {
             this.expanded = false;
+            removeFileDropPlaceholder();
         }
 
         // actually handle the file
         if (evt.type === "drop") {
             handleFileDrop(evt, this.dispatcher, this.path);
-            this.expanded = true; // keep the folder open so the user can see where their file went
+            removeFileDropPlaceholder();
         }
     }
 }
@@ -525,6 +512,9 @@ export class LeafEl extends Disposable {
     }
 }
 
+/**
+ * Processes a file drop, saving it to the specified directory, or the root directory if none is specified
+ */
 function handleFileDrop(evt: DragEvent, dispatcher: ServerMessageDispatcher, path?: string) {
     const xfer = evt.dataTransfer;
     if (xfer) {
@@ -543,5 +533,48 @@ function handleFileDrop(evt: DragEvent, dispatcher: ServerMessageDispatcher, pat
             }
         })
     }
+}
+
+/**
+ * Handles determining if a placeholder file should be displayed in the current folder (and displays it if so)
+ */
+function displayFileDropPlaceholder(children: (BranchEl | LeafEl)[], childrenEl: TagElement<"ul">, dispatcher: ServerMessageDispatcher, path?: string) {
+    // First, check if there is an open sub-folder within this folder (meaning it should not be displayed here, but rather in the sub-folder)
+    let openChild = false;
+    for (const child of children) {
+        if (child instanceof BranchEl) {
+            if (child.expanded) {
+                openChild = true;
+                break;
+            }
+        }
+    }
+
+    // If there is no open sub-folder, place it here
+    if (!openChild) {
+        let newEl: TagElement<"span">;
+        removeFileDropPlaceholder();
+
+        newEl = tag('li', ['leaf', 'drop-placeholder'], {}, [
+            a(['name'], ``, [span(['placeholder-leaf'], ['Placeholder...'])], { preventNavigate: true })
+        ]);
+        childrenEl.prepend(newEl);
+
+        // Handle the special case where a user drops the file onto the placeholder itself, and not a real leafEl
+        newEl.addEventListener("drop", evt => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            handleFileDrop(evt, dispatcher, path);
+            removeFileDropPlaceholder();
+        });
+    }
+}
+
+/**
+ * Finds and removes the placeholder file for drag n' drop
+ */
+function removeFileDropPlaceholder() {
+    const prevPlaceholder = document.querySelector('.drop-placeholder');
+    prevPlaceholder?.remove();
 }
 

@@ -2177,13 +2177,6 @@ button {
 }
 
 .tree-view {
-  .highlight-branch {
-    border-width: 2.5px 0px;
-    border-style: dashed;
-    border-radius: 10px;
-    transition: border 200ms;
-  }
-
   ul {
     margin: 0;
     padding: 0;
@@ -2241,6 +2234,12 @@ button {
       padding-left: 36px;
       display: block;
       outline: none;
+
+      .placeholder-leaf {
+        min-width: 200px;
+        min-height: 32px;
+        border-radius: 4px;
+      }
     }
 
     li.branch {
@@ -2305,15 +2304,6 @@ button {
 
   .tree-view {
     padding: .5em 0 1.5em;
-  }
-
-  &.highlight {
-    .tree-view {
-      border-width: 2.5px;
-      border-style: dashed;
-      border-radius: 10px;
-      transition: border 200ms;
-    }
   }
 
   &.disabled {
