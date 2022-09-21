@@ -1273,6 +1273,13 @@ select {
       .errors {
         padding-left: 1em;
         padding-right: 1em;
+
+        .copy-button {
+          display: inline-block;
+          position: absolute;
+          cursor: pointer;
+          right: 1.75em;
+        }
       }
     }
   }
@@ -1393,6 +1400,17 @@ button.inspect.icon-button {
   transform: scale(1, -1);
 }
 
+.help-icon {
+  margin-left: 0.5em;
+  cursor: pointer;
+  padding: 0;
+  vertical-align: unset;
+}
+
+.help-icon, .help-text {
+  display: inline-block;
+}
+
 .insert-cell-above .icon, .insert-cell-below .icon {
   position: relative;
   //font-size: 16px;
@@ -1477,29 +1495,32 @@ button.inspect.icon-button {
     grid-area: head;
     position: relative;
     user-select: none;
-    .buttons {
+    .left-buttons, .right-buttons {
       position: absolute;
-      right: 0;
       top: .1em;
       bottom: .1em;
       line-height: 1.8em;
-      vertical-align: middle;
+    }
+
+    .right-buttons {
+      right: 0;
       text-align: right;
       padding-right: .25em;
+    }
 
-      button.icon-button {
-        font-size: inherit;
-        padding: 2px;
-        box-sizing: border-box;
-        display: inline-block;
-        width: 1.7em;
-        height: 1.7em;
-        margin: -1px .25em 0;
-        vertical-align: middle;
+    button.icon-button {
+      font-size: inherit;
+      padding: 2px;
+      box-sizing: border-box;
+      display: inline-block;
+      width: 1.7em;
+      height: 1.7em;
+      margin: -1px .25em 0;
+      vertical-align: middle;
+      line-height: 0.5em;
 
-        button.icon-button .icon {
-          font-size: 16px;
-        }
+      button.icon-button .icon {
+        font-size: 16px;
       }
     }
   }
@@ -1592,13 +1613,10 @@ button.inspect.icon-button {
       }
 
       .close-button {
-        display: none;
-      }
-
-      &:hover .close-button {
         display: block;
         position: absolute;
         right: 1em;
+        cursor: pointer;
       }
 
       &.error {
@@ -1606,10 +1624,22 @@ button.inspect.icon-button {
           display: none;
         }
 
-        .close-button {
+        .close-button, .copy-button, .expand-button {
           display: block;
           position: absolute;
+          cursor: pointer;
+        }
+
+        .close-button {
           right: 1em;
+        }
+
+        .copy-button {
+          right: 2.75em;
+        }
+
+        .expand-button {
+          right: 4.5em;
         }
       }
 
@@ -1868,6 +1898,26 @@ button.inspect.icon-button {
   }
 }
 
+.notebook-config-section {
+  h3:before {
+    content: '▶';
+    width: 1.5em;
+    display: inline-block;
+  }
+
+  &.open h3:before {
+    content: '▼';
+  }
+
+  .notebook-config-section-content {
+    display: none;
+  }
+
+  &.open .notebook-config-section-content {
+    display: block;
+  }
+}
+
 .notebook-config {
   border-radius: 6px;
   padding: 1em;
@@ -1897,6 +1947,10 @@ button.inspect.icon-button {
     font-family: monospace, monospace;
   }
 
+  .help-icon {
+    display: none;
+  }
+
   .content {
     display: none;
     font-size: 86%;
@@ -1907,7 +1961,11 @@ button.inspect.icon-button {
     display: block;
   }
 
-  .notebook-config-section {
+  &.open .help-icon {
+    display: inline-block;
+  }
+
+.notebook-config-section {
     border-radius: 4px;
     border-width: 1px;
     border-style: solid;
@@ -2000,6 +2058,11 @@ button.inspect.icon-button {
   .icon {
     font-size: 16px;
   }
+
+  .controls {
+    display: flex;
+    justify-content: space-between;
+  }
 }
 
 button {
@@ -2034,7 +2097,7 @@ button {
         transform-origin: bottom left;
         width: fit-content;
 
-        .buttons {
+        .left-buttons, .right-buttons {
           display: none;
         }
       }
@@ -2110,7 +2173,7 @@ button {
         h2 {
          display: none;
 
-          .buttons {
+          .left-buttons, .right-buttons {
             display: none;
           }
         }
@@ -3074,10 +3137,9 @@ button.dialog-button {
 }
 
 .modal-window.search {
-  table {
-    min-width: 40em;
-    max-width: 60em;
+  max-width: 75em;
 
+  table {
     tbody {
       max-height: 30em;
       display: block;
@@ -3091,6 +3153,7 @@ button.dialog-button {
     td {
       padding: 0.75em 0.5em;
       border-bottom: 1px solid;
+      word-break: break-all;
     }
   }
 

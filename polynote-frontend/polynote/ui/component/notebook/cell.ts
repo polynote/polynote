@@ -1,4 +1,4 @@
-import {blockquote, button, div, dropdown, h4, iconButton, img, span, tag, TagElement} from "../../tags";
+import {blockquote, button, div, dropdown, h4, icon, iconButton, img, span, tag, TagElement} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
     clearArray,
@@ -1903,6 +1903,7 @@ class CodeCellOutput extends Disposable {
                         reportInfos.map((report) => {
                             const severity = (['Info', 'Warning', 'Error'])[report.severity];
                             const el = blockquote(['error-report', severity], [
+                                icon(['copy-button'], 'copy', 'copy icon').click(() => copyToClipboard(report.message)),
                                 span(['severity'], [severity]),
                                 span(['message'], [report.message]),
                                 ' '
@@ -1929,7 +1930,7 @@ class CodeCellOutput extends Disposable {
 
     setRuntimeError(error?: RuntimeError) {
         if (error) {
-            const errorEl = ErrorEl.fromServerError(error.error, this.cellId)
+            const errorEl = ErrorEl.fromServerError(error.error, this.cellId, true);
             const runtimeError = div(['errors'], [blockquote(['error-report', 'Error'], [errorEl.el])]).click(e => e.stopPropagation());
             if (this.cellErrorDisplay === undefined) {
                 this.cellErrorDisplay = runtimeError;

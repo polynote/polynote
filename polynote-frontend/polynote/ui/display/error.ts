@@ -1,11 +1,13 @@
 import {ServerErrorWithCause} from "../../data/result";
-import {details, div, span, tag, TagElement} from "../tags";
+import {details, div, icon, span, tag, TagElement} from "../tags";
+import {copyToClipboard} from "../component/notebook/cell";
 
 export class ErrorEl {
     el: TagElement<"div" | "details">;
     private constructor(readonly summary: { label: string; message: string },
                         readonly trace: { cause?: ErrorEl, items: { content: string; type?: "link" | "irrelevant" }[] },
-                        readonly errorLine?: number) {
+                        readonly errorLine?: number,
+                        readonly showCopyEl? : boolean) {
 
         const traceItems = trace.items.map(item => {
             if (item.type === "link") {
@@ -17,17 +19,18 @@ export class ErrorEl {
             }
         });
 
+        const copyEl = icon(['copy-button'], 'copy', 'copy icon').click(() => copyToClipboard(this.copyFromServerError()));
         const causeEl = trace.cause?.el;
         const summaryContent = [span(['severity'], [summary.label]), span(['message'], [summary.message])];
         if (traceItems.length > 0) {
             const traceContent = [tag('ul', ['stack-trace'], {}, traceItems), causeEl];
-            this.el = details([], summaryContent, traceContent)
+            this.el = div([], [showCopyEl ? copyEl : '', details([], summaryContent, traceContent)]);
         } else {
-            this.el = div([], summaryContent)
+            this.el = div([], summaryContent);
         }
     }
 
-    static fromServerError(err: ServerErrorWithCause, filename?: string, maxDepth: number = 10, nested: boolean = false): ErrorEl {
+    static fromServerError(err: ServerErrorWithCause, filename?: string, showCopyEl: boolean = false, maxDepth: number = 10, nested: boolean = false): ErrorEl {
         let errorLine: number | undefined = undefined;
         const items: ErrorEl["trace"]["items"] = [];
         const message = `${err.message} (${err.className})`;
@@ -52,12 +55,22 @@ export class ErrorEl {
         }
 
         const cause = (maxDepth > 0 && err.cause)
-            ? ErrorEl.fromServerError(err.cause, filename, maxDepth - 1, true)
+            ? ErrorEl.fromServerError(err.cause, filename, showCopyEl, maxDepth - 1, true)
             : undefined;
         const label = nested ? "Caused by: " : "Uncaught exception: ";
         const summary = {label, message};
         const trace = {items, cause};
-        return new ErrorEl(summary, trace, errorLine)
+        return new ErrorEl(summary, trace, errorLine, showCopyEl);
+    }
+
+    copyFromServerError(): string {
+        let res = this.summary.label + this.summary.message + '\n';
+
+        this.trace.items.forEach((item) => {
+            res += '\n| ' + item.content;
+        })
+
+        return res;
     }
 }
 
