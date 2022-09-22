@@ -571,10 +571,11 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             ServerStateHandler.deleteNotebook(path)
             return NoUpdate // `deleteNotebook` already takes care of updating the state.
         });
-        this.receive(messages.ListNotebooks, (s, paths) => {
+        this.receive(messages.ListNotebooks, (s, nbs) => {
             const notebooks = {...s.notebooks}
-            paths.forEach(path => {
-                notebooks[path] = ServerStateHandler.getOrCreateNotebook(path).loaded
+            nbs.forEach(nb => {
+                console.log(nb.path, new Date(Number(nb.lastSaved)));
+                notebooks[nb.path] = ServerStateHandler.getOrCreateNotebook(nb.path).loaded
             })
             return { notebooks: setValue(notebooks) }
         });

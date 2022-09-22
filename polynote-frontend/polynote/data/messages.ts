@@ -12,6 +12,7 @@ import {
     float64,
     int16,
     int32,
+    int64,
     mapCodec,
     optional,
     Pair,
@@ -572,14 +573,26 @@ export class StartKernel extends Message {
     static get Kill() { return 3; }
 }
 
+export class FSNotebook {
+    static codec = combined(shortStr, int64).to(FSNotebook);
+
+    static unapply(inst: FSNotebook): ConstructorParameters<typeof FSNotebook> {
+        return [inst.path, inst.lastSaved];
+    }
+
+    constructor(readonly path: string, readonly lastSaved: number) {
+        Object.freeze(this);
+    }
+}
+
 export class ListNotebooks extends Message {
-    static codec = combined(arrayCodec(int32, shortStr)).to(ListNotebooks);
+    static codec = combined(arrayCodec(int32, FSNotebook.codec)).to(ListNotebooks);
     static get msgTypeId() { return 13; }
     static unapply(inst: ListNotebooks): ConstructorParameters<typeof ListNotebooks> {
         return [inst.notebooks];
     }
 
-    constructor(readonly notebooks: string[]) {
+    constructor(readonly notebooks: FSNotebook[]) {
         super();
         Object.freeze(this);
     }

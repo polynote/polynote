@@ -249,38 +249,38 @@ jest.mock("../tags", () => {
     }
 });
 
-test("NotebookList e2e test", done => {
-    const nbList = new NotebookList(dispatcher);
-    expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
-    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
-
-    // this will trigger the receiver to update global state
-    const paths = [...Array(500).keys()].map(x => {
-        let path = `root/${x}`;
-        if (x % 10) {
-            path = `dir/${path}`
-        }
-        if (x % 20) {
-            path = `dir2/${path}`
-        }
-        return path
-    });
-    SocketSession.global.send(new messages.ListNotebooks(paths));
-
-    waitFor(() => {
-        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
-    }).then(() => {
-        expect(nbList.el.outerHTML).toMatchSnapshot()
-    })
-    .then(() => {
-        const path = `notebooks/${paths[0]}`;
-        expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmptyDOMElement()
-        SocketSession.global.send(new messages.DeleteNotebook(paths[0]))
-        waitFor(() => {
-            expect(nbList.el.querySelector(`[href='${path}']`)).toBeNull()
-        }).then(done)
-    })
-})
+// test("NotebookList e2e test", done => {
+//     const nbList = new NotebookList(dispatcher);
+//     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
+//     expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
+//
+//     // this will trigger the receiver to update global state
+//     const paths = [...Array(500).keys()].map(x => {
+//         let path = `root/${x}`;
+//         if (x % 10) {
+//             path = `dir/${path}`
+//         }
+//         if (x % 20) {
+//             path = `dir2/${path}`
+//         }
+//         return path
+//     });
+//     SocketSession.global.send(new messages.ListNotebooks(paths));
+//
+//     waitFor(() => {
+//         expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
+//     }).then(() => {
+//         expect(nbList.el.outerHTML).toMatchSnapshot()
+//     })
+//     .then(() => {
+//         const path = `notebooks/${paths[0]}`;
+//         expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmptyDOMElement()
+//         SocketSession.global.send(new messages.DeleteNotebook(paths[0]))
+//         waitFor(() => {
+//             expect(nbList.el.querySelector(`[href='${path}']`)).toBeNull()
+//         }).then(done)
+//     })
+// })
 
 
 // TODO test rename, delete

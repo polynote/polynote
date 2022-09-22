@@ -8,7 +8,7 @@ import polynote.config.{Mount, PolynoteConfig, Wal}
 import polynote.kernel.NotebookRef.AlreadyClosed
 import polynote.kernel.environment.Config
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
-import polynote.messages._
+import polynote.messages.{_}
 import polynote.server.repository.fs.FileSystems
 import zio.stream.ZStream
 import zio.{Has, Hub, IO, Promise, RIO, Ref, Semaphore, Task, UIO, URIO, URLayer, ZIO, ZLayer}
@@ -47,7 +47,7 @@ trait NotebookRepository {
   /**
     * @return A list of notebook paths that exist in this repository
     */
-  def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]]
+  def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[fsNotebook]]
 
   /**
     * Create a notebook at the given path, optionally creating it from the given content string.
@@ -287,13 +287,17 @@ class TreeRepository (
     (repo, relativePath, _) => repo.saveNotebook(nb.copy(path = relativePath))
   }
 
-  override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
+  override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[fsNotebook]] = {
     for {
-      rootNBs  <- root.listNotebooks().map(_.map(deslash))
+      rootNBs  <- root.listNotebooks().map(_.map(nb => fsNotebook(deslash(nb.path), nb.lastSaved)))
       mountNbs <- ZIO.foreach(repos.toList) {
-        case (base, repo) => repo.listNotebooks().map(_.map(nbPath => deslash(Paths.get(base, nbPath).toString)))
+        case (base, repo) => repo.listNotebooks().map(_.map(nb => fsNotebook(deslash(Paths.get(base, nb.path).toString), nb.lastSaved)))
       }
-    } yield rootNBs ++ mountNbs.flatten
+      // flatten the nested list of mount notebooks
+    } yield rootNBs ++ (for {
+      nbs <- mountNbs
+      nb <- nbs
+    } yield nb)
   }
 
   override def createNotebook(originalPath: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String] = delegate(originalPath) {

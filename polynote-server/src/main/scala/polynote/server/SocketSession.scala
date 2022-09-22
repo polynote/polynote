@@ -40,7 +40,7 @@ object SocketSession {
   private val handler: Message => RIO[SessionEnv with PublishMessage with NotebookManager, Option[Message]] = {
     case ListNotebooks(_) =>
       NotebookManager.list().map {
-        notebooks => Some(ListNotebooks(notebooks.map(ShortString.apply)))
+        nbs => Some(ListNotebooks(nbs))
       }
 
     case CreateNotebook(path, maybeContent, maybeTemplatePath) =>

@@ -391,7 +391,8 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
   final val Kill = 3.toByte
 }
 
-final case class ListNotebooks(paths: List[ShortString]) extends Message
+final case class fsNotebook(path: ShortString, lastSaved: Long)
+final case class ListNotebooks(paths: List[fsNotebook]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
 final case class CreateNotebook(path: ShortString, maybeContent: Option[String] = None, maybeTemplatePath: Option[String] = None) extends Message

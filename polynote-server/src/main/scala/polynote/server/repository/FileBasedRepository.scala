@@ -282,13 +282,17 @@ class FileBasedRepository(
     _         <- fs.writeStringToPath(pathOf(nb.path), rawString)
   } yield ()
 
-  override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[String]] = {
-    for {
+  override def listNotebooks(): RIO[BaseEnv with GlobalEnv, List[fsNotebook]] = {
+    val validFiles = for {
       files <- fs.list(path)
       isSupported <- NotebookFormat.isSupported
-    } yield files.filter(isSupported).map { relativePath =>
-      path.relativize(relativePath).toString
-    }
+    } yield files.filter(isSupported)
+
+    validFiles.flatMap(validFile => ZIO.foreach(validFile) { file => {
+      fs.lastModified(file).map { lastModifiedTime =>
+        fsNotebook(path.relativize(file).toString, lastModifiedTime)
+      }
+    }})
   }
 
   override def notebookExists(path: String): RIO[BaseEnv with GlobalEnv, Boolean] = fs.exists(pathOf(path))

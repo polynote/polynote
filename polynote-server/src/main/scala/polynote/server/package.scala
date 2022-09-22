@@ -5,7 +5,7 @@ import polynote.kernel.environment.{Config, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.{RefMap, UPublish}
 import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
-import polynote.messages.{CreateNotebook, DeleteNotebook, Message, NotebookCell, NotebookSearchResult, RenameNotebook, ShortString}
+import polynote.messages.{CreateNotebook, DeleteNotebook, Message, NotebookCell, NotebookSearchResult, RenameNotebook, fsNotebook, ShortString}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.FileSystems
@@ -112,7 +112,7 @@ package object server {
     def subscribe(path: String): RManaged[NotebookManager with BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] = open(path).toManaged_.flatMap(_.subscribe())
     def fetchIfOpen(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[(String, String)]] = access.flatMap(_.fetchIfOpen(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
-    def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.list())
+    def list(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[fsNotebook]] = access.flatMap(_.list())
     def listRunning(): RIO[NotebookManager with BaseEnv with GlobalEnv, List[String]] = access.flatMap(_.listRunning())
     def status(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, KernelBusyState] = access.flatMap(_.status(path))
     def create(path: String, maybeContent: Option[String]): RIO[NotebookManager with BaseEnv with GlobalEnv, String] = access.flatMap(_.create(path, maybeContent))
@@ -125,7 +125,7 @@ package object server {
       def open(path: String): RIO[BaseEnv with GlobalEnv, KernelPublisher]
       def fetchIfOpen(path: String): RIO[BaseEnv with GlobalEnv, Option[(String, String)]]
       def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]]
-      def list(): RIO[BaseEnv with GlobalEnv, List[String]]
+      def list(): RIO[BaseEnv with GlobalEnv, List[fsNotebook]]
       def listRunning(): RIO[BaseEnv with GlobalEnv, List[String]]
       def status(path: String): RIO[BaseEnv with GlobalEnv, KernelBusyState]
       def create(path: String, maybeContent: Option[String]): RIO[BaseEnv with GlobalEnv, String]
@@ -187,7 +187,7 @@ package object server {
 
         override def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]] = repository.notebookURI(path)
 
-        override def list(): RIO[BaseEnv with GlobalEnv, List[String]] = repository.listNotebooks()
+        override def list(): RIO[BaseEnv with GlobalEnv, List[fsNotebook]] = repository.listNotebooks()
 
         override def listRunning(): RIO[BaseEnv, List[String]] = openNotebooks.keys
 
@@ -238,7 +238,7 @@ package object server {
         override def search(query: String): RIO[BaseEnv with GlobalEnv, List[NotebookSearchResult]] = {
           repository.listNotebooks.flatMap(nbs => ZIO.foreachParN(16)(nbs) { nb => {
             for {
-              loadedNB <- repository.loadNotebook(nb)
+              loadedNB <- repository.loadNotebook(nb.path)
               cells    <- ZIO(loadedNB.cells.filter(c => c.content.toString.contains(query)))
             } yield for {
               cell <- cells
