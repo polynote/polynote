@@ -376,9 +376,9 @@ class KernelTasksEl extends Disposable {
 
     private jumpToCell(id: string) {
         const nbInfo = ServerStateHandler.getOrCreateNotebook(this.notebookPathHandler.state);
-        const idNum = id.split(" ").pop(); // extract the actual id number
-        if (idNum != undefined) { // pop can return undefined - if it doesn't, select the cell
-            nbInfo.handler.selectCell(parseInt(idNum));
+        const idAsNum = id.split(" ").pop(); // extract the actual id number
+        if (idAsNum != undefined && !isNaN(parseInt(idAsNum))) { // Check there was a second word, and verify it is a number
+            nbInfo.handler.selectCell(parseInt(idAsNum));
         }
     }
 
