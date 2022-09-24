@@ -68,7 +68,10 @@ export class Main {
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {
-            return ServerStateHandler.loadNotebook(path, true)
+            if (path !== "home")
+                return ServerStateHandler.loadNotebook(path, true)
+            else
+                return;
         })).then(() => {
             const notebookBase = 'notebook/';
             if (path.startsWith(notebookBase)) {

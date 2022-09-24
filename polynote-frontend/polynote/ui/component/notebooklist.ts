@@ -1,7 +1,7 @@
 import {a, button, div, h2, helpIconButton, iconButton, span, tag, TagElement} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
-import {deepCopy, diffArray} from "../../util/helpers";
-import {Disposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state"
+import {deepCopy, diffArray, getShortDate} from "../../util/helpers";
+import {Disposable, IDisposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state";
 import {ServerStateHandler} from "../../state/server_state";
 import {SearchModal} from "./search";
 
@@ -462,6 +462,9 @@ export class LeafEl extends Disposable {
     readonly el: TagElement<"li">;
     private leafEl: TagElement<"a">;
     readonly path: string;
+    private _lastSaved: number | undefined;
+
+    private obs: IDisposable;
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly view: StateView<Leaf>) {
         super()
@@ -471,8 +474,14 @@ export class LeafEl extends Disposable {
         this.el = tag('li', ['leaf'], {}, [this.leafEl]);
         this.path = this.view.state.fullPath;
 
+        this.createLastSavedObserver();
+
         view.addObserver(leaf => {
             if (leaf) {
+                // Destroy the old observer if the path to observe has changed
+                this.obs?.dispose();
+                this.createLastSavedObserver();
+
                 const newEl = this.getEl(leaf);
                 this.leafEl.replaceWith(newEl);
                 this.leafEl = newEl;
@@ -488,7 +497,12 @@ export class LeafEl extends Disposable {
     }
 
     private getEl(leaf: Leaf) {
-        return a(['name'], `notebooks/${leaf.fullPath}`, [span([], [leaf.value])], { preventNavigate: true })
+        return a([], `notebooks/${leaf.fullPath}`, [
+            span([], [
+                span(['name'], [leaf.value]),
+                this._lastSaved !== undefined ? span(['date'], [getShortDate(this._lastSaved)]) : ""
+            ])
+        ], { preventNavigate: true })
             .click(evt => {
                 evt.preventDefault();
                 evt.stopPropagation();
@@ -498,5 +512,18 @@ export class LeafEl extends Disposable {
                     })
             })
     }
-}
 
+    private createLastSavedObserver() {
+        const nb = ServerStateHandler.getNotebook(this.path);
+        if (nb !== undefined && nb.handler !== undefined) {
+            this.obs = nb.handler.view("lastSaved").addObserver((lastSaved) => this.lastSaved = lastSaved).disposeWith(this);
+        }
+        this.lastSaved = nb?.handler?.state.lastSaved;
+    }
+
+    private set lastSaved(timestamp: number | undefined) {
+        if (timestamp !== undefined) {
+            this._lastSaved = timestamp;
+        }
+    }
+}

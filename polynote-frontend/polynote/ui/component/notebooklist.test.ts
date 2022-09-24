@@ -8,7 +8,8 @@ import {ServerMessageReceiver} from "../../messaging/receiver";
 import {SocketStateHandler} from "../../state/socket_state";
 import {ServerStateHandler} from "../../state/server_state";
 
-import 'jest-canvas-mock'; // mocks canvas for loading search icon for e2e test
+import 'jest-canvas-mock';
+import {FSNotebook} from "../../data/messages"; // mocks canvas for loading search icon for e2e test
 
 jest.mock("../../messaging/comms");
 
@@ -25,7 +26,7 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     };
     const leafState = StateHandler.from(leaf);
     const comp = new LeafEl(dispatcher, leafState);
-    const leafEl  = () => comp.el.querySelector("a.name")!;
+    const leafEl  = () => comp.el.querySelector("a")!;
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
 
     const newPath = "foo/bar/baz2";
@@ -249,38 +250,41 @@ jest.mock("../tags", () => {
     }
 });
 
-// test("NotebookList e2e test", done => {
-//     const nbList = new NotebookList(dispatcher);
-//     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
-//     expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
-//
-//     // this will trigger the receiver to update global state
-//     const paths = [...Array(500).keys()].map(x => {
-//         let path = `root/${x}`;
-//         if (x % 10) {
-//             path = `dir/${path}`
-//         }
-//         if (x % 20) {
-//             path = `dir2/${path}`
-//         }
-//         return path
-//     });
-//     SocketSession.global.send(new messages.ListNotebooks(paths));
-//
-//     waitFor(() => {
-//         expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
-//     }).then(() => {
-//         expect(nbList.el.outerHTML).toMatchSnapshot()
-//     })
-//     .then(() => {
-//         const path = `notebooks/${paths[0]}`;
-//         expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmptyDOMElement()
-//         SocketSession.global.send(new messages.DeleteNotebook(paths[0]))
-//         waitFor(() => {
-//             expect(nbList.el.querySelector(`[href='${path}']`)).toBeNull()
-//         }).then(done)
-//     })
-// })
+test("NotebookList e2e test", done => {
+    const nbList = new NotebookList(dispatcher);
+    expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
+    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
+
+    // this will trigger the receiver to update global state
+    const paths = [...Array(500).keys()].map(x => {
+        let path = `root/${x}`;
+        if (x % 10) {
+            path = `dir/${path}`
+        }
+        if (x % 20) {
+            path = `dir2/${path}`
+        }
+        return path
+    });
+
+    const nbs: FSNotebook[] = [];
+    paths.forEach(path => nbs.push(new FSNotebook(path, 0)));
+    SocketSession.global.send(new messages.ListNotebooks(nbs));
+
+    waitFor(() => {
+        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
+    }).then(() => {
+        expect(nbList.el.outerHTML).toMatchSnapshot()
+    })
+    .then(() => {
+        const path = `notebooks/${paths[0]}`;
+        expect(nbList.el.querySelector(`[href='${path}']`)).not.toBeEmptyDOMElement()
+        SocketSession.global.send(new messages.DeleteNotebook(paths[0]))
+        waitFor(() => {
+            expect(nbList.el.querySelector(`[href='${path}']`)).toBeNull()
+        }).then(done)
+    })
+})
 
 
 // TODO test rename, delete

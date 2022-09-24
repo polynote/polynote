@@ -574,8 +574,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         this.receive(messages.ListNotebooks, (s, nbs) => {
             const notebooks = {...s.notebooks}
             nbs.forEach(nb => {
-                console.log(nb.path, new Date(Number(nb.lastSaved)));
-                notebooks[nb.path] = ServerStateHandler.getOrCreateNotebook(nb.path).loaded
+                notebooks[nb.path] = ServerStateHandler.getOrCreateNotebook(nb.path, nb.lastSaved).loaded
             })
             return { notebooks: setValue(notebooks) }
         });

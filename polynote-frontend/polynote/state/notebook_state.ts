@@ -92,6 +92,7 @@ export interface NotebookState {
     cellOrder: number[], // this is the canonical ordering of the cells.
     config: NBConfig,
     kernel: KernelState,
+    lastSaved: number
     // ephemeral states
     activeCellId: number | undefined,
     activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
@@ -183,6 +184,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 info: {},
                 tasks: {},
             },
+            lastSaved: 0,
             activePresence: {},
             activeCellId: undefined,
             activeCompletion: undefined,

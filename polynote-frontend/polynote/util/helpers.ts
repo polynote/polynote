@@ -398,6 +398,15 @@ export function joinQuotedArgs(strs: string[] | undefined): string | undefined {
 }
 
 //****************
+//* Date Helpers
+//****************
+
+export function getShortDate(timestamp: number): string {
+    const date = new Date(Number(timestamp)); // cast the timestamp in case it is a BigInt stored as a Number
+    return date.toLocaleString('default', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+//****************
 //* Other Helpers
 //****************
 

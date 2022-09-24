@@ -156,10 +156,13 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
     /**
      * Initialize a new NotebookState for a notebook.
      */
-    static getOrCreateNotebook(path: string): NotebookInfo {
-        const maybeExists = ServerStateHandler.notebooks[path]
+    static getOrCreateNotebook(path: string, lastSaved?: number): NotebookInfo {
+        const maybeExists = ServerStateHandler.notebooks[path];
         if (maybeExists) {
-            return maybeExists
+            if (lastSaved !== undefined && maybeExists.handler) {
+                maybeExists.handler.updateField("lastSaved", () => lastSaved)
+            }
+            return maybeExists;
         } else {
             const nbInfo = {
                 handler: NotebookStateHandler.forPath(path),
@@ -168,6 +171,8 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
             }
 
             ServerStateHandler.notebooks[path] = nbInfo;
+            if (nbInfo.handler)
+                nbInfo.handler.updateField("lastSaved", () => lastSaved ?? Date.now())
             return nbInfo
         }
     }
