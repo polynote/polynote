@@ -1007,6 +1007,24 @@ export class SearchNotebooks extends Message {
     }
 }
 
+export class SaveNotebook extends Message {
+    static codec = combined(int64).to(SaveNotebook);
+    static get msgTypeId() { return 35; }
+
+    static unapply(inst: SaveNotebook): ConstructorParameters<typeof SaveNotebook> {
+        return [inst.timestamp];
+    }
+
+    constructor(readonly timestamp: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    isResponse(other: Message): boolean {
+        return other instanceof SaveNotebook
+    }
+}
+
 Message.codecs = [
     Error,            // 0
     LoadNotebook,     // 1
@@ -1042,7 +1060,8 @@ Message.codecs = [
     DeleteComment,    // 31
     KeepAlive,        // 32
     MoveCell,         // 33
-    SearchNotebooks   // 34
+    SearchNotebooks,  // 34
+    SaveNotebook      // 35
 ];
 
 

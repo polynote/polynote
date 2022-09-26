@@ -1,5 +1,13 @@
 import * as messages from "../data/messages";
-import {HandleData, ModifyStream, NotebookUpdate, NotebookVersion, ReleaseHandle, TableOp} from "../data/messages";
+import {
+    HandleData,
+    ModifyStream,
+    NotebookUpdate,
+    NotebookVersion,
+    ReleaseHandle,
+    SaveNotebook,
+    TableOp
+} from "../data/messages";
 import {
     ClientResult,
     Output,
@@ -295,6 +303,13 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
     stopDataStream(handleType: number, handleId: number) {
         this.socket.send(new ReleaseHandle(handleType, handleId))
+    }
+
+    /*******************************
+     ** Misc methods **
+     *******************************/
+    saveNotebook() {
+        this.socket.send(new SaveNotebook(-1));
     }
 }
 

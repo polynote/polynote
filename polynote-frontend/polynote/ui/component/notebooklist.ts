@@ -123,8 +123,12 @@ export class NotebookList extends Disposable {
     private dragEnter: EventTarget | null;
     private tree: BranchEl;
 
+    private obs: Record<string, IDisposable>;
+
     constructor(readonly dispatcher: ServerMessageDispatcher) {
         super();
+
+        this.obs = {};
 
         // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
         const searchModal = new SearchModal(dispatcher);
@@ -156,6 +160,7 @@ export class NotebookList extends Disposable {
         const treeState = new BranchHandler({
             fullPath: "",
             value: "",
+            lastSaved: 0,
             children: {}
         });
         this.tree = new BranchEl(dispatcher, treeState);
@@ -189,10 +194,21 @@ export class NotebookList extends Disposable {
                 const [removed, added] = diffArray(oldPaths, Object.keys(newNotebooks));
 
                 added.forEach(path => {
-                    console.log(added);
-                    treeState.addPath(path)
+                    const nb = ServerStateHandler.getNotebook(path);
+                    if (nb !== undefined && nb.handler !== undefined) {
+                        this.obs[path] = nb.handler.view("lastSaved").addObserver(
+                            (lastSaved) => {
+                                treeState.removePath(path);
+                                treeState.addPath(path, Number(lastSaved));
+                            }
+                        ).disposeWith(this);
+                    }
+                    treeState.addPath(path, Number(nb?.handler?.state.lastSaved) ?? 0);
                 });
-                removed.forEach(path => treeState.removePath(path))
+                removed.forEach(path => {
+                    this.obs[path]?.dispose();
+                    treeState.removePath(path)
+                });
             }
         });
 
@@ -251,7 +267,8 @@ export class NotebookList extends Disposable {
 
 export interface Leaf {
     fullPath: string,
-    value: string
+    value: string,
+    lastSaved: number
 }
 
 export interface Branch extends Leaf {
@@ -269,7 +286,7 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
         super(state);
     }
 
-    addPath(path: string) {
+    addPath(path: string, lastSaved: number) {
         this.update(topState => {
             const pieces = path.split("/");
             const update: UpdatePartial<Branch> = {
@@ -300,7 +317,8 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
             const leaf = pieces[pieces.length - 1];
             currentUpdate.children[path] = {
                 fullPath: path,
-                value: leaf
+                value: leaf,
+                lastSaved
             }
             return update;
         });
@@ -540,8 +558,6 @@ export class LeafEl extends Disposable {
     _lastSaved: number;
     lastSavedEl: TagElement<"span">;
 
-    private obs: IDisposable;
-
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly view: StateView<Leaf>) {
         super()
 
@@ -549,16 +565,10 @@ export class LeafEl extends Disposable {
         this.leafEl = this.getEl(initial);
         this.el = tag('li', ['leaf'], {}, [this.leafEl]);
         this.path = this.view.state.fullPath;
-        this._lastSaved = 0;
-
-        this.createLastSavedObserver();
+        this._lastSaved = this.view.state.lastSaved;
 
         view.addObserver(leaf => {
             if (leaf) {
-                // Destroy the old observer if the path to observe has changed
-                this.obs?.dispose();
-                this.createLastSavedObserver();
-
                 const newEl = this.getEl(leaf);
                 this.leafEl.replaceWith(newEl);
                 this.leafEl = newEl;
@@ -588,22 +598,5 @@ export class LeafEl extends Disposable {
                         ServerStateHandler.selectNotebook(leaf.fullPath)
                     })
             })
-    }
-
-    private createLastSavedObserver() {
-        const nb = ServerStateHandler.getNotebook(this.path);
-        if (nb !== undefined && nb.handler !== undefined) {
-            this.obs = nb.handler.view("lastSaved").addObserver(
-                (lastSaved) => this.lastSaved = lastSaved
-            ).disposeWith(this);
-        }
-        this.lastSaved = nb?.handler?.state.lastSaved;
-    }
-
-    private set lastSaved(timestamp: number | undefined) {
-        if (timestamp !== undefined) {
-            this._lastSaved = Number(timestamp); // cast the timestamp in case it is a BigInt
-            this.lastSavedEl.innerText = getShortDate(this._lastSaved);
-        }
     }
 }

@@ -382,6 +382,9 @@ object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
 final case class MoveCell(globalVersion: Int, localVersion: Int, id: CellID, after: CellID) extends Message with NotebookUpdate
 object MoveCell extends NotebookUpdateCompanion[MoveCell](33)
 
+final case class SaveNotebook(timestamp: Long) extends Message
+object SaveNotebook extends MessageCompanion[SaveNotebook](35)
+
 final case class StartKernel(level: Byte) extends Message
 object StartKernel extends MessageCompanion[StartKernel](12) {
   // TODO: should probably make this an enum that codecs to a byte, but don't want to futz with that right now

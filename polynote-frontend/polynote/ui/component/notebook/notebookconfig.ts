@@ -52,6 +52,10 @@ export class NotebookConfigEl extends Disposable {
 
         this.el = div(['notebook-config'], [
             h2(['config', 'help-text'], ['Configuration & dependencies']).click(() => stateHandler.updateField("open", open => setValue(!open))),
+            iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
+                evt.stopPropagation();
+                dispatcher.saveNotebook();
+            }),
             helpIconButton([], "https://polynote.org/latest/docs/notebook-configuration/"),
             div(['content'], [
                 dependencies.el,

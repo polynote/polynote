@@ -13,6 +13,7 @@ import uzhttp.websocket.Frame
 import zio.stream.{Stream, Take, UStream, ZStream}
 import zio.{Promise, RIO, UIO, ZIO, ZLayer, ZManaged, ZQueue}
 
+import java.util.Calendar
 import java.util.concurrent.atomic.AtomicInteger
 
 
@@ -90,6 +91,8 @@ class NotebookSession(
       ZIO.when(knownVersion >= 0)(subscriber.updateLastGlobalVersion(knownVersion))
 
     case CurrentSelection(cellID, range) => subscriber.setSelection(cellID, range)
+
+    case SaveNotebook(timestamp) => PublishMessage(SaveNotebook(Calendar.getInstance().getTimeInMillis()))
 
     case KeepAlive(payload) =>
       // echo received KeepAlive message back to client.

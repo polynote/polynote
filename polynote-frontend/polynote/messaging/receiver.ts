@@ -478,6 +478,12 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 }
             }
         })
+
+        this.receive(messages.SaveNotebook, (s, timestamp) => {
+            return {
+                lastSaved: timestamp
+            }
+        })
     }
 
     private cellToState(cell: NotebookCell): CellState {
@@ -558,7 +564,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         this.receive(messages.CreateNotebook, (s, path) => {
             return {
                 notebooks: {
-                    [path]: ServerStateHandler.getOrCreateNotebook(path).loaded
+                    [path]: ServerStateHandler.getOrCreateNotebook(path, Date.now()).loaded
                 }
             }
         });
