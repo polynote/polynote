@@ -402,7 +402,7 @@ export function joinQuotedArgs(strs: string[] | undefined): string | undefined {
 //****************
 
 export function getShortDate(timestamp: number): string {
-    const date = new Date(Number(timestamp)); // cast the timestamp in case it is a BigInt stored as a Number
+    const date = new Date(timestamp);
     return date.toLocaleString('default', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 

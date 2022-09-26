@@ -1,9 +1,18 @@
 import {a, button, div, h2, helpIconButton, iconButton, span, tag, TagElement} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray, getShortDate} from "../../util/helpers";
-import {Disposable, IDisposable, ObjectStateHandler, removeKey, StateView, UpdatePartial} from "../../state";
+import {
+    Disposable,
+    IDisposable,
+    ObjectStateHandler,
+    removeKey,
+    setProperty, setValue,
+    StateView,
+    UpdatePartial
+} from "../../state";
 import {ServerStateHandler} from "../../state/server_state";
 import {SearchModal} from "./search";
+import {NotebookScrollLocationsHandler, NotebookSortingHandler, UserPreferencesHandler} from "../../state/preferences";
 
 export class NotebookListContextMenu{
     readonly el: TagElement<"div">;
@@ -122,19 +131,24 @@ export class NotebookList extends Disposable {
         searchModal.show();
         searchModal.hide();
 
+        const sortButton = NotebookSortingHandler.state.descending ?
+            iconButton(['arrow', 'arrow-up'], 'Sort by most recently saved', 'arrow-up', 'Sort by most recently saved') :
+            iconButton(['arrow', 'arrow-down'], 'Sort by least recently saved', 'arrow-down', 'Sort by least recently saved');
+
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['left-buttons'], [
                 helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
             ]),
             span(['right-buttons'], [
+                sortButton.click(evt => {
+                    evt.stopPropagation();
+                    NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
+                    this.tree.sort();
+                }),
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
-                }),
-                iconButton(["search"], "Search Notebooks", "search", "Search").click(evt => {
-                    evt.stopPropagation();
-                    searchModal.showUI()
                 }),
             ])
         ]);
@@ -167,19 +181,37 @@ export class NotebookList extends Disposable {
             }
         })
 
+        NotebookSortingHandler.observeKey("descending", pref => this.renderSortButton(pref)).disposeWith(this)
+
         serverStateHandler.view("notebooks").addPreObserver(oldNotebooks => {
             const oldPaths = Object.keys(oldNotebooks);
             return newNotebooks => {
                 const [removed, added] = diffArray(oldPaths, Object.keys(newNotebooks));
 
-
-                added.forEach(path => treeState.addPath(path));
+                added.forEach(path => {
+                    console.log(added);
+                    treeState.addPath(path)
+                });
                 removed.forEach(path => treeState.removePath(path))
             }
         });
 
         // we're ready to request the notebooks list now!
         dispatcher.requestNotebookList()
+    }
+
+    private renderSortButton(pref: boolean) {
+        const newEl = pref ?
+            iconButton(['arrow', 'arrow-up'], 'Sort by most recently saved', 'arrow-up', 'Sort by most recently saved') :
+            iconButton(['arrow', 'arrow-down'], 'Sort by least recently saved', 'arrow-down', 'Sort by least recently saved');
+
+        newEl.click(evt => {
+            evt.stopPropagation();
+            NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
+            this.tree.sort();
+        });
+
+        this.header.querySelector('.arrow')?.replaceWith(newEl);
     }
 
     private fileHandler(evt: DragEvent) {
@@ -306,6 +338,8 @@ export class BranchEl extends Disposable {
     private readonly branchEl: TagElement<"button">;
     private children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
+    _lastSaved: number;
+    rootNode: boolean;
     childrenState: StateView<Record<string, Leaf | Branch>>;
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly branch: StateView<Branch>, private parent?: BranchEl) {
@@ -313,11 +347,13 @@ export class BranchEl extends Disposable {
         const initial = branch.state;
         this.childrenEl = tag('ul', [], {}, []);
         this.path = this.branch.state.fullPath;
+        this._lastSaved = 0;
 
         Object.values(initial.children).forEach(child => this.addChild(child));
 
         // if `initial.value` is empty, this is the root node so there's no outer `li`.
         if (initial.value.length > 0) {
+            this.rootNode = false;
             this.el = tag('li', ['branch'], {}, [
                 this.branchEl = button(['branch-outer'], {}, [
                     span(['expander'], []),
@@ -327,6 +363,7 @@ export class BranchEl extends Disposable {
                 this.childrenEl
             ]);
         } else {
+            this.rootNode = true;
             this.el = this.childrenEl;
         }
         this.el.click(evt => {
@@ -378,9 +415,9 @@ export class BranchEl extends Disposable {
             child = new LeafEl(this.dispatcher, childStateHandler);
         }
 
-        // insert this child in alphabetical order
+        // insert this child in numerical order
         let i = 0;
-        while (this.children[i]?.path.localeCompare(child.path) < 0) {
+        while (this.shouldInsertLower(child, this.children[i])) {
             i++;
         }
         const nextEl = this.children[i]?.el;
@@ -404,6 +441,14 @@ export class BranchEl extends Disposable {
                     }
                 }
             )
+    }
+
+    private shouldInsertLower(newChild: BranchEl | LeafEl, oldChild: BranchEl | LeafEl) {
+        if (oldChild === undefined) return false;
+        else if (newChild instanceof BranchEl) return (oldChild instanceof BranchEl && oldChild.path.localeCompare(newChild.path) < 0);
+        else if (oldChild instanceof BranchEl) return true;
+        else if (newChild._lastSaved < oldChild._lastSaved) return NotebookSortingHandler.state.descending;
+        else return !NotebookSortingHandler.state.descending;
     }
 
     private lastExpandedChild(child: BranchEl | LeafEl): BranchEl | LeafEl {
@@ -456,13 +501,44 @@ export class BranchEl extends Disposable {
             current.expanded = false;
         }
     }
+
+    sort() {
+        let children: HTMLElement = this.rootNode ? this.el : this.childrenEl;
+
+        let i = 0;
+        while (children.children[i].classList.contains("branch")) {
+            (this.children[i++] as BranchEl).sort();
+        }
+
+        for (let j = children.children.length - 1; i < j; i++, j--) {
+            this.swapChildren(i, j);
+            this.swapChildrenElements(children.children[i], children.children[j]);
+        }
+    }
+
+    private swapChildren(i: number, j: number) {
+        const b = this.children[i];
+        this.children[i] = this.children[j];
+        this.children[j] = b;
+    }
+
+    private swapChildrenElements(nodeA: Element, nodeB: Element) {
+        const parentA = nodeA.parentNode;
+        const siblingA = nodeA.nextSibling === nodeB ? nodeA : nodeA.nextSibling;
+
+        if (parentA !== null && nodeB.parentNode !== null) {
+            nodeB.parentNode.insertBefore(nodeA, nodeB);
+            parentA.insertBefore(nodeB, siblingA);
+        }
+    }
 }
 
 export class LeafEl extends Disposable {
     readonly el: TagElement<"li">;
     private leafEl: TagElement<"a">;
     readonly path: string;
-    private _lastSaved: number | undefined;
+    _lastSaved: number;
+    lastSavedEl: TagElement<"span">;
 
     private obs: IDisposable;
 
@@ -473,6 +549,7 @@ export class LeafEl extends Disposable {
         this.leafEl = this.getEl(initial);
         this.el = tag('li', ['leaf'], {}, [this.leafEl]);
         this.path = this.view.state.fullPath;
+        this._lastSaved = 0;
 
         this.createLastSavedObserver();
 
@@ -500,7 +577,7 @@ export class LeafEl extends Disposable {
         return a([], `notebooks/${leaf.fullPath}`, [
             span([], [
                 span(['name'], [leaf.value]),
-                this._lastSaved !== undefined ? span(['date'], [getShortDate(this._lastSaved)]) : ""
+                this.lastSavedEl = span(['date'], [this._lastSaved !== 0 ? getShortDate(this._lastSaved) : ""])
             ])
         ], { preventNavigate: true })
             .click(evt => {
@@ -516,14 +593,17 @@ export class LeafEl extends Disposable {
     private createLastSavedObserver() {
         const nb = ServerStateHandler.getNotebook(this.path);
         if (nb !== undefined && nb.handler !== undefined) {
-            this.obs = nb.handler.view("lastSaved").addObserver((lastSaved) => this.lastSaved = lastSaved).disposeWith(this);
+            this.obs = nb.handler.view("lastSaved").addObserver(
+                (lastSaved) => this.lastSaved = lastSaved
+            ).disposeWith(this);
         }
         this.lastSaved = nb?.handler?.state.lastSaved;
     }
 
     private set lastSaved(timestamp: number | undefined) {
         if (timestamp !== undefined) {
-            this._lastSaved = timestamp;
+            this._lastSaved = Number(timestamp); // cast the timestamp in case it is a BigInt
+            this.lastSavedEl.innerText = getShortDate(this._lastSaved);
         }
     }
 }

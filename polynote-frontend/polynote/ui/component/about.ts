@@ -12,7 +12,7 @@ import {getHotkeys} from "../input/hotkeys";
 import {ServerStateHandler} from "../../state/server_state";
 import {
     clearStorage,
-    LocalStorageHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
+    LocalStorageHandler, NotebookSortingHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
     UserPreferencesHandler, ViewPrefsHandler
 } from "../../state/preferences";
@@ -178,6 +178,7 @@ export class About extends FullScreenModal implements IDisposable {
         addStorageEl(UserPreferencesHandler)
         addStorageEl(RecentNotebooksHandler)
         addStorageEl(NotebookScrollLocationsHandler)
+        addStorageEl(NotebookSortingHandler)
         addStorageEl(OpenNotebooksHandler)
         addStorageEl(ViewPrefsHandler)
 
