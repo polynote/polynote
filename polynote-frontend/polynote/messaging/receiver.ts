@@ -478,12 +478,6 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 }
             }
         })
-
-        this.receive(messages.SaveNotebook, (s, timestamp) => {
-            return {
-                lastSaved: timestamp
-            }
-        })
     }
 
     private cellToState(cell: NotebookCell): CellState {
@@ -564,7 +558,10 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         this.receive(messages.CreateNotebook, (s, path) => {
             return {
                 notebooks: {
-                    [path]: ServerStateHandler.getOrCreateNotebook(path, Date.now()).loaded
+                    [path]: ServerStateHandler.getOrCreateNotebook(path).loaded
+                },
+                notebookTimestamps: {
+                    [path]: Date.now()
                 }
             }
         });
@@ -579,10 +576,15 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         });
         this.receive(messages.ListNotebooks, (s, nbs) => {
             const notebooks = {...s.notebooks}
+            const notebookTimestamps = {...s.notebookTimestamps};
             nbs.forEach(nb => {
-                notebooks[nb.path] = ServerStateHandler.getOrCreateNotebook(nb.path, nb.lastSaved).loaded
+                notebooks[nb.path] = ServerStateHandler.getOrCreateNotebook(nb.path).loaded
+                notebookTimestamps[nb.path] = Number(nb.lastSaved); // cast BigInt (uint64) to number
             })
-            return { notebooks: setValue(notebooks) }
+            return {
+                notebooks: setValue(notebooks),
+                notebookTimestamps: setValue(notebookTimestamps)
+            }
         });
         this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates, notebookTemplates) => {
             // First, we need to check to see if versions match. If they don't, we need to reload to clear out any
@@ -622,6 +624,13 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         })
         this.receive(messages.SearchNotebooks, (s, query, notebookSearchResults) => {
             return { searchResults: notebookSearchResults }
+        })
+        this.receive(messages.NotebookSaved, (s, path, timestamp) => {
+            return {
+                notebookTimestamps: {
+                    [path]: Number(timestamp) // cast BigInt (uint64) to number
+                }
+            }
         })
     }
 }

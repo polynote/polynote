@@ -214,7 +214,8 @@ class FileBasedRepository(
         )
       }.forever.flip
 
-      val doSave = syncWAL &> save.whenM(saveNeeded) &> BroadcastAll(SaveNotebook(Instant.now().toEpochMilli))
+      val broadcastSaveMessage = get.map(_.path).flatMap(path => BroadcastAll(NotebookSaved(path, Instant.now().toEpochMilli)))
+      val doSave = syncWAL &> (save &> broadcastSaveMessage).whenM(saveNeeded)
 
       // every interval, check if the notebook needs to be written and do so
       val saveAtInterval =

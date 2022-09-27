@@ -5,7 +5,7 @@ import {
     NotebookUpdate,
     NotebookVersion,
     ReleaseHandle,
-    SaveNotebook,
+    NotebookSaved,
     TableOp
 } from "../data/messages";
 import {
@@ -303,13 +303,6 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
 
     stopDataStream(handleType: number, handleId: number) {
         this.socket.send(new ReleaseHandle(handleType, handleId))
-    }
-
-    /*******************************
-     ** Misc methods **
-     *******************************/
-    saveNotebook() {
-        this.socket.send(new SaveNotebook(-1));
     }
 }
 

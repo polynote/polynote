@@ -1007,21 +1007,21 @@ export class SearchNotebooks extends Message {
     }
 }
 
-export class SaveNotebook extends Message {
-    static codec = combined(int64).to(SaveNotebook);
+export class NotebookSaved extends Message {
+    static codec = combined(shortStr, int64).to(NotebookSaved);
     static get msgTypeId() { return 35; }
 
-    static unapply(inst: SaveNotebook): ConstructorParameters<typeof SaveNotebook> {
-        return [inst.timestamp];
+    static unapply(inst: NotebookSaved): ConstructorParameters<typeof NotebookSaved> {
+        return [inst.path, inst.timestamp];
     }
 
-    constructor(readonly timestamp: number) {
+    constructor(readonly path: string, readonly timestamp: number) {
         super();
         Object.freeze(this);
     }
 
     isResponse(other: Message): boolean {
-        return other instanceof SaveNotebook
+        return other instanceof NotebookSaved
     }
 }
 
@@ -1061,7 +1061,7 @@ Message.codecs = [
     KeepAlive,        // 32
     MoveCell,         // 33
     SearchNotebooks,  // 34
-    SaveNotebook      // 35
+    NotebookSaved      // 35
 ];
 
 

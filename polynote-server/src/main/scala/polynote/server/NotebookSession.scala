@@ -92,8 +92,6 @@ class NotebookSession(
 
     case CurrentSelection(cellID, range) => subscriber.setSelection(cellID, range)
 
-    case SaveNotebook(timestamp) => PublishMessage(SaveNotebook(Calendar.getInstance().getTimeInMillis()))
-
     case KeepAlive(payload) =>
       // echo received KeepAlive message back to client.
       PublishMessage(KeepAlive(payload))

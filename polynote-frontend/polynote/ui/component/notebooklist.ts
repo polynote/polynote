@@ -123,12 +123,8 @@ export class NotebookList extends Disposable {
     private dragEnter: EventTarget | null;
     private tree: BranchEl;
 
-    private obs: Record<string, IDisposable>;
-
     constructor(readonly dispatcher: ServerMessageDispatcher) {
         super();
-
-        this.obs = {};
 
         // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
         const searchModal = new SearchModal(dispatcher);
@@ -193,22 +189,26 @@ export class NotebookList extends Disposable {
             return newNotebooks => {
                 const [removed, added] = diffArray(oldPaths, Object.keys(newNotebooks));
 
+                added.forEach(path => treeState.addPath(path, 0));
+                removed.forEach(path => treeState.removePath(path));
+            }
+        });
+
+        serverStateHandler.view("notebookTimestamps").addPreObserver(oldNotebooks => {
+            // Find all paths and compare them to old paths to find deleted ones
+            // Find all new timestamps and compare them to find updated or newly added ones
+            // We have to use two separate `diffArray`s because nested object comparisons don't play well with the state updates
+            const oldPaths = Object.keys(oldNotebooks);
+            const oldEntries = Object.entries(oldNotebooks);
+            return newNotebooks => {
+                const [removed, ] = diffArray(oldPaths, Object.keys(newNotebooks));
+                const [, added] = diffArray(oldEntries, Object.entries(newNotebooks));
+
                 added.forEach(path => {
-                    const nb = ServerStateHandler.getNotebook(path);
-                    if (nb !== undefined && nb.handler !== undefined) {
-                        this.obs[path] = nb.handler.view("lastSaved").addObserver(
-                            (lastSaved) => {
-                                treeState.removePath(path);
-                                treeState.addPath(path, Number(lastSaved));
-                            }
-                        ).disposeWith(this);
-                    }
-                    treeState.addPath(path, Number(nb?.handler?.state.lastSaved) ?? 0);
+                    treeState.removePath(path[0]);
+                    treeState.addPath(path[0], path[1]);
                 });
-                removed.forEach(path => {
-                    this.obs[path]?.dispose();
-                    treeState.removePath(path)
-                });
+                removed.forEach(path => treeState.removePath(path));
             }
         });
 
@@ -556,7 +556,6 @@ export class LeafEl extends Disposable {
     private leafEl: TagElement<"a">;
     readonly path: string;
     _lastSaved: number;
-    lastSavedEl: TagElement<"span">;
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly view: StateView<Leaf>) {
         super()
@@ -587,7 +586,7 @@ export class LeafEl extends Disposable {
         return a([], `notebooks/${leaf.fullPath}`, [
             span([], [
                 span(['name'], [leaf.value]),
-                this.lastSavedEl = span(['date'], [this._lastSaved !== 0 ? getShortDate(this._lastSaved) : ""])
+                span(['date'], [this._lastSaved !== 0 ? getShortDate(this._lastSaved) : ""])
             ])
         ], { preventNavigate: true })
             .click(evt => {
