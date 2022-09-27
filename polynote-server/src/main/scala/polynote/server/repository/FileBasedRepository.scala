@@ -1,7 +1,7 @@
 package polynote.server.repository
 
 import polynote.kernel.NotebookRef.AlreadyClosed
-import polynote.kernel.environment.Config
+import polynote.kernel.environment.{Config, BroadcastAll}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.LongRef
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
@@ -19,6 +19,7 @@ import java.io.FileNotFoundException
 import java.net.URI
 import java.nio.file.{FileAlreadyExistsException, Path, Paths}
 import java.time.format.DateTimeFormatter
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -161,7 +162,7 @@ class FileBasedRepository(
         }
     }
 
-    private def init(): RIO[BaseEnv with GlobalEnv, Unit] = {
+    private def init(): RIO[BaseEnv with GlobalEnv with BroadcastAll, Unit] = {
       def doUpdate(update: NotebookUpdate) = current.updateAndGet {
         case (prevVer, notebook) =>
           val nextVer = prevVer + 1
@@ -213,7 +214,7 @@ class FileBasedRepository(
         )
       }.forever.flip
 
-      val doSave = syncWAL &> save.whenM(saveNeeded)
+      val doSave = syncWAL &> save.whenM(saveNeeded) &> BroadcastAll(SaveNotebook(Instant.now().toEpochMilli))
 
       // every interval, check if the notebook needs to be written and do so
       val saveAtInterval =
@@ -244,7 +245,7 @@ class FileBasedRepository(
         case false => ZIO.succeed(WALWriter.NoWAL)
       }
 
-    def apply(notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, FileNotebookRef] = for {
+    def apply(notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv with BroadcastAll, FileNotebookRef] = for {
       log          <- Logging.access
       current      <- Ref.make(version -> notebook)
       updatesTopic <- ZHub.unbounded[NotebookUpdate]
@@ -266,7 +267,7 @@ class FileBasedRepository(
     nb             <- fmt.decodeNotebook(noExtPath, content)
   } yield nb
 
-  override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
+  override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv with BroadcastAll, NotebookRef] = for {
     nb             <- loadNotebook(path)
     ref            <- FileNotebookRef(nb, 0)
   } yield ref
@@ -358,7 +359,7 @@ class FileBasedRepository(
     } yield name
   }
 
-  override def createAndOpen(path: String, notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv, NotebookRef] = for {
+  override def createAndOpen(path: String, notebook: Notebook, version: Int): RIO[BaseEnv with GlobalEnv with BroadcastAll, NotebookRef] = for {
     _   <- saveNotebook(notebook.copy(path = path))
     ref <- FileNotebookRef(notebook, version)
   } yield ref

@@ -1,7 +1,7 @@
 package polynote.server
 
 import cats.syntax.either._
-import polynote.kernel.environment.{Env, PublishMessage}
+import polynote.kernel.environment.{BroadcastAll, BroadcastMessage, Env, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.{Publish, UPublish}
 import polynote.kernel.{BaseEnv, Complete, GlobalEnv, PresenceUpdate, Running, StreamingHandles, TaskInfo, UpdatedTasks}
@@ -173,11 +173,12 @@ class NotebookSession(
 
 object NotebookSession {
 
-  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: UPublish[Message]): ZManaged[SessionEnv with NotebookManager, HTTPError, UStream[Frame]] = {
+  def stream(path: String, input: Stream[Throwable, Frame], broadcastAll: BroadcastMessage): ZManaged[SessionEnv with NotebookManager, HTTPError, UStream[Frame]] = {
     for {
       _                <- NotebookManager.assertValidPath(path).toManaged_
       output           <- ZQueue.unbounded[Take[Nothing, Message]].toManaged_ // TODO: finalizer instead of close
       _                <- Env.addManaged[SessionEnv with NotebookManager](Publish(output))
+      _                <- Env.addManaged[SessionEnv with NotebookManager with PublishMessage](broadcastAll)
       subscriber       <- NotebookManager.subscribe(path).orElseFail(NotFound(path))
       sessionId        <- nextSessionId.toManaged_
       streamingHandles <- StreamingHandles.make(sessionId).orDie.toManaged_
