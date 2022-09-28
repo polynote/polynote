@@ -1,5 +1,19 @@
 import {FullScreenModal} from "../layout/modal";
-import {button, div, dropdown, h2, h3, iconButton, loader, polynoteLogo, span, table, tag, TagElement} from "../tags";
+import {
+    a,
+    button,
+    div,
+    dropdown,
+    h2,
+    h3,
+    iconButton,
+    loader, para,
+    polynoteLogo,
+    span,
+    table,
+    tag,
+    TagElement
+} from "../tags";
 import * as monaco from "monaco-editor";
 import {
     Disposable,
@@ -71,7 +85,9 @@ export class About extends FullScreenModal implements IDisposable {
     hotkeys() {
         const el = div(["hotkeys-display"], [
             div([], [
-                h2([], ["Press these buttons to do things"])
+                h2([], ["Press these buttons to do things"]),
+                para([], [a([], "https://code.visualstudio.com/docs/getstarted/keybindings#_basic-editing", ["Click here"]),
+                        " to view a full list of the VSCode-style hotkeys supported in code cells."])
             ])
         ]);
 
