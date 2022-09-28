@@ -144,7 +144,7 @@ export class NotebookList extends Disposable {
                 sortButton.click(evt => {
                     evt.stopPropagation();
                     NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
-                    this.tree.sort();
+                    this.tree.reverse();
                 }),
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
@@ -224,7 +224,7 @@ export class NotebookList extends Disposable {
         newEl.click(evt => {
             evt.stopPropagation();
             NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
-            this.tree.sort();
+            this.tree.reverse();
         });
 
         this.header.querySelector('.arrow')?.replaceWith(newEl);
@@ -461,14 +461,6 @@ export class BranchEl extends Disposable {
             )
     }
 
-    private shouldInsertLower(newChild: BranchEl | LeafEl, oldChild: BranchEl | LeafEl) {
-        if (oldChild === undefined) return false;
-        else if (newChild instanceof BranchEl) return (oldChild instanceof BranchEl && oldChild.path.localeCompare(newChild.path) < 0);
-        else if (oldChild instanceof BranchEl) return true;
-        else if (newChild._lastSaved < oldChild._lastSaved) return NotebookSortingHandler.state.descending;
-        else return !NotebookSortingHandler.state.descending;
-    }
-
     private lastExpandedChild(child: BranchEl | LeafEl): BranchEl | LeafEl {
         if (child instanceof LeafEl) {
             return child
@@ -520,12 +512,30 @@ export class BranchEl extends Disposable {
         }
     }
 
-    sort() {
+
+    /**
+     * Helps determine where a new child should be placed in a notebook list by comparing it against the element oldChild.
+     * It sorts based on timestamp if the elements are leafs, or alphabetically if the elements are branches.
+     * Branches will always be pinned on top of leaves.
+     */
+    private shouldInsertLower(newChild: BranchEl | LeafEl, oldChild: BranchEl | LeafEl) {
+        if (oldChild === undefined) return false;
+        else if (newChild instanceof BranchEl) return (oldChild instanceof BranchEl && oldChild.path.localeCompare(newChild.path) < 0);
+        else if (oldChild instanceof BranchEl) return true;
+        else if (newChild._lastSaved < oldChild._lastSaved) return NotebookSortingHandler.state.descending;
+        else return !NotebookSortingHandler.state.descending;
+    }
+
+    /**
+     * Reverses the order of the notebook list by flipping the direction of all leaf nodes
+     * Any branches detected will not be flipped, but will be recursively traversed to ensure their leaves are also flipped
+     */
+    reverse() {
         let children: HTMLElement = this.rootNode ? this.el : this.childrenEl;
 
         let i = 0;
         while (children.children[i].classList.contains("branch")) {
-            (this.children[i++] as BranchEl).sort();
+            (this.children[i++] as BranchEl).reverse();
         }
 
         for (let j = children.children.length - 1; i < j; i++, j--) {
@@ -534,12 +544,18 @@ export class BranchEl extends Disposable {
         }
     }
 
+    /**
+     * Swaps two children in the children array
+     */
     private swapChildren(i: number, j: number) {
         const b = this.children[i];
         this.children[i] = this.children[j];
         this.children[j] = b;
     }
 
+    /**
+     * Swaps two elements that are in the notebooklist HTML
+     */
     private swapChildrenElements(nodeA: Element, nodeB: Element) {
         const parentA = nodeA.parentNode;
         const siblingA = nodeA.nextSibling === nodeB ? nodeA : nodeA.nextSibling;

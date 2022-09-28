@@ -160,9 +160,9 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
      * Initialize a new NotebookState for a notebook.
      */
     static getOrCreateNotebook(path: string): NotebookInfo {
-        const maybeExists = ServerStateHandler.notebooks[path];
+        const maybeExists = ServerStateHandler.notebooks[path]
         if (maybeExists) {
-            return maybeExists;
+            return maybeExists
         } else {
             const nbInfo = {
                 handler: NotebookStateHandler.forPath(path),

@@ -7,9 +7,9 @@ import {SocketSession} from "../../messaging/comms";
 import {ServerMessageReceiver} from "../../messaging/receiver";
 import {SocketStateHandler} from "../../state/socket_state";
 import {ServerStateHandler} from "../../state/server_state";
+import {FSNotebook} from "../../data/messages";
 
-import 'jest-canvas-mock';
-import {FSNotebook} from "../../data/messages"; // mocks canvas for loading search icon for e2e test
+import 'jest-canvas-mock'; // mocks canvas for loading search icon for e2e test
 
 jest.mock("../../messaging/comms");
 
