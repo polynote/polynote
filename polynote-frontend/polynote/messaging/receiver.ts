@@ -86,6 +86,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
         super(socketState, notebookState);
         const updateHandler = notebookState.updateHandler;
 
+        this.receive(messages.Error, (s, code, err) => {
+            ErrorStateHandler.addKernelError(s.path, err);
+            return NoUpdate
+        });
+
         this.socket.view("status").addObserver(status => {
             if (status === "disconnected") {
                 this.state.update(state => ({

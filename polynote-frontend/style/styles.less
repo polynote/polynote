@@ -1618,11 +1618,17 @@ button.inspect.icon-button {
       }
 
       &.error {
+        cursor: auto;
+
+        h4:hover {
+          text-decoration: none;
+        }
+
         .progress {
           display: none;
         }
 
-        .close-button, .copy-button, .expand-button {
+        .close-button, .copy-button {
           display: block;
           position: absolute;
           cursor: pointer;
@@ -1634,10 +1640,6 @@ button.inspect.icon-button {
 
         .copy-button {
           right: 2.75em;
-        }
-
-        .expand-button {
-          right: 4.5em;
         }
       }
 
@@ -2240,7 +2242,6 @@ button {
 }
 
 .tree-view {
-
   ul {
     margin: 0;
     padding: 0;
@@ -2303,6 +2304,12 @@ button {
         padding-left: 6px;
         font-size: 10px;
         outline: none;
+      }
+
+      .placeholder-leaf {
+        min-width: 200px;
+        min-height: 32px;
+        border-radius: 4px;
       }
     }
 
@@ -2368,20 +2375,6 @@ button {
 
   .tree-view {
     padding: .5em 0 1.5em;
-  }
-
-  &.highlight {
-    .tree-view {
-      border-width: 5px;
-      border-style: dashed;
-      border-radius: 10px;
-      transition: border 200ms;
-      ul {
-        filter: blur(2px);
-        opacity: 0.5;
-        transition: all 200ms;
-      }
-    }
   }
 
   &.disabled {

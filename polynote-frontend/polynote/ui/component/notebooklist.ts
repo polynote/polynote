@@ -141,11 +141,11 @@ export class NotebookList extends Disposable {
                 helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
             ]),
             span(['right-buttons'], [
-                sortButton.click(evt => {
-                    evt.stopPropagation();
-                    NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
-                    this.tree.reverse();
-                }),
+                // sortButton.click(evt => {
+                //     evt.stopPropagation();
+                //     NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
+                //     this.tree.reverse();
+                // }),
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
@@ -238,29 +238,14 @@ export class NotebookList extends Disposable {
         // handle highlighting
         if (evt.type === "dragenter" || evt.type === "dragover") {
             this.dragEnter = evt.target;
-            this.el.classList.add('highlight');
+            displayFileDropPlaceholder(this.tree.children, this.tree.childrenEl, this.dispatcher);
         } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
-            this.el.classList.remove('highlight');
+            removeFileDropPlaceholder();
         }
 
         // actually handle the file
         if (evt.type === "drop") {
-            const xfer = evt.dataTransfer;
-            if (xfer) {
-                const files = xfer.files;
-                [...files].forEach((file) => {
-                    const reader = new FileReader();
-                    reader.readAsText(file);
-                    reader.onloadend = () => {
-                        if (reader.result) {
-                            // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
-                            this.dispatcher.createNotebook(file.name, reader.result as string);
-                        } else {
-                            throw new Error(`Didn't get any file contents when reading ${file.name}! `)
-                        }
-                    }
-                })
-            }
+            handleFileDrop(evt, this.dispatcher);
         }
     }
 }
@@ -354,10 +339,11 @@ export class BranchEl extends Disposable {
     readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
     private readonly branchEl: TagElement<"button">;
-    private children: (BranchEl | LeafEl)[] = [];
+    readonly children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
     _lastSaved: number;
     rootNode: boolean;
+    private dragEnter: EventTarget | null;
     childrenState: StateView<Record<string, Leaf | Branch>>;
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly branch: StateView<Branch>, private parent?: BranchEl) {
@@ -380,6 +366,11 @@ export class BranchEl extends Disposable {
                 ]),
                 this.childrenEl
             ]);
+
+            // Attach drag n' drop listeners to branch nodes only
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+                this.el.addEventListener(evt, this.fileHandler.bind(this), false)
+            });
         } else {
             this.rootNode = true;
             this.el = this.childrenEl;
@@ -512,7 +503,6 @@ export class BranchEl extends Disposable {
         }
     }
 
-
     /**
      * Helps determine where a new child should be placed in a notebook list by comparing it against the element oldChild.
      * It sorts based on timestamp if the elements are leafs, or alphabetically if the elements are branches.
@@ -565,6 +555,30 @@ export class BranchEl extends Disposable {
             parentA.insertBefore(nodeB, siblingA);
         }
     }
+
+    private fileHandler(evt: DragEvent) {
+        // prevent browser from displaying the ipynb file - we can only do this is if it's a drop, otherwise we need to propagate
+        if (evt.type === "drop") {
+            evt.stopPropagation();
+            evt.preventDefault();
+        }
+
+        // handle displaying the file drop placeholder
+        if (evt.type === "dragenter" || evt.type === "dragover") {
+            this.dragEnter = evt.target;
+            this.expanded = true;
+            displayFileDropPlaceholder(this.children, this.childrenEl, this.dispatcher, this.path);
+        } else if (evt.type === "dragleave" && evt.target === this.dragEnter) {
+            this.expanded = false;
+            removeFileDropPlaceholder();
+        }
+
+        // actually handle the file
+        if (evt.type === "drop") {
+            handleFileDrop(evt, this.dispatcher, this.path);
+            removeFileDropPlaceholder();
+        }
+    }
 }
 
 export class LeafEl extends Disposable {
@@ -614,4 +628,70 @@ export class LeafEl extends Disposable {
                     })
             })
     }
+}
+
+/**
+ * Processes a file drop, saving it to the specified directory, or the root directory if none is specified
+ */
+function handleFileDrop(evt: DragEvent, dispatcher: ServerMessageDispatcher, path?: string) {
+    const xfer = evt.dataTransfer;
+    if (xfer) {
+        const files = xfer.files;
+        [...files].forEach((file) => {
+            const reader = new FileReader();
+            reader.readAsText(file);
+            reader.onloadend = () => {
+                if (reader.result) {
+                    const finalPath = (path !== undefined ? path + "/" : "") + file.name;
+                    // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
+                    dispatcher.createNotebook(finalPath, reader.result as string);
+                } else {
+                    throw new Error(`Didn't get any file contents when reading ${file.name}! `)
+                }
+            }
+        })
+    }
+}
+
+/**
+ * Handles determining if a placeholder file should be displayed in the current folder (and displays it if so)
+ */
+function displayFileDropPlaceholder(children: (BranchEl | LeafEl)[], childrenEl: TagElement<"ul">, dispatcher: ServerMessageDispatcher, path?: string) {
+    // First, check if there is an open sub-folder within this folder (meaning it should not be displayed here, but rather in the sub-folder)
+    let openChild = false;
+    for (const child of children) {
+        if (child instanceof BranchEl) {
+            if (child.expanded) {
+                openChild = true;
+                break;
+            }
+        }
+    }
+
+    // If there is no open sub-folder, place it here
+    if (!openChild) {
+        let newEl: TagElement<"span">;
+        removeFileDropPlaceholder();
+
+        newEl = tag('li', ['leaf', 'drop-placeholder'], {}, [
+            a(['name'], ``, [span(['placeholder-leaf'], ['Placeholder...'])], { preventNavigate: true })
+        ]);
+        childrenEl.prepend(newEl);
+
+        // Handle the special case where a user drops the file onto the placeholder itself, and not a real leafEl
+        newEl.addEventListener("drop", evt => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            handleFileDrop(evt, dispatcher, path);
+            removeFileDropPlaceholder();
+        });
+    }
+}
+
+/**
+ * Finds and removes the placeholder file for drag n' drop
+ */
+function removeFileDropPlaceholder() {
+    const prevPlaceholder = document.querySelector('.drop-placeholder');
+    prevPlaceholder?.remove();
 }
