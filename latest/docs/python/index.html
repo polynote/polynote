@@ -677,6 +677,13 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#going-from-python-to-scala" class="md-nav__link">
+    Going from Python to Scala
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -795,6 +802,13 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#going-from-python-to-scala" class="md-nav__link">
+    Going from Python to Scala
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -864,11 +878,37 @@ simple cases.</p>
 <li>Similar to the other way round, Jep automatically converts primitives and strings into brand-new JVM primitives and strings.</li>
 <li>Additionally, Jep supports some other conversions such as Python <code>dict</code> to <code>java.util.HashMap</code></li>
 <li>Polynote will retrieve an object of any other type as a <code>PyObject</code>. Similar to <code>PyJObject</code>, a <code>PyObject</code> wraps a pointer
-  to a Python object. Polynote has some support for handling certain types of Python objects, typically for visualization
-  purposes.</li>
+  to a Python object. </li>
 </ul>
 </li>
 </ul>
+<h3 id="going-from-python-to-scala">Going from Python to Scala<a class="headerlink" href="#going-from-python-to-scala" title="Permanent link">&para;</a></h3>
+<p>As previously mentioned, Polynote has some extra sugar for handling certain types of Python objects as part of the 
+<code>PythonObject</code> API, which helps with things like using Scala-specific syntax on these data types as well as visualization. </p>
+<p>For example, if a user wanted to iterate over a Python <code>List</code> (which gets converted automatically to a <code>java.util.ArrayList</code>) 
+using for-comprehension, they would get a runtime error. The <code>PythonObject</code> API offers the <code>asScalaList</code> method, which 
+handles the conversion to return a <code>List[PythonObject]</code>, as demonstrated in the below example. </p>
+<div class="admonition example">
+<p class="admonition-title">Python Cell</p>
+<div class="highlight"><pre><span></span><code><span class="n">ids</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1234</span><span class="p">,</span> <span class="mi">5678</span><span class="p">,</span> <span class="mi">9012</span><span class="p">,</span> <span class="mi">3456</span><span class="p">]</span>
+<span class="n">typs</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;Number&#39;</span><span class="p">,</span> <span class="s1">&#39;Number&#39;</span><span class="p">,</span> <span class="s1">&#39;Number&#39;</span><span class="p">,</span> <span class="s1">&#39;Number&#39;</span><span class="p">]</span>
+</code></pre></div>
+</div>
+<div class="admonition example">
+<p class="admonition-title">Scala Cell</p>
+<div class="highlight"><pre><span></span><code><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">ResultItem</span><span class="p">(</span><span class="n">id</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span><span class="p">,</span><span class="w"> </span><span class="n">typ</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span><span class="w"></span>
+
+<span class="kd">val</span><span class="w"> </span><span class="n">resultData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">  </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="n">ids</span><span class="p">.</span><span class="n">asScalaList</span><span class="w"></span>
+<span class="w">  </span><span class="n">t</span><span class="w"> </span><span class="o">&lt;-</span><span class="w"> </span><span class="n">typs</span><span class="p">.</span><span class="n">asScalaList</span><span class="w"></span>
+<span class="p">}</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="nc">ResultItem</span><span class="p">(</span><span class="n">i</span><span class="p">.</span><span class="n">as</span><span class="p">[</span><span class="nc">Integer</span><span class="p">],</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="n">as</span><span class="p">[</span><span class="nc">String</span><span class="p">])</span><span class="w"></span>
+</code></pre></div>
+</div>
+<div class="admonition info">
+<p class="admonition-title">More Details on the PythonObject API</p>
+<p>If you'd like to view the entire <code>PythonObject</code> API, you can do so 
+<a href="https://github.com/polynote/polynote/blob/master/polynote-runtime/src/main/scala/polynote/runtime/python/PythonObject.scala#L19">here</a>.</p>
+</div>
 <p>Note that these implementation details may change and while we'll work hard to update this information we can't guarantee
 that it won't get out-of-date. Of course, feel free to <a href="https://gitter.im/polynote/polynote">drop us a line</a> if you
 think that's the case!</p>
