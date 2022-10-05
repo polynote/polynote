@@ -103,7 +103,8 @@ Kernel process.
 
 The copy and paste buttons below the last section offer easy access to copy all three sections between notebooks. 
 
-When you click the `Copy Configurations` button, your selections will automatically be saved and copied to your clipboard. 
+When you click the `Copy Configurations` button, your selections will be copied to your clipboard - note that any new changes
+you made to your current notebook's configuration will be copied over, but will _not_ be saved to your current notebook.  
 
 When you click the `Paste Configurations` button, your selections will automatically update and save if the 
 contents of your clipboard represent a valid notebook configuration. 
