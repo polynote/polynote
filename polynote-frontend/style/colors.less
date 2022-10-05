@@ -636,6 +636,10 @@ button {
 }
 
 .tree-view {
+  .highlight-branch {
+    border-color: green;
+  }
+
   ul {
     li {
       ul {
@@ -660,6 +664,13 @@ button {
     li.leaf a:focus span {
       background-color: @ui-selected;
       color: @ui-selected-fg;
+    }
+
+    li.leaf > span, li.leaf a {
+      .placeholder-leaf {
+        color: transparent; // hide the placeholder text
+        background-color: @ui-background;
+      }
     }
 
     li.branch {
