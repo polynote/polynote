@@ -13,10 +13,8 @@ import {
     ViewPrefsHandler
 } from "../../state/preferences";
 import {safeForEach} from "../../util/helpers";
-import {NotebookList} from "../component/notebooklist";
-import {TableOfContents} from "../component/table_of_contents";
 import {SearchModal} from "../component/search";
-import {ServerMessageDispatcher} from "../../messaging/dispatcher";
+import {Modal} from "./modal";
 
 export interface LeftMenuSections {
     files: boolean,
@@ -28,6 +26,7 @@ export interface LeftMenuSections {
  */
 
 export type Pane = { header: TagElement<"h2">, el: TagElement<"div">}
+export type LeftPaneContents = Record<string, (Pane | Modal)>
 
 class Dragger extends Disposable {
     readonly el: TagElement<'div'>;
@@ -108,7 +107,7 @@ export class SplitView extends Disposable {
     private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
     private readonly stickyLeftMenu: StateHandler<LeftBarPreferences["stickyLeftMenu"]>;
 
-    constructor(nbList: NotebookList, tableOfContents: TableOfContents, private center: TagElement<"div">, rightPane: Pane, dispatcher: ServerMessageDispatcher) {
+    constructor(leftPaneContents: LeftPaneContents, private center: TagElement<"div">, rightPane: Pane) {
         super()
 
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
@@ -128,10 +127,9 @@ export class SplitView extends Disposable {
             this.endResizeObservers = [];
         })
 
-        // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
-        const searchModal = new SearchModal(dispatcher);
-        searchModal.show();
-        searchModal.hide();
+        const nbList = leftPaneContents["nbList"] as Pane;
+        const tableOfContents = leftPaneContents["tableOfContents"] as Pane;
+        const searchModal = leftPaneContents["search"] as SearchModal;
 
         const filesIcon = iconButton(['file-system'], 'View Files', 'folder', '[View Files]');
         const summaryIcon = iconButton(['list-ul'], 'Table of Contents', 'list-ul', '[Table of Contents]');
@@ -231,7 +229,7 @@ export class SplitView extends Disposable {
     private setLeftPane(header: TagElement<"h2">, el: TagElement<"div">): void {
         const oldEl = this.el.querySelector('.ui-panel');
         if (oldEl !== null) {
-            oldEl.innerHTML = "";
+            oldEl.innerHTML = ""; // we can't use replaceWith and have to modify the innerHTML because of the CSS grid
             oldEl.appendChild(header);
             oldEl.appendChild(div(['ui-panel-content', 'left'], [el]));
         }

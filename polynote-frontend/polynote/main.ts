@@ -7,7 +7,7 @@ import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
 import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
-import {SplitView} from "./ui/layout/splitview";
+import {LeftPaneContents, SplitView} from "./ui/layout/splitview";
 import {InsertValue, moveArrayValue, NoUpdate, removeIndex, RemoveValue, RenameKey, setValue,} from "./state";
 import {Tabs} from "./ui/component/tabs";
 import {KernelPane} from "./ui/component/notebook/kernel";
@@ -20,6 +20,7 @@ import {ServerStateHandler} from "./state/server_state";
 import {OpenNotebooksHandler, RecentNotebooks, RecentNotebooksHandler} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
 import {TableOfContents} from "./ui/component/table_of_contents";
+import {SearchModal} from "./ui/component/search";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -49,8 +50,21 @@ export class Main {
             }
         }).disposeWith(this.receiver)
 
-        const nbList = new NotebookList(dispatcher)
+
+        // Create the left pane contents
+        const nbList = new NotebookList(dispatcher);
         const tableOfContents = new TableOfContents();
+        // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
+        const searchModal = new SearchModal(dispatcher);
+        searchModal.show();
+        searchModal.hide();
+
+        const leftPaneContents: LeftPaneContents = {
+            "nbList": {header: nbList.header, el: nbList.el},
+            "tableOfContents": {header: tableOfContents.header, el: tableOfContents.el},
+            "search": searchModal
+        };
+
         const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
@@ -59,7 +73,7 @@ export class Main {
 
         this.el = div(['main-ui'], [
             div(['header'], [new Toolbar(dispatcher).el]),
-            div(['body'], [this.splitView = new SplitView(nbList, tableOfContents, center, rightPane, dispatcher)]),
+            div(['body'], [this.splitView = new SplitView(leftPaneContents, center, rightPane)]),
             div(['footer'], []) // no footer yet!
         ]);
 
