@@ -85,7 +85,7 @@ export class About extends FullScreenModal implements IDisposable {
     hotkeys() {
         const el = div(["hotkeys-display"], [
             div([], [
-                h2([], ["Press these buttons to do things"]),
+                h2([], ["Hotkeys"]),
                 para([], [a([], "https://code.visualstudio.com/docs/getstarted/keybindings#_basic-editing", ["Click here"]),
                         " to view a full list of the VSCode-style hotkeys supported in code cells."])
             ])
