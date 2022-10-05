@@ -11,7 +11,8 @@ The about menu contains information about your instance's version and most recen
 ![Settings Menu](images/about-menu.png){: .centered-image }
 
 ### Hotkeys 
-The hotkeys menu contains a list of all supported keyboard shortcuts in Polynote. 
+The hotkeys menu contains a list of all supported keyboard shortcuts in Polynote. You can also view a full list of the 
+VSCode-style hotkeys supported in code cells [here](https://code.visualstudio.com/docs/getstarted/keybindings#_basic-editing). 
 
 ![Hotkeys](images/hotkeys.png){: .centered-image }
 
