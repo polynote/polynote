@@ -16,8 +16,8 @@ Polynote stores these symbols, alongside their types and other information, in a
 and provided to other languages are wrapped (and unwrapped) appropriately.
 
 !!!info ""
-    For more details, how this works under the hood, and information about its limitations and caveats, check out 
-    the [Python documentation](python.md).
+    For more details, how this works under the hood, examples of going from Python to Scala, 
+    and information about its limitations and caveats, check out the [Python documentation](python.md).
 
 ### Polyglot example
 

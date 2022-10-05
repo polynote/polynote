@@ -51,8 +51,35 @@ Here are a few important points to keep in mind when sharing between Python and 
     * Similar to the other way round, Jep automatically converts primitives and strings into brand-new JVM primitives and strings.
     * Additionally, Jep supports some other conversions such as Python `dict` to `java.util.HashMap`
     * Polynote will retrieve an object of any other type as a `PyObject`. Similar to `PyJObject`, a `PyObject` wraps a pointer
-      to a Python object. Polynote has some support for handling certain types of Python objects, typically for visualization
-      purposes.
+      to a Python object. 
+
+### Going from Python to Scala 
+As previously mentioned, Polynote has some extra sugar for handling certain types of Python objects as part of the 
+`PythonObject` API, which helps with things like using Scala-specific syntax on these data types as well as visualization. 
+
+For example, if a user wanted to iterate over a Python `List` (which gets converted automatically to a `java.util.ArrayList`) 
+using for-comprehension, they would get a runtime error. The `PythonObject` API offers the `asScalaList` method, which 
+handles the conversion to return a `List[PythonObject]`, as demonstrated in the below example. 
+
+!!!example "Python Cell"
+    ```python
+    ids = [1234, 5678, 9012, 3456]
+    typs = ['Number', 'Number', 'Number', 'Number']
+    ```
+
+!!!example "Scala Cell"
+    ```scala
+    case class ResultItem(id: Int, typ: String)
+    
+    val resultData = for {
+      i <- ids.asScalaList
+      t <- typs.asScalaList
+    } yield ResultItem(i.as[Integer], t.as[String])
+    ```
+
+!!!info "More Details on the PythonObject API"
+    If you'd like to view the entire `PythonObject` API, you can do so 
+    [here](https://github.com/polynote/polynote/blob/master/polynote-runtime/src/main/scala/polynote/runtime/python/PythonObject.scala#L19).
 
 Note that these implementation details may change and while we'll work hard to update this information we can't guarantee
 that it won't get out-of-date. Of course, feel free to [drop us a line](https://gitter.im/polynote/polynote) if you

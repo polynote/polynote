@@ -42,6 +42,8 @@ already exists, a number will be appended at the end of the filename.
 
 Importing a notebook into Polynote is as simple as dragging and dropping the file onto the Notebooks List!
 
+If you hover over and then drop your file into a sub-directory, your file will be imported into that sub-directory.
+
 ![Dragging and Dropping a Notebook](images/drag-drop-notebook.gif)
 
 !!!info "Supported import formats"

@@ -71,7 +71,7 @@ export class NotebookConfigEl extends Disposable {
                             const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs);
                             this.copyConfig(conf);
                         }),
-                        button([], {}, ['Paste Configuration']).click(() => this.pasteConfig())
+                        button([], {}, ['Paste & Save Configuration']).click(() => this.pasteConfig())
                     ])
                 ])
             ])
@@ -106,7 +106,6 @@ export class NotebookConfigEl extends Disposable {
     }
 
     private copyConfig(conf: NotebookConfig) {
-        this.saveConfig(conf);
         copyToClipboard(JSON.stringify(conf));
     }
 
