@@ -1,18 +1,32 @@
-import {a, button, div, h2, helpIconButton, iconButton, span, tag, TagElement} from "../tags";
+import {
+    a,
+    button,
+    div,
+    dropdown,
+    DropdownElement,
+    h2,
+    helpIconButton,
+    iconButton,
+    para,
+    span,
+    tag,
+    TagElement
+} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray, getShortDate} from "../../util/helpers";
 import {
     Disposable,
-    IDisposable,
     ObjectStateHandler,
     removeKey,
-    setProperty, setValue,
     StateView,
     UpdatePartial
 } from "../../state";
 import {ServerStateHandler} from "../../state/server_state";
 import {SearchModal} from "./search";
-import {NotebookScrollLocationsHandler, NotebookSortingHandler, UserPreferencesHandler} from "../../state/preferences";
+import {
+    NotebookSorting,
+    NotebookSortingHandler,
+} from "../../state/preferences";
 
 export class NotebookListContextMenu{
     readonly el: TagElement<"div">;
@@ -116,6 +130,50 @@ export class NotebookListContextMenu{
     }
 }
 
+/**
+ * A special class for the sort dropdown button. This is necessary because each dropdown button needs to map to a specific
+ * state (of type NotebookSorting). Because of this, this class wraps the dropdown el with logic to make extracting the
+ * newly selected state easier.
+ */
+class SortDropdown {
+    readonly el: DropdownElement;
+    private sortByDescendingDate = "date (descending)";
+    private sortByAscendingDate = "date (ascending)";
+    private sortByAscendingName = "name (ascending)";
+    private sortByDescendingName = "name (descending)";
+
+    constructor() {
+        this.el = dropdown([], {
+            // key-value pairs, the key and value are the same value here since there is no semantic difference needed
+            [this.sortByDescendingDate]: this.sortByDescendingDate,
+            [this.sortByAscendingDate]: this.sortByAscendingDate,
+            [this.sortByDescendingName]: this.sortByDescendingName,
+            [this.sortByAscendingName]: this.sortByAscendingName,
+        }, this.toDropdownValue());
+    }
+
+    toDropdownValue(): string {
+        const sortByDate = NotebookSortingHandler.state.sortByDate;
+        const descending = NotebookSortingHandler.state.descending;
+
+        if (sortByDate && descending) return this.sortByDescendingDate;
+        if (sortByDate && !descending) return this.sortByAscendingDate;
+        if (!sortByDate && descending) return this.sortByDescendingName;
+        else return this.sortByAscendingName;
+    }
+
+    fromDropdownValue(value: string): NotebookSorting {
+        if (value === this.sortByDescendingDate) return {descending: true, sortByDate: true};
+        if (value === this.sortByAscendingDate) return {descending: false, sortByDate: true};
+        if (value === this.sortByDescendingName) return {descending: true, sortByDate: false};
+        else return {descending: false, sortByDate: false};
+    }
+
+    get dropdownState(): NotebookSorting {
+        return this.fromDropdownValue(this.el.value);
+    }
+}
+
 export class NotebookList extends Disposable {
     readonly el: TagElement<"div">;
     readonly header: TagElement<"h2">;
@@ -131,21 +189,12 @@ export class NotebookList extends Disposable {
         searchModal.show();
         searchModal.hide();
 
-        const sortButton = NotebookSortingHandler.state.descending ?
-            iconButton(['arrow', 'arrow-up'], 'Sort by most recently saved', 'arrow-up', 'Sort by most recently saved') :
-            iconButton(['arrow', 'arrow-down'], 'Sort by least recently saved', 'arrow-down', 'Sort by least recently saved');
-
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['left-buttons'], [
                 helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
             ]),
             span(['right-buttons'], [
-                // sortButton.click(evt => {
-                //     evt.stopPropagation();
-                //     NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
-                //     this.tree.reverse();
-                // }),
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
@@ -161,8 +210,26 @@ export class NotebookList extends Disposable {
         });
         this.tree = new BranchEl(dispatcher, treeState);
 
-        this.el = div(['notebooks-list'], [div(['tree-view'], [this.tree.el])])
-            .listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
+        const updateSortPrefs = (prefs: NotebookSorting) => {
+            NotebookSortingHandler.update(() => ({
+                descending: prefs.descending,
+                sortByDate: prefs.sortByDate
+            }));
+        }
+
+        const evalDropdownChange = () => {
+            updateSortPrefs(sortDropdown.dropdownState);
+            this.tree.changeSortType();
+        };
+
+        const sortDropdown = new SortDropdown();
+
+        this.el = div(['notebooks-list'], [div(['tree-view'], [
+            div([], [
+                para(["sort-instructions"], ["Sort by: "]),
+                sortDropdown.el.change(evalDropdownChange)]),
+            this.tree.el
+        ])]).listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
 
         // Drag n' drop!
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
@@ -181,8 +248,6 @@ export class NotebookList extends Disposable {
                 this.header.classList.remove("disabled")
             }
         })
-
-        NotebookSortingHandler.observeKey("descending", pref => this.renderSortButton(pref)).disposeWith(this)
 
         serverStateHandler.view("notebooks").addPreObserver(oldNotebooks => {
             const oldPaths = Object.keys(oldNotebooks);
@@ -214,20 +279,6 @@ export class NotebookList extends Disposable {
 
         // we're ready to request the notebooks list now!
         dispatcher.requestNotebookList()
-    }
-
-    private renderSortButton(pref: boolean) {
-        const newEl = pref ?
-            iconButton(['arrow', 'arrow-up'], 'Sort by most recently saved', 'arrow-up', 'Sort by most recently saved') :
-            iconButton(['arrow', 'arrow-down'], 'Sort by least recently saved', 'arrow-down', 'Sort by least recently saved');
-
-        newEl.click(evt => {
-            evt.stopPropagation();
-            NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
-            this.tree.reverse();
-        });
-
-        this.header.querySelector('.arrow')?.replaceWith(newEl);
     }
 
     private fileHandler(evt: DragEvent) {
@@ -505,55 +556,69 @@ export class BranchEl extends Disposable {
 
     /**
      * Helps determine where a new child should be placed in a notebook list by comparing it against the element oldChild.
-     * It sorts based on timestamp if the elements are leafs, or alphabetically if the elements are branches.
+     * It sorts based on user selection if the elements are leafs, or alphabetically if the elements are branches.
      * Branches will always be pinned on top of leaves.
      */
     private shouldInsertLower(newChild: BranchEl | LeafEl, oldChild: BranchEl | LeafEl) {
-        if (oldChild === undefined) return false;
-        else if (newChild instanceof BranchEl) return (oldChild instanceof BranchEl && oldChild.path.localeCompare(newChild.path) < 0);
+        if (oldChild === undefined) return false; // this is the last node, so insert it here
+        const descending = NotebookSortingHandler.state.descending;
+        const sortingByDate = NotebookSortingHandler.state.sortByDate;
+
+        // First, handle branches
+        if (newChild instanceof BranchEl) {
+            if (!(oldChild instanceof BranchEl)) return false; // if the next node is not a branch, insert it here
+            // descending alphabetical or by date (ascending default)
+            else if (descending || sortingByDate) return oldChild.path.localeCompare(newChild.path) < 0;
+            else return oldChild.path.localeCompare(newChild.path) > 0; // sorting in ascending alphabetical order
+        }
         else if (oldChild instanceof BranchEl) return true;
-        else if (newChild._lastSaved < oldChild._lastSaved) return NotebookSortingHandler.state.descending;
-        else return !NotebookSortingHandler.state.descending;
+
+        if (sortingByDate) {
+            if (descending) return newChild._lastSaved < oldChild._lastSaved;
+            else return newChild._lastSaved > oldChild._lastSaved;
+        } else {
+            if (descending) return oldChild.path.localeCompare(newChild.path) < 0;
+            else return oldChild.path.localeCompare(newChild.path) > 0;
+        }
     }
 
     /**
-     * Reverses the order of the notebook list by flipping the direction of all leaf nodes
-     * Any branches detected will not be flipped, but will be recursively traversed to ensure their leaves are also flipped
+     * Handles a change in the type of sort a user wants
+     * Runs an insertion sort over all non-branch elements recursively down each branch
      */
-    reverse() {
+    changeSortType() {
         let children: HTMLElement = this.rootNode ? this.el : this.childrenEl;
-
         let i = 0;
+
+        // Find the first root (non-branch) node
         while (children.children[i].classList.contains("branch")) {
-            (this.children[i++] as BranchEl).reverse();
+            (this.children[i++] as BranchEl).changeSortType();
         }
 
-        for (let j = children.children.length - 1; i < j; i++, j--) {
-            this.swapChildren(i, j);
-            this.swapChildrenElements(children.children[i], children.children[j]);
+        // Sort branches first, since they are pinned to the top
+        for (let j = 1; j < i; j++) {
+            this.sortEl(j, children);
+        }
+
+        // Now sort all root nodes
+        for (i = i == 0 ? 1 : i; i < children.children.length; i++) {
+            this.sortEl(i, children);
         }
     }
 
     /**
-     * Swaps two children in the children array
+     * Performs the inner operation of the insertion sort by shifting back all elements before moving up the current element.
      */
-    private swapChildren(i: number, j: number) {
-        const b = this.children[i];
-        this.children[i] = this.children[j];
-        this.children[j] = b;
-    }
+    private sortEl(i: number, children: HTMLElement) {
+        let curChild = this.children[i];
+        let j = i - 1;
 
-    /**
-     * Swaps two elements that are in the notebooklist HTML
-     */
-    private swapChildrenElements(nodeA: Element, nodeB: Element) {
-        const parentA = nodeA.parentNode;
-        const siblingA = nodeA.nextSibling === nodeB ? nodeA : nodeA.nextSibling;
-
-        if (parentA !== null && nodeB.parentNode !== null) {
-            nodeB.parentNode.insertBefore(nodeA, nodeB);
-            parentA.insertBefore(nodeB, siblingA);
+        while (j >= 0 && this.shouldInsertLower(this.children[j], curChild)) {
+            this.children[j+1] = this.children[j];
+            j = j - 1;
         }
+        this.children[j + 1] = curChild;
+        children.children[j+1].parentNode?.insertBefore(children.children[i], children.children[j+1]);
     }
 
     private fileHandler(evt: DragEvent) {
