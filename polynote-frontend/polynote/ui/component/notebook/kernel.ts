@@ -390,7 +390,7 @@ class KernelTasksEl extends Disposable {
 
     private jumpToCell(id: string) {
         const nbInfo = ServerStateHandler.getOrCreateNotebook(this.notebookPathHandler.state);
-        if (!isNaN(parseInt(id))) { // Check there was a second word, and verify it is a number
+        if (!isNaN(parseInt(id))) { // Verify the id is a number
             nbInfo.handler.selectCell(parseInt(id));
         }
     }

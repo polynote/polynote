@@ -1167,7 +1167,7 @@ export class CodeCell extends MonacoCell {
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
                         dispatcher.runCells([this.state.id])
                     }),
-                    this.cellTitle = div(['cell-label'], [this.state.title !== "" ? truncateStr(this.state.title, 30) : `Cell ${this.state.id}`]).click(evt => this.onCellTitleClick(evt)),
+                    this.cellTitle = div(['cell-label'], [truncateStr(this.state.title, 30)]).click(evt => this.onCellTitleClick(evt)),
                     this.cellTitleInput = textbox(['cell-label-input', 'hidden-cell-label'], "", this.state.title),
                     div(['lang-selector'], [langSelector]),
                     execInfoEl,
