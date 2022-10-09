@@ -490,6 +490,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             id: cell.id,
             language: cell.language,
             content: cell.content,
+            title: cell.title,
             metadata: cell.metadata,
             comments: cell.comments,
             output: [],

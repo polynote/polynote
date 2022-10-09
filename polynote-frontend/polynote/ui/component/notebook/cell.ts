@@ -1,4 +1,4 @@
-import {blockquote, button, div, dropdown, h4, icon, iconButton, img, span, tag, TagElement} from "../../tags";
+import {blockquote, button, div, dropdown, h4, icon, iconButton, img, span, tag, TagElement, textbox} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
     clearArray,
@@ -66,7 +66,15 @@ import {VimStatus} from "./vim_status";
 import {cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
 import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
-import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
+import {
+    collect,
+    collectInstances,
+    deepCopy,
+    deepEquals,
+    findInstance,
+    linePosAt,
+    truncateStr
+} from "../../../util/helpers";
 import {
     availableResultValues,
     CellPresenceState,
@@ -439,6 +447,9 @@ abstract class Cell extends Disposable {
     protected readonly cellState: StateHandler<CellState>;
     protected readonly notebookState: NotebookStateHandler;
 
+    protected cellTitle: HTMLDivElement;
+    protected cellTitleInput: HTMLInputElement;
+
     protected constructor(protected dispatcher: NotebookMessageDispatcher, _notebookState: NotebookStateHandler, _cellState: StateHandler<CellState>) {
         super()
         const cellState = this.cellState = _cellState.fork(this);
@@ -577,6 +588,27 @@ abstract class Cell extends Disposable {
 
     protected get state() {
         return this.cellState.state
+    }
+
+    protected onCellTitleInputEvent(evt: Event) {
+        evt.stopPropagation();
+        evt.preventDefault();
+
+        const input = this.cellTitleInput.value.trim();
+        if (evt.type === 'Accept' && input.length > 0) {
+            this.notebookState.setCellTitle(this.id, input);
+        }
+
+        this.cellTitle.classList.remove('hidden-cell-label');
+        this.cellTitleInput.classList.add('hidden-cell-label');
+    }
+
+    protected onCellTitleClick(evt: Event) {
+        evt.stopPropagation();
+        evt.preventDefault();
+
+        this.cellTitle.classList.add('hidden-cell-label');
+        this.cellTitleInput.classList.remove('hidden-cell-label');
     }
 
     protected onKeyDown(evt: IKeyboardEvent | KeyboardEvent) {
@@ -1135,7 +1167,8 @@ export class CodeCell extends MonacoCell {
                     iconButton(['run-cell'], 'Run this cell (only)', 'play', 'Run').click((evt) => {
                         dispatcher.runCells([this.state.id])
                     }),
-                    div(['cell-label'], [this.state.id.toString()]),
+                    this.cellTitle = div(['cell-label'], [truncateStr(this.state.title, 30)]).click(evt => this.onCellTitleClick(evt)),
+                    this.cellTitleInput = textbox(['cell-label-input', 'hidden-cell-label'], "", this.state.title),
                     div(['lang-selector'], [langSelector]),
                     execInfoEl,
                     div(["options"], [
@@ -1150,6 +1183,14 @@ export class CodeCell extends MonacoCell {
             ]),
             cellOutput.el
         ]);
+
+        this.cellTitleInput.addEventListener('Accept', evt => this.onCellTitleInputEvent(evt));
+        this.cellTitleInput.addEventListener('Cancel', evt => this.onCellTitleInputEvent(evt));
+
+        cellState.observeKey("title", newTitle => {
+            this.cellTitleInput.value = newTitle;
+            this.cellTitle.innerText = truncateStr(newTitle, 30);
+        })
 
         cellState.observeKey("language", (newLang, update) => {
             const oldLang = update.oldValue;
@@ -2314,7 +2355,8 @@ export class VizCell extends Cell {
                         this.hideCodeAfterSuccess();
                         dispatcher.runCells([this.state.id]);
                     }),
-                    div(['cell-label'], [this.state.id.toString()]),
+                    this.cellTitle = div(['cell-label'], [truncateStr(this.state.title, 30)]).click(evt => this.onCellTitleClick(evt)),
+                    this.cellTitleInput = textbox(['cell-label-input', 'hidden-cell-label'], "", this.state.title),
                     div(['value-name'], ['Inspecting ', span(['name'], [this.valueName])]),
                     execInfoEl,
                     div(["options"], [
@@ -2329,6 +2371,14 @@ export class VizCell extends Cell {
             ]),
             this.cellOutput.el
         ]);
+
+        this.cellTitleInput.addEventListener('Accept', evt => this.onCellTitleInputEvent(evt));
+        this.cellTitleInput.addEventListener('Cancel', evt => this.onCellTitleInputEvent(evt));
+
+        cellState.observeKey("title", newTitle => {
+            this.cellTitleInput.value = newTitle;
+            this.cellTitle.innerText = truncateStr(newTitle, 30);
+        })
 
         /**
          * Keep watching the available values, so the plot UI can be updated when the value changes.

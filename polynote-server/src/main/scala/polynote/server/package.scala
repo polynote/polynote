@@ -242,7 +242,7 @@ package object server {
               cells    <- ZIO(loadedNB.cells.filter(c => c.content.toString.contains(query)))
             } yield for {
               cell <- cells
-            } yield NotebookSearchResult(loadedNB.path, cell.id, cell.content.toString)
+            } yield NotebookSearchResult(loadedNB.path, cell.id, cell.title, cell.content.toString)
           }}).map(_.flatten)
         }
 

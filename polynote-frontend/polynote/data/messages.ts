@@ -554,6 +554,20 @@ export class SetCellLanguage extends NotebookUpdate {
     }
 }
 
+export class SetCellTitle extends NotebookUpdate {
+    static codec = combined(uint32, uint32, int16, tinyStr).to(SetCellTitle);
+    static get msgTypeId() { return 35; }
+    static unapply(inst: SetCellTitle): ConstructorParameters<typeof SetCellTitle> {
+        return [inst.globalVersion, inst.localVersion, inst.id, inst.title];
+    }
+
+    constructor(readonly globalVersion: number, readonly localVersion: number,
+                readonly id: number, readonly title: string) {
+        super();
+        Object.freeze(this);
+    }
+}
+
 export class StartKernel extends Message {
     static codec = combined(uint8).to(StartKernel);
     static get msgTypeId() { return 12; }
@@ -965,13 +979,13 @@ export class MoveCell extends NotebookUpdate {
 }
 
 export class NotebookSearchResult {
-    static codec = combined(shortStr, uint16, shortStr).to(NotebookSearchResult);
+    static codec = combined(shortStr, uint16, tinyStr, shortStr).to(NotebookSearchResult);
 
     static unapply(inst: NotebookSearchResult): ConstructorParameters<typeof NotebookSearchResult> {
-        return [inst.path, inst.cellID, inst.cellContent];
+        return [inst.path, inst.cellID, inst.cellTitle, inst.cellContent];
     }
 
-    constructor(readonly path: string, readonly cellID: number, readonly cellContent: string) {
+    constructor(readonly path: string, readonly cellID: number, readonly cellTitle: string, readonly cellContent: string) {
         Object.freeze(this);
     }
 }
@@ -1029,7 +1043,8 @@ Message.codecs = [
     DeleteComment,    // 31
     KeepAlive,        // 32
     MoveCell,         // 33
-    SearchNotebooks   // 34
+    SearchNotebooks,  // 34
+    SetCellTitle,     // 35
 ];
 
 
