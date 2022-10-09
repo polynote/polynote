@@ -120,7 +120,7 @@ class PythonInterpreter private[python] (
   }
 
   def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
-    cell            <- ZIO.succeed(s"Cell${state.id}")
+    cell            <- ZIO.succeed(state.id.toString)
     (parsed, decls) <- parse(code, cell)
     compiled        <- compile(parsed, cell)
     globals         <- populateGlobals(state)

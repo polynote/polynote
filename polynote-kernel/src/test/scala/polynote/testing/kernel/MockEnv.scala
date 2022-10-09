@@ -42,7 +42,7 @@ object MockEnv {
   def apply(cellID: Int): URIO[BaseEnv, MockEnv] = for {
     env <- ZIO.access[BaseEnv](identity)
     runtime <- ZIO.runtime[Any]
-    currentTask <- RefM.make(TaskInfo(s"Cell$cellID"))
+    currentTask <- RefM.make(TaskInfo(cellID.toString))
   } yield new MockEnv(env, CellID(cellID), currentTask, new MockPublish, new MockPublish, runtime)
 
   def layer(cellID: Int): ZLayer[BaseEnv, Nothing, BaseEnv with InterpreterEnv] = ZLayer.fromManagedMany(MockEnv(cellID).toManaged_.flatMap(_.baseLayer.build))

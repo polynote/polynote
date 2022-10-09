@@ -51,7 +51,7 @@ export class CellComment {
 }
 
 export class NotebookCell {
-    static codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec, mapCodec(int16, tinyStr, CellComment.codec), tinyStr).to(NotebookCell);
+    static codec = combined(int16, tinyStr, str, arrayCodec(int16, Result.codec), CellMetadata.codec, mapCodec(int16, tinyStr, CellComment.codec), optional(tinyStr)).to(NotebookCell);
     static unapply(inst: NotebookCell): ConstructorParameters<typeof NotebookCell> {
         return [inst.id, inst.language, inst.content, inst.results, inst.metadata, inst.comments, inst.title];
     }
@@ -62,7 +62,7 @@ export class NotebookCell {
                 readonly results: Result[] = [],
                 readonly metadata: CellMetadata = new CellMetadata(false, false, false, false),
                 readonly comments: Record<string, CellComment> = {},
-                readonly title: string = `Cell #${id}`) {
+                readonly title?: string) {
         Object.freeze(this);
     }
 }

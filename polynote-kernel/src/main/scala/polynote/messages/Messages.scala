@@ -73,13 +73,13 @@ final case class NotebookCell(
   results: ShortList[Result] = ShortList(Nil),
   metadata: CellMetadata = CellMetadata(),
   comments: ShortMap[CommentID, Comment] = Map.empty[CommentID, Comment],
-  title: TinyString = ""
+  title: Option[TinyString] = None
 ) {
   def updateContent(fn: Rope => Rope): NotebookCell = copy(content = fn(content))
 }
 
 object NotebookCell {
-  def apply(id: CellID, language: TinyString, content: String): NotebookCell = NotebookCell(id, language, Rope(content), title = s"Cell #$id")
+  def apply(id: CellID, language: TinyString, content: String): NotebookCell = NotebookCell(id, language, Rope(content))
 }
 
 final case class NotebookConfig(
@@ -301,7 +301,7 @@ sealed trait NotebookUpdate extends Message {
       }
     case UpdateConfig(_, _, config)    => notebook.copy(config = Some(config))
     case SetCellLanguage(_, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
-    case SetCellTitle(_, _, id, newTitle) => notebook.updateCell(id)(_.copy(title = newTitle))
+    case SetCellTitle(_, _, id, newTitle) => notebook.updateCell(id)(_.copy(title = Some(newTitle)))
     case SetCellOutput(_, _, id, output) => notebook.setResults(id, output.toList)
     case CreateComment(_, _, cellId, comment) => notebook.createComment(cellId, comment)
     case UpdateComment(_, _, cellId, commentId, range, content) => notebook.updateComment(cellId, commentId, range, content)
@@ -450,8 +450,8 @@ object KeepAlive extends MessageCompanion[KeepAlive](32)
 final case class NotebookSearchResult(
   path: ShortString,
   cellID: CellID,
-  title: ShortString,
-  cellContent: ShortString
+  cellContent: ShortString,
+  title: Option[TinyString]
 )
 final case class SearchNotebooks(query: ShortString, notebookSearchResults: List[NotebookSearchResult]) extends Message
 object SearchNotebooks extends MessageCompanion[SearchNotebooks](34)

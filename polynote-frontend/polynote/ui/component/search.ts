@@ -58,7 +58,7 @@ export class SearchModal extends Modal implements IDisposable {
 
                 resultsEl.addRow({
                     line,
-                    file_cell: `${result.path} - ${result.cellTitle}`
+                    file_cell: `${result.path} - ${result.cellTitle ?? `Cell ${result.cellID}`}`
                 })
 
                 // Add an event listener to the newly created row to open up the proper notebook

@@ -27,7 +27,7 @@ class ScalaInterpreter private[scal] (
   override def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
     collectedState <- injectState(collectState(state))
     valDefs         = collectedState.values.mapValues(_._1).values.toList
-    cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", code, collectedState.prevCells, valDefs, collectedState.imports)
+    cellCode       <- scalaCompiler.cellCode(state.id.toString, code, collectedState.prevCells, valDefs, collectedState.imports)
       .flatMap(_.transformStats(transformCode).pruneInputs())
     inputNames      = cellCode.inputs.map(_.name.decodedName.toString)
     inputs          = inputNames.map(collectedState.values).map(_._2)
@@ -39,14 +39,14 @@ class ScalaInterpreter private[scal] (
   override def completionsAt(code: String, pos: Int, state: State): RIO[Blocking, List[Completion]] = for {
     collectedState   <- injectState(collectState(state)).provideLayer(CurrentRuntime.noRuntime)
     valDefs           = collectedState.values.mapValues(_._1).values.toList
-    cellCode         <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n\n${code.substring(0, math.min(pos, code.length))}  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
+    cellCode         <- scalaCompiler.cellCode(state.id.toString, s"\n\n${code.substring(0, math.min(pos, code.length))}  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
     completions      <- completer.completions(cellCode, pos + 2)
   } yield completions
 
   override def parametersAt(code: String, pos: Int, state: State): RIO[Blocking, Option[Signatures]] = for {
     collectedState <- injectState(collectState(state)).provideLayer(CurrentRuntime.noRuntime)
     valDefs         = collectedState.values.mapValues(_._1).values.toList
-    cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n\n$code  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
+    cellCode       <- scalaCompiler.cellCode(state.id.toString, s"\n\n$code  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
     hints          <- completer.paramHints(cellCode, pos + 2)
   } yield hints
 

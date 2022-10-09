@@ -58,7 +58,7 @@ class Parser {
 
   private def report(id: CellID, msg: String, err: RecognitionException): KernelReport = {
     val token = err.getOffendingToken
-    val pos = Pos(s"Cell$id", token.getStartIndex, token.getStopIndex, token.getStartIndex)
+    val pos = Pos(id.toString, token.getStartIndex, token.getStopIndex, token.getStartIndex)
     KernelReport(pos, msg, KernelReport.Error)
   }
 }

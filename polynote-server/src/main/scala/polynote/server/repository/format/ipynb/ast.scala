@@ -205,10 +205,10 @@ object JupyterCell {
         val wrapOutput = obj("cell.metadata.wrap_output").flatMap(_.asBoolean).getOrElse(false)
         val executionInfo = obj("cell.metadata.exec_info").flatMap(_.as[ExecutionInfo].right.toOption)
         val comments = obj("cell.comments").flatMap(_.as[ShortMap[CommentID, Comment]].right.toOption).getOrElse(ShortMap(Map.empty[CommentID, Comment])) // TODO: should we verify identity?
-        val title = obj("cell.title").flatMap(_.asString).getOrElse(s"Cell #${cell.execution_count.getOrElse()}")
+        val title = obj("cell.title").flatMap(_.asString).map(s => s: TinyString)
 
         (CellMetadata(disabled, hideSource, hideOutput, splitDisplay, wrapOutput, executionInfo), comments, title)
-    }.getOrElse((CellMetadata(), ShortMap(Map.empty[CommentID, Comment]), s"Cell #${cell.execution_count.getOrElse()}"))
+    }.getOrElse((CellMetadata(), ShortMap(Map.empty[CommentID, Comment]), None))
 
     NotebookCell(index, language, Rope(cell.source.mkString), ShortList(cell.outputs.getOrElse(Nil).map(JupyterOutput.toResult(index))), meta, comments, title)
   }
@@ -229,7 +229,7 @@ object JupyterCell {
         val output = if (hideOutput) List("jupyter.outputs_hidden" -> Json.fromBoolean(hideOutput)) else Nil
         val execInfo =  if (executionInfo.isDefined) List("cell.metadata.exec_info" -> executionInfo.asJson, "language" -> cell.language.toString.asJson) else Nil
         val comments = if (cell.comments.nonEmpty) List("cell.comments" -> cell.comments.asJson) else Nil
-        val title = if (cell.title.nonEmpty) List("cell.title" -> Json.fromString(cell.title)) else Nil
+        val title = if (cell.title.isDefined) List("cell.title" -> Json.fromString(cell.title.get)) else Nil
         val split = if (cell.metadata.splitDisplay) List("cell.metadata.split_display" -> Json.fromBoolean(splitDisplay)) else Nil
         val wrapped = if (cell.metadata.wrapOutput) List("cell.metadata.wrap_output" -> Json.fromBoolean(wrapOutput)) else Nil
         val metadata = runControl ++ source ++ output ++ execInfo ++ comments ++ title ++ split ++ wrapped

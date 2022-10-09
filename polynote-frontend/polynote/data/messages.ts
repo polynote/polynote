@@ -979,13 +979,13 @@ export class MoveCell extends NotebookUpdate {
 }
 
 export class NotebookSearchResult {
-    static codec = combined(shortStr, uint16, tinyStr, shortStr).to(NotebookSearchResult);
+    static codec = combined(shortStr, uint16, shortStr, optional(tinyStr)).to(NotebookSearchResult);
 
     static unapply(inst: NotebookSearchResult): ConstructorParameters<typeof NotebookSearchResult> {
-        return [inst.path, inst.cellID, inst.cellTitle, inst.cellContent];
+        return [inst.path, inst.cellID, inst.cellContent, inst.cellTitle];
     }
 
-    constructor(readonly path: string, readonly cellID: number, readonly cellTitle: string, readonly cellContent: string) {
+    constructor(readonly path: string, readonly cellID: number, readonly cellContent: string, readonly cellTitle?: string) {
         Object.freeze(this);
     }
 }
