@@ -676,13 +676,13 @@ export class Identity {
 }
 
 export class ServerHandshake extends Message {
-    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec), arrayCodec(int32, SparkPropertySet.codec), arrayCodec(int32, shortStr)).to(ServerHandshake);
+    static codec = combined(mapCodec(uint8, tinyStr, tinyStr), tinyStr, tinyStr, optional(Identity.codec), arrayCodec(int32, SparkPropertySet.codec), arrayCodec(int32, shortStr), bool).to(ServerHandshake);
     static get msgTypeId() { return 16; }
     static unapply(inst: ServerHandshake): ConstructorParameters<typeof ServerHandshake> {
-        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity, inst.sparkTemplates, inst.notebookTemplates];
+        return [inst.interpreters, inst.serverVersion, inst.serverCommit, inst.identity, inst.sparkTemplates, inst.notebookTemplates, inst.notifications];
     }
 
-    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null, readonly sparkTemplates: SparkPropertySet[], readonly notebookTemplates: string[]) {
+    constructor(readonly interpreters: Record<string, string>, readonly serverVersion: string, readonly serverCommit: string, readonly identity: Identity | null, readonly sparkTemplates: SparkPropertySet[], readonly notebookTemplates: string[], readonly notifications: boolean) {
         super();
         Object.freeze(this);
     }

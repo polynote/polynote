@@ -223,4 +223,13 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     val parsed = PolynoteConfig.parse(yamlStr)
     parsed.right.value.spark.get.properties("spark.some.decimal") shouldEqual "1.523432422343"
   }
+
+  it should "parse notification config values properly" in {
+    val yamlStr =
+      """
+        |notifications: release_notifications
+        |""".stripMargin
+    val parsed = PolynoteConfig.parse(yamlStr)
+    parsed.right.value.notifications shouldEqual "release_notifications"
+  }
 }

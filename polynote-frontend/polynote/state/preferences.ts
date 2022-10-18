@@ -5,6 +5,7 @@ import {deepEquals, diffArray} from "../util/helpers";
 export type RecentNotebooks = {name: string, path: string}[];
 export type OpenNotebooks = string[]; // paths
 export type NotebookScrollLocations = Record<string, number>; // path -> scrollTop
+export type DismissedNotifications = string[];
 export interface ViewPreferences {
     leftPane: {
         size: string,
@@ -60,6 +61,7 @@ export function clearStorage() {
 export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("RecentNotebooks", storage.get("recentNotebooks") ?? []);
 export const OpenNotebooksHandler = new LocalStorageHandler<OpenNotebooks>("OpenNotebooks", []);
 export const NotebookScrollLocationsHandler = new LocalStorageHandler<NotebookScrollLocations>("NotebookScrollLocations", {});
+export const DismissedNotificationsHandler = new LocalStorageHandler<DismissedNotifications>("DismissedNotifications", []);
 export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
     leftPane: {
         size: '300px',
