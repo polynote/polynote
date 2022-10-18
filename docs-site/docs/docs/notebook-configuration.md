@@ -53,8 +53,8 @@ documentation](python.md#python-dependencies) for more details.
 By default, Polynote caches JVM dependencies that are specified with URLs, as well as the [virtual environment created
 for your notebook](python.md#python-dependencies). 
 
-You can choose to manually bust the cache by unfolding the Advanced Options pane for your dependency by clicking on the 
-`...` button next to it. 
+You can choose to manually bust the cache by either appending `?nocache` to the end of the dependency, or by 
+unfolding the Advanced Options pane for your dependency by clicking on the `...` button next to it. 
 
 ![Dependency Caching](images/notebook-configuration-cache.png)
 
