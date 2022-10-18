@@ -272,7 +272,12 @@ object PolynoteConfig {
 
   def load(file: File): TaskB[PolynoteConfig] = {
 
-    val parsed  = parseFile(file)
+    val parsed  = parseFile(file).catchAll {
+      err => {
+        Logging.error(s"Syntax Error: Unable to parse config file $file; using default configuration", err)
+          .as(Json.fromJsonObject(JsonObject.empty))
+      }
+    }
     val default = parseFile(new File(defaultConfig)).catchAll {
       err =>
         Logging.error(s"Unable to parse default config file $defaultConfig", err)
@@ -291,8 +296,6 @@ object PolynoteConfig {
 
     Logging.info(s"Loading configuration from $file") *> configIO
       .catchAll {
-        case _: MatchError =>
-          ZIO.succeed(PolynoteConfig()) // TODO: Handles an upstream issue with circe-yaml, on an empty config file https://github.com/circe/circe-yaml/issues/50
         case e: FileNotFoundException =>
           Logging.error(s"Configuration file $file not found; using default configuration", e).as(PolynoteConfig())
         case err: Throwable => ZIO.fail(err)
