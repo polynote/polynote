@@ -3045,9 +3045,17 @@ button.dialog-button {
 }
 
 .modal-window.search {
-  max-width: 75em;
+  min-width: 30em;
 
   table {
+    .small {
+      width: 30em;
+    }
+
+    .large {
+      width: 70em;
+    }
+
     tbody {
       max-height: 30em;
       display: block;
@@ -3071,7 +3079,6 @@ button.dialog-button {
   }
 
   .file_cell {
-    text-align: right;
     font-weight: bold;
   }
 }
