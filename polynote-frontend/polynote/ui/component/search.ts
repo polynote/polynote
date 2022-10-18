@@ -1,5 +1,5 @@
 import {Disposable, IDisposable} from "../../state";
-import {div, iconButton, label, para, table, TagElement, textbox} from "../tags";
+import {div, iconButton, label, para, table, TableElement, TagElement, textbox} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {Modal} from "../layout/modal";
@@ -9,6 +9,7 @@ export class SearchModal extends Modal implements IDisposable {
     private serverMessageDispatcher: ServerMessageDispatcher;
     private disposable: Disposable;
     private searchStatus: HTMLParagraphElement;
+    private resultsEl: TableElement;
 
     constructor(serverMessageDispatcher: ServerMessageDispatcher) {
         const input = textbox(['create-notebook-section'], "Search Term", "")
@@ -16,7 +17,7 @@ export class SearchModal extends Modal implements IDisposable {
         input.addEventListener('Accept', evt => this.submitSearch());
         input.addEventListener('Cancel', evt => this.hide());
 
-        let resultsEl = table([], {
+        let resultsEl = table(['small'], {
             classes: ['line', 'file_cell'],
             rowHeading: false
         });
@@ -35,12 +36,13 @@ export class SearchModal extends Modal implements IDisposable {
         this.serverMessageDispatcher = serverMessageDispatcher;
         this.queryInput = input;
         this.searchStatus = searchStatus;
+        this.resultsEl = resultsEl;
 
         ServerStateHandler.view("searchResults").addObserver(results => {
             // On a new query's results being received, reset the table and searchStatus
             this.searchStatus.innerText = "";
-            while (resultsEl.rows.length > 0) {
-                resultsEl.deleteRow(0);
+            while (this.resultsEl.rows.length > 0) {
+                this.resultsEl.deleteRow(0);
             }
 
             if (results.length == 0) {
@@ -56,13 +58,13 @@ export class SearchModal extends Modal implements IDisposable {
                     return line.includes(this.queryInput.value);
                 })
 
-                resultsEl.addRow({
+                this.resultsEl.addRow({
                     line,
                     file_cell: `${result.path} - Cell #${result.cellID}`
                 })
 
                 // Add an event listener to the newly created row to open up the proper notebook
-                const newRow = resultsEl.rows[resultsEl.rows.length - 1];
+                const newRow = this.resultsEl.rows[this.resultsEl.rows.length - 1];
                 newRow.addEventListener('click', () => {
                     ServerStateHandler.loadNotebook(result.path, true)
                         .then(() => {
@@ -92,6 +94,12 @@ export class SearchModal extends Modal implements IDisposable {
 
     private submitSearch() {
         if (this.queryInput.value.trim().length == 0) return;
+
+        // expand the search box so it can hold larger results
+        this.resultsEl.classList.remove('small');
+        this.resultsEl.classList.remove('large');
+
+        // Start the actual search
         this.searchStatus.innerText = "Searching...";
         this.serverMessageDispatcher?.searchNotebooks(this.queryInput.value);
     }
