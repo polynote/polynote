@@ -45,6 +45,7 @@ object CoursierFetcher {
       config         <- CurrentNotebook.config
       configDeps      = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
       txtUris        <- downloadUris(configDeps.filter(_.endsWith(".txt")).map(d => new URI(d)))
+      _ <- ZIO(println(txtUris))
       downloadTxtUris = parseTxtUris(txtUris)
       splitRes       <- splitDependencies(configDeps.filter(!_.endsWith(".txt")) ++ downloadTxtUris)
       (deps, uris)    = splitRes
@@ -64,12 +65,12 @@ object CoursierFetcher {
 
   private def parseTxtUris(deps: List[(Boolean, String, File)]): List[String] = {
     deps.map(dep => {
-      parseTxtFile(dep._2)
+      parseTxtFile(dep._3.toURI)
     }).flatten
   }
 
-  private def parseTxtFile(filename: String): List[String] = {
-    val bufferedSource = Source.fromFile(URI.create(filename))
+  private def parseTxtFile(filename: URI): List[String] = {
+    val bufferedSource = Source.fromFile(filename)
     val lines = (for {
       line <- bufferedSource.getLines()
     } yield line).toList
