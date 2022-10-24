@@ -23,11 +23,14 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFile}
+import polynote.messages.TinyString
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
 import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
 
+import scala.collection.mutable
 import scala.concurrent.ExecutionContext
+import scala.io.Source
 
 object CoursierFetcher {
   type ArtifactTask[A] = RIO[CurrentTask, A]
@@ -40,9 +43,12 @@ object CoursierFetcher {
     for {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
-      dependencies    = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
-      splitRes       <- splitDependencies(dependencies)
+      configDeps      = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
+      txtUris        <- downloadUris(configDeps.filter(_.endsWith(".txt")).map(d => new URI(d)))
+      downloadTxtUris = parseTxtUris(txtUris)
+      splitRes       <- splitDependencies(configDeps.filter(!_.endsWith(".txt")) ++ downloadTxtUris)
       (deps, uris)    = splitRes
+      _ <- ZIO(println(deps, uris))
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
       credentials    <- loadCredentials(polynoteConfig.credentials)
@@ -54,6 +60,21 @@ object CoursierFetcher {
       downloadUris   <- downloadUris(uris).fork
       downloaded     <- ZIO.mapN(downloadDeps.join, downloadUris.join)(_ ++ _)
     } yield downloaded
+  }
+
+  private def parseTxtUris(deps: List[(Boolean, String, File)]): List[String] = {
+    deps.map(dep => {
+      parseTxtFile(dep._2)
+    }).flatten
+  }
+
+  private def parseTxtFile(filename: String): List[String] = {
+    val bufferedSource = Source.fromFile(URI.create(filename))
+    val lines = (for {
+      line <- bufferedSource.getLines()
+    } yield line).toList
+    bufferedSource.close
+    lines
   }
 
   private def loadCredentials(credentials: CredentialsConfig): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
