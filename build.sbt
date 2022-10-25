@@ -69,31 +69,31 @@ val commonSettings = Seq(
     "-unchecked",
     "-target:jvm-1.8"
   ) ++ (if (scalaBinaryVersion.value.startsWith("2.13")) Nil else Seq("-Ypartial-unification")),
-  fork in Test := true,
-  javaOptions in Test += s"-Djava.library.path=$nativeLibraryPath",
+  Test / fork := true,
+  Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.0.8" % "test",
     "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
   ),
-  assemblyMergeStrategy in assembly := {
+  assembly / assemblyMergeStrategy := {
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case PathList("coursier", "shaded", xs @ _*) => MergeStrategy.first // coursier shades some of the same classes. assembly somehow can't dedupe even though they seem identical to me.
     case PathList(_, "BuildInfo$.class") => MergeStrategy.discard
     case x =>
-      val oldStrategy = (assemblyMergeStrategy in assembly).value
+      val oldStrategy = (assembly / assemblyMergeStrategy).value
       oldStrategy(x)
   },
-  assemblyOption in assembly := {
-    (assemblyOption in assembly).value.copy(includeScala = false)
+  assembly / assemblyOption := {
+    (assembly / assemblyOption).value.copy(includeScala = false)
   },
-  cancelable in Global := true,
+  Global / cancelable := true,
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
   buildUI := {
-    sys.process.Process(Seq("npm", "run", "build"), new java.io.File("./polynote-frontend/")) ! streams.value.log
+    sys.process.Process(Seq("npm", "run", "build"), file("./polynote-frontend/")) ! streams.value.log
   },
   distUI := {
-    sys.process.Process(Seq("npm", "run", "clean"), new java.io.File("./polynote-frontend/")) ! streams.value.log
-    sys.process.Process(Seq("npm", "run", "dist"), new java.io.File("./polynote-frontend/")) ! streams.value.log
+    sys.process.Process(Seq("npm", "run", "clean"), file("./polynote-frontend/")) ! streams.value.log
+    sys.process.Process(Seq("npm", "run", "dist"), file("./polynote-frontend/")) ! streams.value.log
   },
   distFiles := Nil,
   prepDistFiles := {
@@ -107,7 +107,7 @@ val commonSettings = Seq(
     destFiles
   },
   scalacOptions += "-deprecation",
-  test in assembly := {},
+  assembly / test := {},
   circeVersion := {
     scalaBinaryVersion.value match {
       case "2.13" | "2.12" => "0.12.2"
@@ -187,7 +187,7 @@ val `polynote-kernel` = project.settings(
     "net.sf.py4j" % "py4j" % "0.10.7",
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
-  distFiles := Seq(assembly.value) ++ (dependencyClasspath in Compile).value.collect {
+  distFiles := Seq(assembly.value) ++ (Compile / dependencyClasspath).value.collect {
     case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") => jar.data
   },
   coverageExcludedPackages := "polynote\\.kernel\\.interpreter\\.python\\..*;polynote\\.runtime\\.python\\..*" // see https://github.com/scoverage/scalac-scoverage-plugin/issues/176
@@ -202,13 +202,13 @@ val `polynote-server` = project.settings(
     "com.vladsch.flexmark" % "flexmark-ext-yaml-front-matter" % "0.34.32",
     "org.slf4j" % "slf4j-simple" % "1.7.25"
   ),
-  //unmanagedResourceDirectories in Compile += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist",
+  //Compile / unmanagedResourceDirectories += (ThisBuild / baseDirectory).value / "polynote-frontend" / "dist",
   packageBin := {
     val _ = distUI.value
-    (packageBin in Compile).value
+    (Compile / packageBin).value
   },
   distFiles := Seq(assembly.value),
-  testOptions in Test += Tests.Argument("-oF")
+  Test / testOptions += Tests.Argument("-oF")
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
 val sparkVersions = Map(
@@ -278,12 +278,12 @@ lazy val `polynote-spark-runtime` = project.settings(
 lazy val `polynote-spark` = project.settings(
   commonSettings,
   sparkSettings,
-  testOptions in Test += Tests.Argument("-oF"),
+  Test / testOptions += Tests.Argument("-oF"),
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   ),
-  assemblyOption in assembly := {
-    (assemblyOption in assembly).value.copy(
+  assembly / assemblyOption := {
+    (assembly / assemblyOption).value.copy(
       includeScala = false,
       prependShellScript = Some(
         IO.read(file(".") / "scripts/polynote").linesIterator.toSeq
