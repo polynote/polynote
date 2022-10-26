@@ -23,10 +23,9 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFile}
-import polynote.messages.TinyString
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
-import zio.{IO, RIO, Task, UIO, URIO, ZIO, ZManaged}
+import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
 import scala.concurrent.ExecutionContext
 
 object CoursierFetcher {
@@ -35,12 +34,6 @@ object CoursierFetcher {
 
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val baseCache = FileCache[ArtifactTask]()
-
-  // Looks like this works! But only for Scala for now.
-  // TODO 1. How can I get Hadoop to play nicely with an S3 .txt file path? It seems to throw errors if it's not a .JAR.
-  // TODO 2. How can we configure caching? By default it's just caching everything inside of the .txt file, but I'd like to
-  // check if the .txt file is set to be cached or not, and then from there mark if we should cache all of the dependencies
-  // that it is actually listing out.
 
   def fetch(language: String): RIO[Logging with Config with CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
