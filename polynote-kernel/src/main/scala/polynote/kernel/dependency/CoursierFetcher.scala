@@ -26,7 +26,7 @@ import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFi
 import polynote.messages.TinyString
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
-import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
+import zio.{IO, RIO, Task, UIO, URIO, ZIO, ZManaged}
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
@@ -39,17 +39,21 @@ object CoursierFetcher {
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val baseCache = FileCache[ArtifactTask]()
 
+  // Looks like this works! But only for Scala for now.
+  // TODO 1. How can I get Hadoop to play nicely with an S3 .txt file path? It seems to throw errors if it's not a .JAR.
+  // TODO 2. How can we configure caching? By default it's just caching everything inside of the .txt file, but I'd like to
+  // check if the .txt file is set to be cached or not, and then from there mark if we should cache all of the dependencies
+  // that it is actually listing out.
+
   def fetch(language: String): RIO[Logging with Config with CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
       configDeps      = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
-      txtUris        <- downloadUris(configDeps.filter(_.endsWith(".txt")).map(d => new URI(d)))
-      _ <- ZIO(println(txtUris))
-      downloadTxtUris = parseTxtUris(txtUris)
-      splitRes       <- splitDependencies(configDeps.filter(!_.endsWith(".txt")) ++ downloadTxtUris)
+      txtUris         = configDeps.filter(_.endsWith(".txt")).map(d => new URI(d))
+      txtDeps        <- ZIO.foreach(txtUris)(parseTxtFile).map(_.flatten)
+      splitRes       <- splitDependencies(configDeps.filter(!_.endsWith(".txt")) ++ txtDeps)
       (deps, uris)    = splitRes
-      _ <- ZIO(println(deps, uris))
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
       credentials    <- loadCredentials(polynoteConfig.credentials)
@@ -63,20 +67,9 @@ object CoursierFetcher {
     } yield downloaded
   }
 
-  private def parseTxtUris(deps: List[(Boolean, String, File)]): List[String] = {
-    deps.map(dep => {
-      parseTxtFile(dep._3.toURI)
-    }).flatten
-  }
-
-  private def parseTxtFile(filename: URI): List[String] = {
-    val bufferedSource = Source.fromFile(filename)
-    val lines = (for {
-      line <- bufferedSource.getLines()
-    } yield line).toList
-    bufferedSource.close
-    lines
-  }
+  private def parseTxtFile(filename: URI): RIO[Blocking, List[String]] = DownloadableFileProvider.getFile(filename).flatMap(file => {
+    file.openStream.use(inputStream => ZIO(scala.io.Source.fromInputStream(inputStream).getLines().filter(_.nonEmpty).toList))
+  })
 
   private def loadCredentials(credentials: CredentialsConfig): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
     case Some(CredentialsConfig.Coursier(path)) =>
