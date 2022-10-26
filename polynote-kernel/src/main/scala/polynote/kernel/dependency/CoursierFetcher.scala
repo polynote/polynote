@@ -27,10 +27,7 @@ import polynote.messages.TinyString
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
 import zio.{IO, RIO, Task, UIO, URIO, ZIO, ZManaged}
-
-import scala.collection.mutable
 import scala.concurrent.ExecutionContext
-import scala.io.Source
 
 object CoursierFetcher {
   type ArtifactTask[A] = RIO[CurrentTask, A]
@@ -51,7 +48,7 @@ object CoursierFetcher {
       config         <- CurrentNotebook.config
       configDeps      = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
       txtUris         = configDeps.filter(_.endsWith(".txt")).map(d => new URI(d))
-      txtDeps        <- ZIO.foreach(txtUris)(parseTxtFile).map(_.flatten)
+      txtDeps        <- ZIO.foreach(txtUris)(parseTxtDeps).map(_.flatten)
       splitRes       <- splitDependencies(configDeps.filter(!_.endsWith(".txt")) ++ txtDeps)
       (deps, uris)    = splitRes
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
@@ -67,8 +64,8 @@ object CoursierFetcher {
     } yield downloaded
   }
 
-  private def parseTxtFile(filename: URI): RIO[Blocking, List[String]] = DownloadableFileProvider.getFile(filename).flatMap(file => {
-    file.openStream.use(inputStream => ZIO(scala.io.Source.fromInputStream(inputStream).getLines().filter(_.nonEmpty).toList))
+  def parseTxtDeps(filename: URI): RIO[Blocking, List[String]] = DownloadableFileProvider.getFile(filename).flatMap(file => {
+    file.openStream.use(inputStream => ZIO(scala.io.Source.fromInputStream(inputStream).getLines().filter(_.nonEmpty).map(_.strip()).toList))
   })
 
   private def loadCredentials(credentials: CredentialsConfig): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
