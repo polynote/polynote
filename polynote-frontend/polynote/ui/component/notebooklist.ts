@@ -5,7 +5,7 @@ import {
     dropdown,
     DropdownElement,
     h2,
-    helpIconButton,
+    helpIconButton, icon,
     iconButton,
     para,
     span,
@@ -13,19 +13,19 @@ import {
     TagElement
 } from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
-import {deepCopy, diffArray, getShortDate} from "../../util/helpers";
+import {deepCopy, diffArray, getHumanishDate, getShortDate} from "../../util/helpers";
 import {
     Disposable,
     ObjectStateHandler,
-    removeKey,
+    removeKey, setProperty, setValue,
     StateView,
     UpdatePartial
 } from "../../state";
 import {ServerStateHandler} from "../../state/server_state";
 import {SearchModal} from "./search";
 import {
-    NotebookSorting,
-    NotebookSortingHandler,
+    NotebookListPrefs,
+    NotebookListPrefsHandler,
 } from "../../state/preferences";
 
 export class NotebookListContextMenu{
@@ -130,47 +130,89 @@ export class NotebookListContextMenu{
     }
 }
 
-/**
- * A special class for the sort dropdown button. This is necessary because each dropdown button needs to map to a specific
- * state (of type NotebookSorting). Because of this, this class wraps the dropdown el with logic to make extracting the
- * newly selected state easier.
- */
-class SortDropdown {
-    readonly el: DropdownElement;
-    private sortByDescendingDate = "date (descending)";
-    private sortByAscendingDate = "date (ascending)";
-    private sortByAscendingName = "name (ascending)";
-    private sortByDescendingName = "name (descending)";
+class SortHeader {
+    readonly el: TagElement<"div">
+    private readonly sizeEl: TagElement<"div">;
+    private _state: NotebookListPrefs;
+    private resizeHandlers: ((size: number) => void)[] = [];
+    private sortChangeHandlers: ((prefs: NotebookListPrefs) => void)[] = [];
+    private columns: Record<string, TagElement<'span'>> = {};
 
-    constructor() {
-        this.el = dropdown([], {
-            // key-value pairs, the key and value are the same value here since there is no semantic difference needed
-            [this.sortByDescendingDate]: this.sortByDescendingDate,
-            [this.sortByAscendingDate]: this.sortByAscendingDate,
-            [this.sortByDescendingName]: this.sortByDescendingName,
-            [this.sortByAscendingName]: this.sortByAscendingName,
-        }, this.toDropdownValue());
+    constructor(state: NotebookListPrefs) {
+        const mkCol = (id: NotebookListPrefs['sortColumn'], text: string) => {
+            return span(
+                [id],
+                [text, icon(['ascending'], 'arrow-down'), icon(['descending'], 'arrow-up')]
+            ).click(() => this.columnClick(id))
+        }
+
+        this.el = div(['heading'], [
+            this.sizeEl = div(['sizer'], [div(['border'], [])]),
+            div(['columns'], [
+                this.columns['name'] = mkCol('name', 'Name'),
+                this.columns['date'] = mkCol('date', 'Modified')
+            ])
+        ]);
+        this.sizeEl.mousedown((evt) => this.startResize(evt));
+        this._state = state;
+        this.updateSortArrows();
     }
 
-    toDropdownValue(): string {
-        const sortByDate = NotebookSortingHandler.state.sortByDate;
-        const descending = NotebookSortingHandler.state.descending;
-
-        if (sortByDate && descending) return this.sortByDescendingDate;
-        if (sortByDate && !descending) return this.sortByAscendingDate;
-        if (!sortByDate && descending) return this.sortByDescendingName;
-        else return this.sortByAscendingName;
+    columnClick(column: NotebookListPrefs['sortColumn']) {
+        if (this._state.sortColumn === column) {
+            this._state.descending = !this._state.descending;
+        } else {
+            this._state.sortColumn = column;
+            this._state.descending = false;
+        }
+        this.updateSortArrows();
+        this.sortChangeHandlers.forEach(fn => fn(this._state))
     }
 
-    fromDropdownValue(value: string): NotebookSorting {
-        if (value === this.sortByDescendingDate) return {descending: true, sortByDate: true};
-        if (value === this.sortByAscendingDate) return {descending: false, sortByDate: true};
-        if (value === this.sortByDescendingName) return {descending: true, sortByDate: false};
-        else return {descending: false, sortByDate: false};
+    private updateSortArrows() {
+        for (const col of Object.values(this.columns)) {
+            col.classList.remove('sorting', 'descending');
+        }
+        this.columns[this._state.sortColumn].classList.add('sorting');
+        if (this._state.descending)
+            this.columns[this._state.sortColumn].classList.add('descending');
     }
 
-    get dropdownState(): NotebookSorting {
-        return this.fromDropdownValue(this.el.value);
+    startResize(evt: Event) {
+        if (evt instanceof MouseEvent) {
+            const dragStartX = evt.clientX;
+            const startWidth = this._state.dateWidth;
+
+            const onMove: (evt: Event) => void = (evt) => {
+                if (evt instanceof MouseEvent) {
+                    const currentX = evt.clientX;
+                    const delta = dragStartX - currentX;
+                    const newWidth = startWidth + delta;
+                    this._state.dateWidth = newWidth;
+                    this.resizeHandlers.forEach(fn => fn(newWidth));
+                }
+            }
+
+            const onRelease = () => {
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onRelease);
+            }
+
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onRelease);
+        }
+    }
+
+    get state(): NotebookListPrefs {
+        return this._state;
+    }
+
+    onResize(fn: (size: number) => void): void {
+        this.resizeHandlers.push(fn);
+    }
+
+    onSortChange(fn: (prefs: NotebookListPrefs) => void): void {
+        this.sortChangeHandlers.push(fn);
     }
 }
 
@@ -210,26 +252,30 @@ export class NotebookList extends Disposable {
         });
         this.tree = new BranchEl(dispatcher, treeState);
 
-        const updateSortPrefs = (prefs: NotebookSorting) => {
-            NotebookSortingHandler.update(() => ({
-                descending: prefs.descending,
-                sortByDate: prefs.sortByDate
-            }));
+        const updateSortPrefs = (prefs: NotebookListPrefs) => {
+            NotebookListPrefsHandler.update(() => setValue(prefs));
         }
 
-        const evalDropdownChange = () => {
-            updateSortPrefs(sortDropdown.dropdownState);
+        const evalDropdownChange = (state: NotebookListPrefs) => {
+            updateSortPrefs(state);
             this.tree.changeSortType();
         };
 
-        const sortDropdown = new SortDropdown();
+        const sortHeader = new SortHeader(NotebookListPrefsHandler.state);
+        let treeView: TagElement<'div'> | null = null;
+        this.el = div(['notebooks-list'], [treeView = div(['tree-view'], [
+            sortHeader,
+            div(['tree'], [this.tree.el]).listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt))
+        ])]);
 
-        this.el = div(['notebooks-list'], [div(['tree-view'], [
-            div([], [
-                para(["sort-instructions"], ["Sort by: "]),
-                sortDropdown.el.change(evalDropdownChange)]),
-            this.tree.el
-        ])]).listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
+        sortHeader.onResize((size) => {
+            if (treeView) {
+                treeView.style.setProperty('--date-width', `${size}px`)
+            }
+            NotebookListPrefsHandler.update(() => setProperty("dateWidth", size))
+        });
+
+        sortHeader.onSortChange(evalDropdownChange);
 
         // Drag n' drop!
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
@@ -561,15 +607,15 @@ export class BranchEl extends Disposable {
      */
     private shouldInsertLower(newChild: BranchEl | LeafEl, oldChild: BranchEl | LeafEl) {
         if (oldChild === undefined) return false; // this is the last node, so insert it here
-        const descending = NotebookSortingHandler.state.descending;
-        const sortingByDate = NotebookSortingHandler.state.sortByDate;
+        const descending = NotebookListPrefsHandler.state.descending;
+        const sortingByDate = NotebookListPrefsHandler.state.sortColumn === "date";
 
         // First, handle branches
         if (newChild instanceof BranchEl) {
             if (!(oldChild instanceof BranchEl)) return false; // if the next node is not a branch, insert it here
             // descending alphabetical or by date (ascending default)
-            else if (descending || sortingByDate) return oldChild.path.localeCompare(newChild.path) < 0;
-            else return oldChild.path.localeCompare(newChild.path) > 0; // sorting in ascending alphabetical order
+            else if (descending || sortingByDate) return oldChild.path.localeCompare(newChild.path) > 0;
+            else return oldChild.path.localeCompare(newChild.path) < 0; // sorting in ascending alphabetical order
         }
         else if (oldChild instanceof BranchEl) return true;
 
@@ -577,8 +623,8 @@ export class BranchEl extends Disposable {
             if (descending) return newChild._lastSaved < oldChild._lastSaved;
             else return newChild._lastSaved > oldChild._lastSaved;
         } else {
-            if (descending) return oldChild.path.localeCompare(newChild.path) < 0;
-            else return oldChild.path.localeCompare(newChild.path) > 0;
+            if (descending) return oldChild.path.localeCompare(newChild.path) > 0;
+            else return oldChild.path.localeCompare(newChild.path) < 0;
         }
     }
 
@@ -681,7 +727,7 @@ export class LeafEl extends Disposable {
         return a([], `notebooks/${leaf.fullPath}`, [
             span([], [
                 span(['name'], [leaf.value]),
-                span(['date'], [this._lastSaved !== 0 ? getShortDate(this._lastSaved) : ""])
+                span(['date'], [this._lastSaved !== 0 ? getHumanishDate(this._lastSaved) : ""])
             ])
         ], { preventNavigate: true })
             .click(evt => {
