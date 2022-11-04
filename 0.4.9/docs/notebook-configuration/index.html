@@ -922,6 +922,8 @@ causing you problems.</p>
 both Maven and Ivy resolvers (the type of resolver can be selected in the dropdown).</p>
 <p>Additionally, Polynote supports specifying a URL directly to a jar file - such as <code>file:///home/jars/myCoolLibrary.jar</code>. 
 Supported schemas include <code>http</code> and <code>s3</code> (if Spark is enabled). </p>
+<p>You can place your JVM dependencies in a newline-separated <code>.txt</code> file and include that file's URL in your dependencies.
+This will unpack the <code>.txt</code> and download each dependency individually. Note that this method will cache all of the JARs included. </p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
 <p>Note that if you specify a jar directly, Polynote will not resolve any transitive dependencies for this jar. In 
