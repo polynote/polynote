@@ -19,6 +19,8 @@ const socketHandler = SocketStateHandler.create(mockSocket);
 const dispatcher = new ServerMessageDispatcher(socketHandler);
 const receiver = new ServerMessageReceiver();
 
+
+
 test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     const leaf = {
         fullPath: "foo/bar/baz",
@@ -245,21 +247,10 @@ test("stress test", () => {
     expect(branchHandler.state).toMatchSnapshot();
 });
 
-
-// We have to mock the creation of iconButtons here because we are inspecting the entire notebookList, and sometimes
-// the iconButtons will fail to load and return null, which causes the querySelector to crash
-jest.mock("../tags", () => {
-    const original = jest.requireActual("../tags");
-    return {
-        ...original,
-        iconButton: jest.fn().mockReturnValue(document.createElement("img"))
-    }
-});
-
 test("NotebookList e2e test", done => {
     const nbList = new NotebookList(dispatcher);
     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
-    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
+    expect(nbList.el.querySelector('.tree-view > div.tree > ul')).toBeEmptyDOMElement();
 
     // this will trigger the receiver to update global state
     const paths = [...Array(500).keys()].map(x => {
@@ -278,7 +269,7 @@ test("NotebookList e2e test", done => {
     SocketSession.global.send(new messages.ListNotebooks(nbs));
 
     waitFor(() => {
-        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
+        expect(nbList.el.querySelector('.tree-view > div.tree > ul')).not.toBeEmptyDOMElement();
     }).then(() => {
         expect(nbList.el.outerHTML).toMatchSnapshot()
     })

@@ -412,7 +412,6 @@ export function getHumanishDate(timestamp: number): string {
     const date = new Date(timestamp);
     const now = new Date();
     const age = now.getTime() - timestamp;
-    console.log(age);
     if (age <= 604800000) {
         // if it's under a week ago
         let daysAgo = now.getDay() - date.getDay()
