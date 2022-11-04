@@ -14,9 +14,12 @@ import coursier.cache.{ArtifactError, Cache, CacheLogger, FileCache}
 import coursier.core._
 import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentials}
 import coursier.error.ResolutionError
+import coursier.error.conflict.UnsatisfiedRule
+import coursier.graph.ReverseModuleTree
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
-import coursier.util.{Artifact, EitherT, Sync}
+import coursier.params.rule.Rule
+import coursier.util.{Artifact, EitherT, ModuleMatchers, Sync}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
@@ -157,7 +160,7 @@ object CoursierFetcher {
     Resolve(cache)
       .addDependencies(coursierDeps: _*)
       .withRepositories(repos)
-      .withResolutionParams(ResolutionParams())
+      .withResolutionParams(ResolutionParams().addReconciliation(ModuleMatchers.all -> Reconciliation.Relaxed))
       .transformFetcher(countingFetcher)
       .io
       .catchAll(recover)
