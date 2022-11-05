@@ -406,6 +406,29 @@ export function getShortDate(timestamp: number): string {
     return date.toLocaleString('default', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+const dayFmt = new Intl.DateTimeFormat(undefined, {weekday: 'long'})
+
+export function getHumanishDate(timestamp: number): string {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const age = now.getTime() - timestamp;
+    if (age <= 604800000) {
+        // if it's under a week ago
+        let daysAgo = now.getDay() - date.getDay()
+        if (daysAgo < 0)
+            daysAgo = 7 - daysAgo
+        switch (daysAgo) {
+            case 0: return `Today at ${date.toLocaleTimeString(undefined, {hour: 'numeric', minute: 'numeric'})}`
+            case 1: return `Yesterday at ${date.toLocaleTimeString(undefined, {hour: 'numeric', minute: 'numeric'})}`
+            default: return `${dayFmt.format(date)} at ${date.toLocaleTimeString()}`
+        }
+    } else if (age <= 31556926000) {
+        // if it's under a year ago
+        return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: 'numeric' }) }`
+    }
+    return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} at ${date.toLocaleTimeString(undefined, { hour: 'numeric', minute: 'numeric' }) }`
+}
+
 //****************
 //* Other Helpers
 //****************

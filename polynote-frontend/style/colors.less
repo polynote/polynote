@@ -636,6 +636,20 @@ button {
 }
 
 .tree-view {
+  .heading {
+    background-color: @ui-background;
+    border-bottom-color: @ui-border;
+
+    .sizer .border {
+      border-left-color: @ui-border-dark;
+      border-right-color: @ui-background-bright;
+    }
+  }
+
+  .tree > ul {
+    background: repeating-linear-gradient(180deg, transparent, transparent 22px, @ui-background 22px, @ui-background 44px);
+  }
+
   .highlight-branch {
     border-color: green;
   }
@@ -658,6 +672,10 @@ button {
 
       span, a {
         color: @ui-text;
+      }
+
+      .date {
+        opacity: 0.6;
       }
     }
 
