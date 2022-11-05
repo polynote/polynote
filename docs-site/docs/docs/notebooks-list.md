@@ -19,10 +19,11 @@ already exists, a number will be appended at the end of the filename.
 
 !!!tip
     Any slashes in the notebook name will place your new notebook in a directory (creating them if they don't already 
-    exist). 
+    exist).
 
-    Addiitonally, Polynote will add an extension if you don't specify one. 
+    If you'd like to quickly create a new notebook inside of an existing directory, right-click on any directory and select `New Notebook`. 
 
+    Additionally, Polynote will add an extension if you don't specify one. 
     For example, typing in `foo/bar/My Notebook` will create a `My Notebook.ipynb` file and put it into a directory 
     named `bar`, within a directory named `foo`. 
 

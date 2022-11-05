@@ -3131,9 +3131,17 @@ button.dialog-button {
 }
 
 .modal-window.search {
-  max-width: 75em;
+  min-width: 30em;
 
   table {
+    .small {
+      width: 30em;
+    }
+
+    .large {
+      width: 70em;
+    }
+
     tbody {
       max-height: 30em;
       display: block;
@@ -3157,7 +3165,6 @@ button.dialog-button {
   }
 
   .file_cell {
-    text-align: right;
     font-weight: bold;
   }
 }
@@ -3360,6 +3367,23 @@ img.icon, svg.icon {
         font-size: inherit;
       }
     }
+  }
+}
+
+.snackbar {
+  width: 25em;
+  margin-left: -12.5em;
+  border-radius: 8px;
+  padding: 16px 32px 24px 16px;
+  position: fixed;
+  z-index: 999;
+  right: 2.5%;
+  bottom: 2em;
+
+  .notification-close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
   }
 }
 

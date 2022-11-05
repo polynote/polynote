@@ -1664,12 +1664,16 @@ export class CodeCell extends MonacoCell {
 
     protected onDeselected() {
         super.onDeselected();
+        // hide parameter hints on blur
+        this.editor.trigger('keyboard', 'closeParameterHints', null);
         // TODO (overflow widgets)
         // this.overflowDomNode.parentNode?.removeChild(this.overflowDomNode)
         // this.editorEl.closest('.notebook-cells')?.removeEventListener('scroll', this.scrollListener);
-        this.commentHandler.hide()
-        // hide parameter hints on blur
-        this.editor.trigger('keyboard', 'closeParameterHints', null);
+
+        // If no line of text was previously selected, then the user wasn't creating a comment, so hide all comments.
+        if (this.cellState.state.currentSelection === undefined) {
+           this.commentHandler.hide()
+        }
     }
 
     delete() {

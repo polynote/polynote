@@ -10,6 +10,7 @@ export type NotebookListPrefs = {
     descending: boolean,
     dateWidth: number
 };
+export type DismissedNotifications = string[];
 export interface ViewPreferences {
     leftPane: {
         size: string,
@@ -66,6 +67,7 @@ export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("
 export const OpenNotebooksHandler = new LocalStorageHandler<OpenNotebooks>("OpenNotebooks", []);
 export const NotebookScrollLocationsHandler = new LocalStorageHandler<NotebookScrollLocations>("NotebookScrollLocations", {});
 export const NotebookListPrefsHandler = new LocalStorageHandler<NotebookListPrefs>("NotebookOrder", {sortColumn: "name", descending: false, dateWidth: 108});
+export const DismissedNotificationsHandler = new LocalStorageHandler<DismissedNotifications>("DismissedNotifications", []);
 export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
     leftPane: {
         size: '300px',
