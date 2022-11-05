@@ -13,7 +13,7 @@ import {
     TagElement
 } from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
-import {deepCopy, diffArray, getHumanishDate, getShortDate} from "../../util/helpers";
+import {deepCopy, diffArray, getHumanishDate} from "../../util/helpers";
 import {
     Disposable,
     ObjectStateHandler,
