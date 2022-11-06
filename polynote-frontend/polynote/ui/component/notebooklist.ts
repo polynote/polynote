@@ -785,7 +785,10 @@ function displayFileDropPlaceholder(children: (BranchEl | LeafEl)[], childrenEl:
         removeFileDropPlaceholder();
 
         newEl = tag('li', ['leaf', 'drop-placeholder'], {}, [
-            a(['name'], ``, [span(['placeholder-leaf'], ['Placeholder...'])], { preventNavigate: true })
+            a(['name'], ``, [span(['placeholder-leaf'], [
+                span(['placeholder-content'], []),
+                span(['placeholder-content'], [])
+            ])], { preventNavigate: true })
         ]);
         childrenEl.prepend(newEl);
 
