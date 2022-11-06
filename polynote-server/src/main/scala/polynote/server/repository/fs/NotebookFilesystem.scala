@@ -26,6 +26,8 @@ trait NotebookFilesystem {
 
   def list(path: Path): RIO[BaseEnv, List[Path]]
 
+  def lastModified(path: Path): RIO[BaseEnv, Long]
+
   def validate(path: Path): RIO[BaseEnv, Unit]
 
   def exists(path: Path): RIO[BaseEnv, Boolean]

@@ -33,6 +33,7 @@ export type NotebookInfo = {
 export interface ServerState {
     // Keys are notebook path. Values denote whether the notebook has ever been loaded in this session.
     notebooks: Record<string, NotebookInfo["loaded"]>,
+    notebookTimestamps: Record<string, number>,
     connectionStatus: "connected" | "disconnected",
     interpreters: Record<string, string>,
     serverVersion: string,
@@ -60,6 +61,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         if (!ServerStateHandler.inst) {
             ServerStateHandler.inst = new ServerStateHandler(new ObjectStateHandler<ServerState>({
                 notebooks: {},
+                notebookTimestamps: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
                 serverVersion: "unknown",
@@ -105,6 +107,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
 
             ServerStateHandler.inst = new ServerStateHandler(new ObjectStateHandler<ServerState>({
                 notebooks: {},
+                notebookTimestamps: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
                 serverVersion: "unknown",
@@ -189,6 +192,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 const pathIdx = state.openNotebooks.indexOf(oldPath)
                 return {
                     notebooks: renameKey(oldPath, newPath),
+                    notebookTimestamps: renameKey(oldPath, newPath),
                     openNotebooks: pathIdx >= 0 ? replaceArrayValue(newPath, pathIdx) : NoUpdate
                 }
             })
@@ -197,8 +201,9 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
 
     static deleteNotebook(path: string) {
         ServerStateHandler.closeNotebook(path, /*reinitialize*/ false).then(() => {
-            // update the server state's notebook dictionary
+            // update the server state's notebook dictionaries
             ServerStateHandler.get.updateField("notebooks", notebooks => notebooks[path] !== undefined ? removeKey(path) : NoUpdate);
+            ServerStateHandler.get.updateField("notebookTimestamps", notebooks => notebooks[path] !== undefined ? removeKey(path) : NoUpdate);
         })
     }
 

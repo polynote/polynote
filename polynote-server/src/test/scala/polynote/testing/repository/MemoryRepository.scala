@@ -24,7 +24,7 @@ class MemoryRepository extends NotebookRepository {
 
   def saveNotebook(nb: Notebook): UIO[Unit] = ZIO.effectTotal(notebooks.put(nb.path, nb))
 
-  def listNotebooks(): UIO[List[String]] = ZIO.effectTotal(notebooks.keys.toList)
+  def listNotebooks(): UIO[List[fsNotebook]] = ZIO.effectTotal(notebooks.keys.toList.map(key => fsNotebook(key, 0)))
 
   def createNotebook(path: String, maybeUriOrContent: Option[String]): UIO[String] =
     ZIO.effectTotal(notebooks.put(path, Notebook(path, ShortList.of(), None))).as(path)

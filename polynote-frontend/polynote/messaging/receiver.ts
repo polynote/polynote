@@ -564,6 +564,9 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             return {
                 notebooks: {
                     [path]: ServerStateHandler.getOrCreateNotebook(path).loaded
+                },
+                notebookTimestamps: {
+                    [path]: Date.now()
                 }
             }
         });
@@ -576,12 +579,17 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             ServerStateHandler.deleteNotebook(path)
             return NoUpdate // `deleteNotebook` already takes care of updating the state.
         });
-        this.receive(messages.ListNotebooks, (s, paths) => {
+        this.receive(messages.ListNotebooks, (s, nbs) => {
             const notebooks = {...s.notebooks}
-            paths.forEach(path => {
-                notebooks[path] = ServerStateHandler.getOrCreateNotebook(path).loaded
+            const notebookTimestamps = {...s.notebookTimestamps};
+            nbs.forEach(nb => {
+                notebooks[nb.path] = ServerStateHandler.getOrCreateNotebook(nb.path).loaded
+                notebookTimestamps[nb.path] = Number(nb.lastSaved); // cast BigInt (uint64) to number
             })
-            return { notebooks: setValue(notebooks) }
+            return {
+                notebooks: setValue(notebooks),
+                notebookTimestamps: setValue(notebookTimestamps)
+            }
         });
         this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates, notebookTemplates, notifications) => {
             // First, we need to check to see if versions match. If they don't, we need to reload to clear out any
@@ -622,6 +630,13 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
         })
         this.receive(messages.SearchNotebooks, (s, query, notebookSearchResults) => {
             return { searchResults: notebookSearchResults }
+        })
+        this.receive(messages.NotebookSaved, (s, path, timestamp) => {
+            return {
+                notebookTimestamps: {
+                    [path]: Number(timestamp) // cast BigInt (uint64) to number
+                }
+            }
         })
     }
 }

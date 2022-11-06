@@ -7,6 +7,7 @@ import {SocketSession} from "../../messaging/comms";
 import {ServerMessageReceiver} from "../../messaging/receiver";
 import {SocketStateHandler} from "../../state/socket_state";
 import {ServerStateHandler} from "../../state/server_state";
+import {FSNotebook} from "../../data/messages";
 
 import 'jest-canvas-mock'; // mocks canvas for loading search icon for e2e test
 
@@ -18,14 +19,17 @@ const socketHandler = SocketStateHandler.create(mockSocket);
 const dispatcher = new ServerMessageDispatcher(socketHandler);
 const receiver = new ServerMessageReceiver();
 
+
+
 test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     const leaf = {
         fullPath: "foo/bar/baz",
-        value: "baz"
+        value: "baz",
+        lastSaved: 0
     };
     const leafState = StateHandler.from(leaf);
     const comp = new LeafEl(dispatcher, leafState);
-    const leafEl  = () => comp.el.querySelector("a.name")!;
+    const leafEl  = () => comp.el.querySelector("a")!;
     expect(leafEl()).toHaveAttribute('href', `notebooks/${leaf.fullPath}`);
 
     const newPath = "foo/bar/baz2";
@@ -49,6 +53,7 @@ describe("BranchComponent", () => {
     const branchState = StateHandler.from<Branch>({
         fullPath: "foo",
         value: "foo",
+        lastSaved: 0,
         children: {}
     });
     const branch = new BranchEl(dispatcher, branchState);
@@ -56,7 +61,8 @@ describe("BranchComponent", () => {
 
     const leaf = {
         fullPath: "bar",
-        value: "bar"
+        value: "bar",
+        lastSaved: 0
     };
     branchState.updateField("children", () => setProperty(leaf.fullPath, leaf))
     test('is updated when its state changes', done => {
@@ -65,7 +71,8 @@ describe("BranchComponent", () => {
 
         const newLeaf = {
             fullPath: "baz",
-            value: "baz"
+            value: "baz",
+            lastSaved: 0
         };
         branchState.updateField("children", () => setProperty(leaf.fullPath, newLeaf))
         expect(branch.childrenEl).toHaveTextContent(newLeaf.value);
@@ -124,6 +131,7 @@ test("A BranchHandler should build a tree out of paths", () => {
     const root = {
         fullPath: "",
         value: "",
+        lastSaved: 0,
         children: {}
     };
     const branchHandler = new BranchHandler(root);
@@ -131,28 +139,28 @@ test("A BranchHandler should build a tree out of paths", () => {
 
     // first add some notebooks at root, easy peasy.
     const simpleNBs = ["foo.ipynb", "bar.ipynb", "baz.ipynb"];
-    simpleNBs.forEach(nb => branchHandler.addPath(nb));
+    simpleNBs.forEach(nb => branchHandler.addPath(nb, 0));
     expect(Object.values(branchHandler.state.children)).toEqual([
-        {fullPath: "foo.ipynb", value: "foo.ipynb"},
-        {fullPath: "bar.ipynb", value: "bar.ipynb"},
-        {fullPath: "baz.ipynb", value: "baz.ipynb"},
+        {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
+        {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
+        {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb"},
     ]);
     expect(tree.el.children).toHaveLength(3);
 
     // next we will add a few directories
     const dirNBs = ["dir/one.ipynb", "dir/two.ipynb", "dir2/three.ipynb", "dir/four.ipynb"];
-    dirNBs.forEach(nb => branchHandler.addPath(nb));
+    dirNBs.forEach(nb => branchHandler.addPath(nb, 0));
     expect(Object.values(branchHandler.state.children)).toEqual([
-        {fullPath: "foo.ipynb", value: "foo.ipynb"},
-        {fullPath: "bar.ipynb", value: "bar.ipynb"},
-        {fullPath: "baz.ipynb", value: "baz.ipynb"},
+        {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
+        {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
+        {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb"},
         {fullPath: "dir", value: "dir", children: {
-            "dir/one.ipynb": {fullPath: "dir/one.ipynb", value: "one.ipynb"},
-            "dir/two.ipynb": {fullPath: "dir/two.ipynb", value: "two.ipynb"},
-            "dir/four.ipynb": {fullPath: "dir/four.ipynb", value: "four.ipynb"},
+            "dir/one.ipynb": {fullPath: "dir/one.ipynb", lastSaved: 0, value: "one.ipynb"},
+            "dir/two.ipynb": {fullPath: "dir/two.ipynb", lastSaved: 0, value: "two.ipynb"},
+            "dir/four.ipynb": {fullPath: "dir/four.ipynb", lastSaved: 0, value: "four.ipynb"},
         }},
         {fullPath: "dir2", value: "dir2", children: {
-            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", value: "three.ipynb"},
+            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", lastSaved: 0, value: "three.ipynb"},
         }}
     ]);
     expect(tree.el.children).toHaveLength(5);
@@ -165,45 +173,45 @@ test("A BranchHandler should build a tree out of paths", () => {
     expect(dir2.children).toHaveLength(1);
 
     // next let's go nuts with some nested notebooks!
-    branchHandler.addPath("dir/another.ipynb");
-    branchHandler.addPath("dir/newdir/more.ipynb");
-    branchHandler.addPath("dir/newdir/newer/even_more.ipynb");
-    branchHandler.addPath("dir/1/2/3/4/surprisinglydeep.ipynb");
-    branchHandler.addPath("dir/1/2/oh_my.ipynb");
-    branchHandler.addPath("path/to/my/notebook.ipynb");
+    branchHandler.addPath("dir/another.ipynb", 0);
+    branchHandler.addPath("dir/newdir/more.ipynb", 0);
+    branchHandler.addPath("dir/newdir/newer/even_more.ipynb", 0);
+    branchHandler.addPath("dir/1/2/3/4/surprisinglydeep.ipynb", 0);
+    branchHandler.addPath("dir/1/2/oh_my.ipynb", 0);
+    branchHandler.addPath("path/to/my/notebook.ipynb", 0);
     expect(branchHandler.state.children).toEqual({
-        "foo.ipynb": {fullPath: "foo.ipynb", value: "foo.ipynb"},
-        "bar.ipynb": {fullPath: "bar.ipynb", value: "bar.ipynb"},
-        "baz.ipynb": {fullPath: "baz.ipynb", value: "baz.ipynb"},
+        "foo.ipynb": {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
+        "bar.ipynb": {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
+        "baz.ipynb": {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb"},
         "dir": {fullPath: "dir", value: "dir", children: {
-                "dir/one.ipynb": {fullPath: "dir/one.ipynb", value: "one.ipynb"},
-                "dir/two.ipynb": {fullPath: "dir/two.ipynb", value: "two.ipynb"},
-                "dir/four.ipynb": {fullPath: "dir/four.ipynb", value: "four.ipynb"},
-                "dir/another.ipynb": {fullPath: "dir/another.ipynb", value: "another.ipynb"},
+                "dir/one.ipynb": {fullPath: "dir/one.ipynb", lastSaved: 0, value: "one.ipynb"},
+                "dir/two.ipynb": {fullPath: "dir/two.ipynb", lastSaved: 0, value: "two.ipynb"},
+                "dir/four.ipynb": {fullPath: "dir/four.ipynb", lastSaved: 0, value: "four.ipynb"},
+                "dir/another.ipynb": {fullPath: "dir/another.ipynb", lastSaved: 0, value: "another.ipynb"},
                 "dir/newdir": {fullPath: "dir/newdir", value: "newdir", children: {
-                    "dir/newdir/more.ipynb": {fullPath: "dir/newdir/more.ipynb", value: "more.ipynb"},
+                    "dir/newdir/more.ipynb": {fullPath: "dir/newdir/more.ipynb", lastSaved: 0, value: "more.ipynb"},
                     "dir/newdir/newer": {fullPath: "dir/newdir/newer", value: "newer", children: {
-                        "dir/newdir/newer/even_more.ipynb": {fullPath: "dir/newdir/newer/even_more.ipynb", value: "even_more.ipynb"},
+                        "dir/newdir/newer/even_more.ipynb": {fullPath: "dir/newdir/newer/even_more.ipynb", lastSaved: 0, value: "even_more.ipynb"},
                     }},
                 }},
                 "dir/1": {fullPath: "dir/1", value: "1", children: {
                     "dir/1/2": {fullPath: "dir/1/2", value: "2", children: {
                         "dir/1/2/3": {fullPath: "dir/1/2/3", value: "3", children: {
                             "dir/1/2/3/4": {fullPath: "dir/1/2/3/4", value: "4", children: {
-                                "dir/1/2/3/4/surprisinglydeep.ipynb": {fullPath: "dir/1/2/3/4/surprisinglydeep.ipynb", value: "surprisinglydeep.ipynb"},
+                                "dir/1/2/3/4/surprisinglydeep.ipynb": {fullPath: "dir/1/2/3/4/surprisinglydeep.ipynb", lastSaved: 0, value: "surprisinglydeep.ipynb"},
                             }},
                         }},
-                        "dir/1/2/oh_my.ipynb": {fullPath: "dir/1/2/oh_my.ipynb", value: "oh_my.ipynb"},
+                        "dir/1/2/oh_my.ipynb": {fullPath: "dir/1/2/oh_my.ipynb", lastSaved: 0, value: "oh_my.ipynb"},
                     }},
                 }},
             }},
         "dir2": {fullPath: "dir2", value: "dir2", children: {
-            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", value: "three.ipynb"},
+            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", lastSaved: 0, value: "three.ipynb"},
         }},
         "path": {fullPath: "path", value: "path", children: {
             "path/to": {fullPath: "path/to", value: "to", children: {
                 "path/to/my": {fullPath: "path/to/my", value: "my", children: {
-                    "path/to/my/notebook.ipynb": {fullPath: "path/to/my/notebook.ipynb", value: "notebook.ipynb"},
+                    "path/to/my/notebook.ipynb": {fullPath: "path/to/my/notebook.ipynb", lastSaved: 0, value: "notebook.ipynb"},
                 }},
             }},
         }},
@@ -216,6 +224,7 @@ test("stress test", () => {
     const root = {
         fullPath: "",
         value: "",
+        lastSaved: 0,
         children: {}
     };
     const branchHandler = new BranchHandler(root);
@@ -233,26 +242,15 @@ test("stress test", () => {
         }
         return path
     }).forEach(p => {
-        branchHandler.addPath(p)
+        branchHandler.addPath(p, 0)
     });
     expect(branchHandler.state).toMatchSnapshot();
-});
-
-
-// We have to mock the creation of iconButtons here because we are inspecting the entire notebookList, and sometimes
-// the iconButtons will fail to load and return null, which causes the querySelector to crash
-jest.mock("../tags", () => {
-    const original = jest.requireActual("../tags");
-    return {
-        ...original,
-        iconButton: jest.fn().mockReturnValue(document.createElement("img"))
-    }
 });
 
 test("NotebookList e2e test", done => {
     const nbList = new NotebookList(dispatcher);
     expect(mockSocket.send).toHaveBeenCalledWith(new messages.ListNotebooks([])); // gets called when the notebook list is initialized.
-    expect(nbList.el.querySelector('.tree-view > ul')).toBeEmptyDOMElement();
+    expect(nbList.el.querySelector('.tree-view > div.tree > ul')).toBeEmptyDOMElement();
 
     // this will trigger the receiver to update global state
     const paths = [...Array(500).keys()].map(x => {
@@ -265,10 +263,13 @@ test("NotebookList e2e test", done => {
         }
         return path
     });
-    SocketSession.global.send(new messages.ListNotebooks(paths));
+
+    const nbs: FSNotebook[] = [];
+    paths.forEach(path => nbs.push(new FSNotebook(path, 0)));
+    SocketSession.global.send(new messages.ListNotebooks(nbs));
 
     waitFor(() => {
-        expect(nbList.el.querySelector('.tree-view > ul')).not.toBeEmptyDOMElement();
+        expect(nbList.el.querySelector('.tree-view > div.tree > ul')).not.toBeEmptyDOMElement();
     }).then(() => {
         expect(nbList.el.outerHTML).toMatchSnapshot()
     })
