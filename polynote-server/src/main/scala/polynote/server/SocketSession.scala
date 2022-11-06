@@ -91,7 +91,8 @@ object SocketSession {
       serverCommit = BuildInfo.commit,
       identity = identity.map(i => Identity(i.name, i.avatar.map(ShortString))),
       sparkTemplates = config.spark.flatMap(_.propertySets).getOrElse(Nil),
-      notebookTemplates = config.behavior.notebookTemplates
+      notebookTemplates = config.behavior.notebookTemplates,
+      notifications = config.notifications == "release_notifications"
     )
 
   def getRunningKernels: RIO[SessionEnv with NotebookManager, RunningKernels] = for {

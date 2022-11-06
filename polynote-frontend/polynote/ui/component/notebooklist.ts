@@ -1,18 +1,32 @@
-import {a, button, div, h2, helpIconButton, iconButton, span, tag, TagElement} from "../tags";
+import {
+    a,
+    button,
+    div,
+    dropdown,
+    DropdownElement,
+    h2,
+    helpIconButton, icon,
+    iconButton,
+    para,
+    span,
+    tag,
+    TagElement
+} from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
-import {deepCopy, diffArray, getShortDate} from "../../util/helpers";
+import {deepCopy, diffArray, getHumanishDate} from "../../util/helpers";
 import {
     Disposable,
-    IDisposable,
     ObjectStateHandler,
-    removeKey,
-    setProperty, setValue,
+    removeKey, setProperty, setValue,
     StateView,
     UpdatePartial
 } from "../../state";
 import {ServerStateHandler} from "../../state/server_state";
 import {SearchModal} from "./search";
-import {NotebookScrollLocationsHandler, NotebookSortingHandler, UserPreferencesHandler} from "../../state/preferences";
+import {
+    NotebookListPrefs,
+    NotebookListPrefsHandler,
+} from "../../state/preferences";
 
 export class NotebookListContextMenu{
     readonly el: TagElement<"div">;
@@ -116,6 +130,92 @@ export class NotebookListContextMenu{
     }
 }
 
+class SortHeader {
+    readonly el: TagElement<"div">
+    private readonly sizeEl: TagElement<"div">;
+    private _state: NotebookListPrefs;
+    private resizeHandlers: ((size: number) => void)[] = [];
+    private sortChangeHandlers: ((prefs: NotebookListPrefs) => void)[] = [];
+    private columns: Record<string, TagElement<'span'>> = {};
+
+    constructor(state: NotebookListPrefs) {
+        const mkCol = (id: NotebookListPrefs['sortColumn'], text: string) => {
+            return span(
+                [id],
+                [text, icon(['ascending'], 'arrow-down'), icon(['descending'], 'arrow-up')]
+            ).click(() => this.columnClick(id))
+        }
+
+        this.el = div(['heading'], [
+            this.sizeEl = div(['sizer'], [div(['border'], [])]),
+            div(['columns'], [
+                this.columns['name'] = mkCol('name', 'Name'),
+                this.columns['date'] = mkCol('date', 'Modified')
+            ])
+        ]);
+        this.sizeEl.mousedown((evt) => this.startResize(evt));
+        this._state = state;
+        this.updateSortArrows();
+    }
+
+    columnClick(column: NotebookListPrefs['sortColumn']) {
+        if (this._state.sortColumn === column) {
+            this._state.descending = !this._state.descending;
+        } else {
+            this._state.sortColumn = column;
+            this._state.descending = false;
+        }
+        this.updateSortArrows();
+        this.sortChangeHandlers.forEach(fn => fn(this._state))
+    }
+
+    private updateSortArrows() {
+        for (const col of Object.values(this.columns)) {
+            col.classList.remove('sorting', 'descending');
+        }
+        this.columns[this._state.sortColumn].classList.add('sorting');
+        if (this._state.descending)
+            this.columns[this._state.sortColumn].classList.add('descending');
+    }
+
+    startResize(evt: Event) {
+        if (evt instanceof MouseEvent) {
+            const dragStartX = evt.clientX;
+            const startWidth = this._state.dateWidth;
+
+            const onMove: (evt: Event) => void = (evt) => {
+                if (evt instanceof MouseEvent) {
+                    const currentX = evt.clientX;
+                    const delta = dragStartX - currentX;
+                    const newWidth = startWidth + delta;
+                    this._state.dateWidth = newWidth;
+                    this.resizeHandlers.forEach(fn => fn(newWidth));
+                }
+            }
+
+            const onRelease = () => {
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onRelease);
+            }
+
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onRelease);
+        }
+    }
+
+    get state(): NotebookListPrefs {
+        return this._state;
+    }
+
+    onResize(fn: (size: number) => void): void {
+        this.resizeHandlers.push(fn);
+    }
+
+    onSortChange(fn: (prefs: NotebookListPrefs) => void): void {
+        this.sortChangeHandlers.push(fn);
+    }
+}
+
 export class NotebookList extends Disposable {
     readonly el: TagElement<"div">;
     readonly header: TagElement<"h2">;
@@ -131,21 +231,12 @@ export class NotebookList extends Disposable {
         searchModal.show();
         searchModal.hide();
 
-        const sortButton = NotebookSortingHandler.state.descending ?
-            iconButton(['arrow', 'arrow-up'], 'Sort by most recently saved', 'arrow-up', 'Sort by most recently saved') :
-            iconButton(['arrow', 'arrow-down'], 'Sort by least recently saved', 'arrow-down', 'Sort by least recently saved');
-
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['left-buttons'], [
                 helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
             ]),
             span(['right-buttons'], [
-                sortButton.click(evt => {
-                    evt.stopPropagation();
-                    NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
-                    this.tree.reverse();
-                }),
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
@@ -161,8 +252,30 @@ export class NotebookList extends Disposable {
         });
         this.tree = new BranchEl(dispatcher, treeState);
 
-        this.el = div(['notebooks-list'], [div(['tree-view'], [this.tree.el])])
-            .listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
+        const updateSortPrefs = (prefs: NotebookListPrefs) => {
+            NotebookListPrefsHandler.update(() => setValue(prefs));
+        }
+
+        const evalDropdownChange = (state: NotebookListPrefs) => {
+            updateSortPrefs(state);
+            this.tree.changeSortType();
+        };
+
+        const sortHeader = new SortHeader(NotebookListPrefsHandler.state);
+        let treeView: TagElement<'div'> | null = null;
+        this.el = div(['notebooks-list'], [treeView = div(['tree-view'], [
+            sortHeader,
+            div(['tree'], [this.tree.el]).listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt))
+        ])]);
+
+        sortHeader.onResize((size) => {
+            if (treeView) {
+                treeView.style.setProperty('--date-width', `${size}px`)
+            }
+            NotebookListPrefsHandler.update(() => setProperty("dateWidth", size))
+        });
+
+        sortHeader.onSortChange(evalDropdownChange);
 
         // Drag n' drop!
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
@@ -181,8 +294,6 @@ export class NotebookList extends Disposable {
                 this.header.classList.remove("disabled")
             }
         })
-
-        NotebookSortingHandler.observeKey("descending", pref => this.renderSortButton(pref)).disposeWith(this)
 
         serverStateHandler.view("notebooks").addPreObserver(oldNotebooks => {
             const oldPaths = Object.keys(oldNotebooks);
@@ -216,20 +327,6 @@ export class NotebookList extends Disposable {
         dispatcher.requestNotebookList()
     }
 
-    private renderSortButton(pref: boolean) {
-        const newEl = pref ?
-            iconButton(['arrow', 'arrow-up'], 'Sort by most recently saved', 'arrow-up', 'Sort by most recently saved') :
-            iconButton(['arrow', 'arrow-down'], 'Sort by least recently saved', 'arrow-down', 'Sort by least recently saved');
-
-        newEl.click(evt => {
-            evt.stopPropagation();
-            NotebookSortingHandler.updateField("descending", (currentState) => setValue(!currentState));
-            this.tree.reverse();
-        });
-
-        this.header.querySelector('.arrow')?.replaceWith(newEl);
-    }
-
     private fileHandler(evt: DragEvent) {
         // prevent browser from displaying the ipynb file.
         evt.stopPropagation();
@@ -238,29 +335,14 @@ export class NotebookList extends Disposable {
         // handle highlighting
         if (evt.type === "dragenter" || evt.type === "dragover") {
             this.dragEnter = evt.target;
-            this.el.classList.add('highlight');
+            displayFileDropPlaceholder(this.tree.children, this.tree.childrenEl, this.dispatcher);
         } else if (evt.type === "drop" || (evt.type === "dragleave" && evt.target === this.dragEnter)) {
-            this.el.classList.remove('highlight');
+            removeFileDropPlaceholder();
         }
 
         // actually handle the file
         if (evt.type === "drop") {
-            const xfer = evt.dataTransfer;
-            if (xfer) {
-                const files = xfer.files;
-                [...files].forEach((file) => {
-                    const reader = new FileReader();
-                    reader.readAsText(file);
-                    reader.onloadend = () => {
-                        if (reader.result) {
-                            // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
-                            this.dispatcher.createNotebook(file.name, reader.result as string);
-                        } else {
-                            throw new Error(`Didn't get any file contents when reading ${file.name}! `)
-                        }
-                    }
-                })
-            }
+            handleFileDrop(evt, this.dispatcher);
         }
     }
 }
@@ -354,10 +436,11 @@ export class BranchEl extends Disposable {
     readonly el: TagElement<"li" | "ul">;
     readonly childrenEl: TagElement<"ul">;
     private readonly branchEl: TagElement<"button">;
-    private children: (BranchEl | LeafEl)[] = [];
+    readonly children: (BranchEl | LeafEl)[] = [];
     readonly path: string;
     _lastSaved: number;
     rootNode: boolean;
+    private dragEnter: EventTarget | null;
     childrenState: StateView<Record<string, Leaf | Branch>>;
 
     constructor(private readonly dispatcher: ServerMessageDispatcher, private readonly branch: StateView<Branch>, private parent?: BranchEl) {
@@ -380,6 +463,11 @@ export class BranchEl extends Disposable {
                 ]),
                 this.childrenEl
             ]);
+
+            // Attach drag n' drop listeners to branch nodes only
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+                this.el.addEventListener(evt, this.fileHandler.bind(this), false)
+            });
         } else {
             this.rootNode = true;
             this.el = this.childrenEl;
@@ -512,57 +600,94 @@ export class BranchEl extends Disposable {
         }
     }
 
-
     /**
      * Helps determine where a new child should be placed in a notebook list by comparing it against the element oldChild.
-     * It sorts based on timestamp if the elements are leafs, or alphabetically if the elements are branches.
+     * It sorts based on user selection if the elements are leafs, or alphabetically if the elements are branches.
      * Branches will always be pinned on top of leaves.
      */
     private shouldInsertLower(newChild: BranchEl | LeafEl, oldChild: BranchEl | LeafEl) {
-        if (oldChild === undefined) return false;
-        else if (newChild instanceof BranchEl) return (oldChild instanceof BranchEl && oldChild.path.localeCompare(newChild.path) < 0);
+        if (oldChild === undefined) return false; // this is the last node, so insert it here
+        const descending = NotebookListPrefsHandler.state.descending;
+        const sortingByDate = NotebookListPrefsHandler.state.sortColumn === "date";
+
+        // First, handle branches
+        if (newChild instanceof BranchEl) {
+            if (!(oldChild instanceof BranchEl)) return false; // if the next node is not a branch, insert it here
+            // descending alphabetical or by date (ascending default)
+            else if (descending || sortingByDate) return oldChild.path.localeCompare(newChild.path) > 0;
+            else return oldChild.path.localeCompare(newChild.path) < 0; // sorting in ascending alphabetical order
+        }
         else if (oldChild instanceof BranchEl) return true;
-        else if (newChild._lastSaved < oldChild._lastSaved) return NotebookSortingHandler.state.descending;
-        else return !NotebookSortingHandler.state.descending;
+
+        if (sortingByDate) {
+            if (descending) return newChild._lastSaved < oldChild._lastSaved;
+            else return newChild._lastSaved > oldChild._lastSaved;
+        } else {
+            if (descending) return oldChild.path.localeCompare(newChild.path) > 0;
+            else return oldChild.path.localeCompare(newChild.path) < 0;
+        }
     }
 
     /**
-     * Reverses the order of the notebook list by flipping the direction of all leaf nodes
-     * Any branches detected will not be flipped, but will be recursively traversed to ensure their leaves are also flipped
+     * Handles a change in the type of sort a user wants
+     * Runs an insertion sort over all non-branch elements recursively down each branch
      */
-    reverse() {
+    changeSortType() {
         let children: HTMLElement = this.rootNode ? this.el : this.childrenEl;
-
         let i = 0;
+
+        // Find the first root (non-branch) node
         while (children.children[i].classList.contains("branch")) {
-            (this.children[i++] as BranchEl).reverse();
+            (this.children[i++] as BranchEl).changeSortType();
         }
 
-        for (let j = children.children.length - 1; i < j; i++, j--) {
-            this.swapChildren(i, j);
-            this.swapChildrenElements(children.children[i], children.children[j]);
+        // Sort branches first, since they are pinned to the top
+        for (let j = 1; j < i; j++) {
+            this.sortEl(j, children);
+        }
+
+        // Now sort all root nodes
+        for (i = i == 0 ? 1 : i; i < children.children.length; i++) {
+            this.sortEl(i, children);
         }
     }
 
     /**
-     * Swaps two children in the children array
+     * Performs the inner operation of the insertion sort by shifting back all elements before moving up the current element.
      */
-    private swapChildren(i: number, j: number) {
-        const b = this.children[i];
-        this.children[i] = this.children[j];
-        this.children[j] = b;
+    private sortEl(i: number, children: HTMLElement) {
+        let curChild = this.children[i];
+        let j = i - 1;
+
+        while (j >= 0 && this.shouldInsertLower(this.children[j], curChild)) {
+            this.children[j+1] = this.children[j];
+            j = j - 1;
+        }
+        this.children[j + 1] = curChild;
+        children.children[j+1].parentNode?.insertBefore(children.children[i], children.children[j+1]);
     }
 
-    /**
-     * Swaps two elements that are in the notebooklist HTML
-     */
-    private swapChildrenElements(nodeA: Element, nodeB: Element) {
-        const parentA = nodeA.parentNode;
-        const siblingA = nodeA.nextSibling === nodeB ? nodeA : nodeA.nextSibling;
+    private fileHandler(evt: DragEvent) {
+        // prevent browser from displaying the ipynb file - we can only do this is if it's a drop, otherwise we need to propagate
+        if (evt.type === "drop") {
+            evt.stopPropagation();
+            evt.preventDefault();
+        }
 
-        if (parentA !== null && nodeB.parentNode !== null) {
-            nodeB.parentNode.insertBefore(nodeA, nodeB);
-            parentA.insertBefore(nodeB, siblingA);
+        // handle displaying the file drop placeholder
+        if (evt.type === "dragenter" || evt.type === "dragover") {
+            this.dragEnter = evt.target;
+            this.expanded = true;
+            displayFileDropPlaceholder(this.children, this.childrenEl, this.dispatcher, this.path);
+        } else if (evt.type === "dragleave" && evt.target === this.dragEnter) {
+            this.expanded = false;
+            removeFileDropPlaceholder();
+        }
+
+        // actually handle the file
+        if (evt.type === "drop") {
+            handleFileDrop(evt, this.dispatcher, this.path);
+            removeFileDropPlaceholder();
         }
     }
 }
@@ -602,7 +727,7 @@ export class LeafEl extends Disposable {
         return a([], `notebooks/${leaf.fullPath}`, [
             span([], [
                 span(['name'], [leaf.value]),
-                span(['date'], [this._lastSaved !== 0 ? getShortDate(this._lastSaved) : ""])
+                span(['date'], [this._lastSaved !== 0 ? getHumanishDate(this._lastSaved) : ""])
             ])
         ], { preventNavigate: true })
             .click(evt => {
@@ -614,4 +739,73 @@ export class LeafEl extends Disposable {
                     })
             })
     }
+}
+
+/**
+ * Processes a file drop, saving it to the specified directory, or the root directory if none is specified
+ */
+function handleFileDrop(evt: DragEvent, dispatcher: ServerMessageDispatcher, path?: string) {
+    const xfer = evt.dataTransfer;
+    if (xfer) {
+        const files = xfer.files;
+        [...files].forEach((file) => {
+            const reader = new FileReader();
+            reader.readAsText(file);
+            reader.onloadend = () => {
+                if (reader.result) {
+                    const finalPath = (path !== undefined ? path + "/" : "") + file.name;
+                    // we know it's a string because we used `readAsText`: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
+                    dispatcher.createNotebook(finalPath, reader.result as string);
+                } else {
+                    throw new Error(`Didn't get any file contents when reading ${file.name}! `)
+                }
+            }
+        })
+    }
+}
+
+/**
+ * Handles determining if a placeholder file should be displayed in the current folder (and displays it if so)
+ */
+function displayFileDropPlaceholder(children: (BranchEl | LeafEl)[], childrenEl: TagElement<"ul">, dispatcher: ServerMessageDispatcher, path?: string) {
+    // First, check if there is an open sub-folder within this folder (meaning it should not be displayed here, but rather in the sub-folder)
+    let openChild = false;
+    for (const child of children) {
+        if (child instanceof BranchEl) {
+            if (child.expanded) {
+                openChild = true;
+                break;
+            }
+        }
+    }
+
+    // If there is no open sub-folder, place it here
+    if (!openChild) {
+        let newEl: TagElement<"span">;
+        removeFileDropPlaceholder();
+
+        newEl = tag('li', ['leaf', 'drop-placeholder'], {}, [
+            a(['name'], ``, [span(['placeholder-leaf'], [
+                span(['placeholder-content'], []),
+                span(['placeholder-content'], [])
+            ])], { preventNavigate: true })
+        ]);
+        childrenEl.prepend(newEl);
+
+        // Handle the special case where a user drops the file onto the placeholder itself, and not a real leafEl
+        newEl.addEventListener("drop", evt => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            handleFileDrop(evt, dispatcher, path);
+            removeFileDropPlaceholder();
+        });
+    }
+}
+
+/**
+ * Finds and removes the placeholder file for drag n' drop
+ */
+function removeFileDropPlaceholder() {
+    const prevPlaceholder = document.querySelector('.drop-placeholder');
+    prevPlaceholder?.remove();
 }

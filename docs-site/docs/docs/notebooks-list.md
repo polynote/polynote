@@ -2,7 +2,8 @@ The Notebooks List displays a listing of all the notebooks in your current works
 
 ![Notebooks List](images/notebooks-list.png){: .centered-image }
 
-Notebooks are displayed in a directory structure. 
+Notebooks are displayed in a directory structure. You can sort the list by name or modified time in ascending or 
+descending order by clicking the respective column header. 
 
 Clicking on a notebook opens it, and clicking on a directory expands or collapses it. 
 
@@ -19,10 +20,11 @@ already exists, a number will be appended at the end of the filename.
 
 !!!tip
     Any slashes in the notebook name will place your new notebook in a directory (creating them if they don't already 
-    exist). 
+    exist).
 
-    Addiitonally, Polynote will add an extension if you don't specify one. 
+    If you'd like to quickly create a new notebook inside of an existing directory, right-click on any directory and select `New Notebook`. 
 
+    Additionally, Polynote will add an extension if you don't specify one. 
     For example, typing in `foo/bar/My Notebook` will create a `My Notebook.ipynb` file and put it into a directory 
     named `bar`, within a directory named `foo`. 
 
@@ -30,6 +32,8 @@ already exists, a number will be appended at the end of the filename.
 ### Importing a notebook 
 
 Importing a notebook into Polynote is as simple as dragging and dropping the file onto the Notebooks List!
+
+If you hover over and then drop your file into a sub-directory, your file will be imported into that sub-directory. 
 
 ![Dragging and Dropping a Notebook](images/drag-drop-notebook.gif)
 

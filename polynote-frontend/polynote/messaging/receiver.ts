@@ -86,6 +86,11 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
         super(socketState, notebookState);
         const updateHandler = notebookState.updateHandler;
 
+        this.receive(messages.Error, (s, code, err) => {
+            ErrorStateHandler.addKernelError(s.path, err);
+            return NoUpdate
+        });
+
         this.socket.view("status").addObserver(status => {
             if (status === "disconnected") {
                 this.state.update(state => ({
@@ -586,7 +591,7 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 notebookTimestamps: setValue(notebookTimestamps)
             }
         });
-        this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates, notebookTemplates) => {
+        this.receive(messages.ServerHandshake, (s, interpreters, serverVersion, serverCommit, identity, sparkTemplates, notebookTemplates, notifications) => {
             // First, we need to check to see if versions match. If they don't, we need to reload to clear out any
             // messed up state!
             if (s.serverVersion !== "unknown" && serverVersion !== s.serverVersion) {
@@ -606,7 +611,8 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
                 serverCommit: setValue(serverCommit),
                 identity: setValue(identity ?? new Identity("Unknown User", null)),
                 sparkTemplates: setValue(sparkTemplates),
-                notebookTemplates: setValue(notebookTemplates)
+                notebookTemplates: setValue(notebookTemplates),
+                notifications: setValue(notifications)
             }
         });
         this.receive(messages.RunningKernels, (s, kernelStatuses) => {

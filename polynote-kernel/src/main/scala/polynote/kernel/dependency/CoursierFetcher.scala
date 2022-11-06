@@ -14,9 +14,12 @@ import coursier.cache.{ArtifactError, Cache, CacheLogger, FileCache}
 import coursier.core._
 import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentials}
 import coursier.error.ResolutionError
+import coursier.error.conflict.UnsatisfiedRule
+import coursier.graph.ReverseModuleTree
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
-import coursier.util.{Artifact, EitherT, Sync}
+import coursier.params.rule.Rule
+import coursier.util.{Artifact, EitherT, ModuleMatchers, Sync}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
@@ -26,7 +29,6 @@ import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFi
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
 import zio.{RIO, Task, UIO, URIO, ZIO, ZManaged}
-
 import scala.concurrent.ExecutionContext
 
 object CoursierFetcher {
@@ -40,8 +42,10 @@ object CoursierFetcher {
     for {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
-      dependencies    = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
-      splitRes       <- splitDependencies(dependencies)
+      configDeps      = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
+      txtUris         = configDeps.filter(_.endsWith(".txt")).map(d => new URI(d))
+      txtDeps        <- ZIO.foreach(txtUris)(parseTxtDeps).map(_.flatten)
+      splitRes       <- splitDependencies(configDeps.filter(!_.endsWith(".txt")) ++ txtDeps)
       (deps, uris)    = splitRes
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
@@ -55,6 +59,10 @@ object CoursierFetcher {
       downloaded     <- ZIO.mapN(downloadDeps.join, downloadUris.join)(_ ++ _)
     } yield downloaded
   }
+
+  def parseTxtDeps(filename: URI): RIO[Blocking, List[String]] = DownloadableFileProvider.getFile(filename).flatMap(file => {
+    file.openStream.use(inputStream => ZIO(scala.io.Source.fromInputStream(inputStream).getLines().filter(_.nonEmpty).map(_.trim).toList))
+  })
 
   private def loadCredentials(credentials: CredentialsConfig): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
     case Some(CredentialsConfig.Coursier(path)) =>
@@ -157,7 +165,7 @@ object CoursierFetcher {
     Resolve(cache)
       .addDependencies(coursierDeps: _*)
       .withRepositories(repos)
-      .withResolutionParams(ResolutionParams())
+      .withResolutionParams(ResolutionParams().addReconciliation(ModuleMatchers.all -> Reconciliation.Relaxed))
       .transformFetcher(countingFetcher)
       .io
       .catchAll(recover)

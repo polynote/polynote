@@ -1,5 +1,6 @@
 import {FullScreenModal} from "../layout/modal";
 import {
+    a,
     button,
     div,
     dropdown,
@@ -25,13 +26,13 @@ import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 import {ServerStateHandler} from "../../state/server_state";
 import {
-    clearStorage,
-    LocalStorageHandler, NotebookSortingHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
+    clearStorage, DismissedNotificationsHandler,
+    LocalStorageHandler, NotebookListPrefsHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
     UserPreferencesHandler, ViewPrefsHandler
 } from "../../state/preferences";
 import {ClientBackup} from "../../state/client_backup";
-import {getShortDate} from "../../util/helpers";
+import {getHumanishDate} from "../../util/helpers";
 
 export class About extends FullScreenModal implements IDisposable {
     private disposable: Disposable;
@@ -86,7 +87,9 @@ export class About extends FullScreenModal implements IDisposable {
     hotkeys() {
         const el = div(["hotkeys-display"], [
             div([], [
-                h2([], ["Press these buttons to do things"])
+                h2([], ["Hotkeys"]),
+                para([], [a([], "https://code.visualstudio.com/docs/getstarted/keybindings#_basic-editing", ["Click here"]),
+                        " to view a full list of the VSCode-style hotkeys supported in code cells."])
             ])
         ]);
 
@@ -193,9 +196,10 @@ export class About extends FullScreenModal implements IDisposable {
         addStorageEl(UserPreferencesHandler)
         addStorageEl(RecentNotebooksHandler)
         addStorageEl(NotebookScrollLocationsHandler)
-        addStorageEl(NotebookSortingHandler)
+        addStorageEl(NotebookListPrefsHandler)
         addStorageEl(OpenNotebooksHandler)
         addStorageEl(ViewPrefsHandler)
+        addStorageEl(DismissedNotificationsHandler)
 
         storageInfoEl.appendChild(storageTable);
 
@@ -286,13 +290,13 @@ export class About extends FullScreenModal implements IDisposable {
                 const statusEl = span([], [
                     span(['status'], [status]),
                 ]);
-                const lastSavedEl = para([], [getShortDate(lastSaved)]);
+                const lastSavedEl = para([], [getHumanishDate(lastSaved)]);
                 let lastExecuted = 0;
                 for (const cellState of Object.values(info.handler.state.cells)) {
                     const startTs = Number(cellState.metadata.executionInfo?.startTs ?? -1);
                     lastExecuted = Math.max(lastExecuted, startTs);
                 }
-                const lastExecutedEl = para([], [lastExecuted !== 0 ? getShortDate(lastExecuted) : "Never"]);
+                const lastExecutedEl = para([], [lastExecuted !== 0 ? getHumanishDate(lastExecuted) : "Never"]);
                 const actions = div([], [
                     loader(),
                     iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {

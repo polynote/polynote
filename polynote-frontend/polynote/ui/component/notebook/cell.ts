@@ -413,8 +413,9 @@ export interface HotkeyInfo {
 export const cellHotkeys: Record<string, HotkeyInfo> = {
     [monaco.KeyCode.UpArrow]: {key: "MoveUp", description: "Move to previous cell."},
     [monaco.KeyCode.DownArrow]: {key: "MoveDown", description: "Move to next cell. If there is no cell below, create it."},
-    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {key: "RunAndSelectNext", description: "Run cell and select the next cell. If there is no cell, create one."},
-    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: {key: "RunAndInsertBelow", description: "Run cell and insert a new cell below it."},
+    [monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter]: {key: "RunSelected", description: "Run the selected cell."},
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {key: "RunAndSelectNext", description: "Run the selected cell and select the next cell. If there is no cell, create one."},
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: {key: "RunAndInsertBelow", description: "Run the selected cell and insert a new cell below it."},
     [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: {key: "SelectPrevious", description: "Move to previous."},
     [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: {key: "SelectNext", description: "Move to next cell. If there is no cell below, create it."},
     [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: {key: "InsertAbove", description: "Insert a cell above this cell"},
@@ -619,6 +620,10 @@ abstract class Cell extends Disposable {
             })
             .when("MoveDownJ", () => {
                 this.notebookState.selectCell(this.id, {relative: "below", editing: true})
+            })
+            .when("RunSelected", () => {
+                this.dispatcher.runActiveCell()
+                return ["stopPropagation", "preventDefault"]
             })
             .when("RunAndSelectNext", () => {
                 this.dispatcher.runActiveCell()
@@ -1659,12 +1664,16 @@ export class CodeCell extends MonacoCell {
 
     protected onDeselected() {
         super.onDeselected();
+        // hide parameter hints on blur
+        this.editor.trigger('keyboard', 'closeParameterHints', null);
         // TODO (overflow widgets)
         // this.overflowDomNode.parentNode?.removeChild(this.overflowDomNode)
         // this.editorEl.closest('.notebook-cells')?.removeEventListener('scroll', this.scrollListener);
-        this.commentHandler.hide()
-        // hide parameter hints on blur
-        this.editor.trigger('keyboard', 'closeParameterHints', null);
+
+        // If no line of text was previously selected, then the user wasn't creating a comment, so hide all comments.
+        if (this.cellState.state.currentSelection === undefined) {
+           this.commentHandler.hide()
+        }
     }
 
     delete() {

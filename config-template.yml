@@ -164,6 +164,14 @@
 #    path: ~/.config/coursier/credentials.properties
 
 #############################################################################################################
+###
+### Notifications. This gives a small pop-up in the UI whenever a new release is available.
+###
+#############################################################################################################
+
+#notifications: release_notifications 
+
+#############################################################################################################
 # Environment variables. This map gets merged with the notebook config's environment variable map at runtime.
 #############################################################################################################
 

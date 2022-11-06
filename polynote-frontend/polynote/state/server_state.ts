@@ -41,6 +41,7 @@ export interface ServerState {
     identity: Identity,
     sparkTemplates: SparkPropertySet[],
     notebookTemplates: string[],
+    notifications: boolean,
     // ephemeral states
     currentNotebook?: string,
     openNotebooks: string[],
@@ -68,6 +69,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 notebookTemplates: [],
+                notifications: false,
                 currentNotebook: undefined,
                 openNotebooks: [],
                 serverOpenNotebooks: [],
@@ -113,6 +115,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 notebookTemplates: [],
+                notifications: false,
                 currentNotebook: undefined,
                 openNotebooks: [],
                 serverOpenNotebooks: [],
