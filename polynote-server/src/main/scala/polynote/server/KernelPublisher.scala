@@ -101,6 +101,8 @@ class KernelPublisher private (
                 _      <- kernelRef.set(Some(kernel))
                 _      <- handleKernelClosed(kernel).forkDaemon
                 _      <- kernel.init().provideSomeLayer[BaseEnv with GlobalEnv](kernelFactoryEnv)
+                // TODO: Is this the right place to call this? And should there be an "until" condition?
+                _      <- kernel.keepAlive().repeat(Schedule.spaced(Duration(1, TimeUnit.SECONDS))).forkDaemon
                 _      <- kernel.info() >>= publishStatus.publish
               } yield kernel
             }.forkDaemon.flatMap(_.join)
