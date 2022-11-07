@@ -637,7 +637,7 @@ export class BranchEl extends Disposable {
         let i = 0;
 
         // Find the first root (non-branch) node
-        while (children.children[i].classList.contains("branch")) {
+        while (children.children[i]?.classList.contains("branch")) {
             (this.children[i++] as BranchEl).changeSortType();
         }
 
