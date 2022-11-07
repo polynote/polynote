@@ -173,9 +173,9 @@ class SortHeader {
         for (const col of Object.values(this.columns)) {
             col.classList.remove('sorting', 'descending');
         }
-        this.columns[this._state.sortColumn].classList.add('sorting');
+        this.columns[this._state.sortColumn]?.classList.add('sorting');
         if (this._state.descending)
-            this.columns[this._state.sortColumn].classList.add('descending');
+            this.columns[this._state.sortColumn]?.classList.add('descending');
     }
 
     startResize(evt: Event) {
@@ -253,7 +253,7 @@ export class NotebookList extends Disposable {
         this.tree = new BranchEl(dispatcher, treeState);
 
         const updateSortPrefs = (prefs: NotebookListPrefs) => {
-            NotebookListPrefsHandler.update(() => setValue(prefs));
+            NotebookListPrefsHandler.update(() => setValue(deepCopy(prefs)));
         }
 
         const evalDropdownChange = (state: NotebookListPrefs) => {
@@ -267,12 +267,14 @@ export class NotebookList extends Disposable {
             sortHeader,
             div(['tree'], [this.tree.el]).listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt))
         ])]);
+        treeView.style.setProperty('--date-width', `${NotebookListPrefsHandler.state.dateWidth}px`)
 
         sortHeader.onResize((size) => {
             if (treeView) {
                 treeView.style.setProperty('--date-width', `${size}px`)
             }
-            NotebookListPrefsHandler.update(() => setProperty("dateWidth", size))
+            NotebookListPrefsHandler.updateField("dateWidth", () => setValue(size));
+            updateSortPrefs(deepCopy(NotebookListPrefsHandler.state));
         });
 
         sortHeader.onSortChange(evalDropdownChange);
