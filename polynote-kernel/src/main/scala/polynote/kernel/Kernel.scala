@@ -52,12 +52,6 @@ trait Kernel {
     "Build Commit:"     -> s"""<span id="commit">${BuildInfo.commit}</span>"""
   ))
 
-  // TODO: Can we get rid of this, since LocalKernel doesn't need this (but the Kernel API still does?)
-  /**
-    * Processes keep alive signal for remote kernel
-    */
-  def keepAlive(): TaskB[Unit] = ZIO.unit
-
   /**
     * Provide all values that currently are known by the kernel
     */

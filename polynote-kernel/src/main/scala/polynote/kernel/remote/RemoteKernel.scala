@@ -32,8 +32,6 @@ class RemoteKernel[ServerAddress](
   private val requestId = new AtomicInteger(0)
   private def nextReq = requestId.getAndIncrement()
 
-  private var lastKeepAlive = Instant.now.toEpochMilli()
-
   private case class RequestHandler[R, T](handler: PartialFunction[RemoteRequestResponse, RIO[R, T]], promise: Promise[Throwable, T], env: R) {
     def run(rep: RemoteRequestResponse): UIO[Unit] = handler match {
       case handler if handler isDefinedAt rep => handler(rep).provide(env).to(promise).unit
@@ -94,7 +92,7 @@ class RemoteKernel[ServerAddress](
     startup        <- request(StartupRequest(nextReq, notebook, ver, config)) {
       case Announce(reqId, remoteAddress) => done(reqId, ()) // TODO: may want to keep the remote address to try reconnecting?
     }
-    _              <- checkKeepAlive().repeat(Schedule.spaced(Duration(5, TimeUnit.SECONDS)).untilInputM(_ => closed.isDone)).forkDaemon
+    _              <- keepAlive().repeat(Schedule.spaced(Duration(5, TimeUnit.SECONDS)).untilInputM(_ => closed.isDone)).forkDaemon
   } yield ()
 
   def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = {
@@ -185,20 +183,11 @@ class RemoteKernel[ServerAddress](
     case KernelInfoResponse(reqId, info) => done(reqId, info)
   }
 
-  override def keepAlive(): TaskB[Unit] = {
+  private def keepAlive(): TaskB[Unit] = {
     request(KeepAliveRequest(nextReq)) {
-      case UnitResponse(reqId) =>
-        lastKeepAlive = Instant.now.toEpochMilli()
-        done(reqId, Unit)
+      case UnitResponse(reqId) => done(reqId, Unit)
     }
   }
-
-  private def checkKeepAlive(): TaskC[Unit] =
-    if (Instant.now().toEpochMilli > lastKeepAlive + 60000) {
-      Logging.warn("No connection detected to remote kernel. Shutting down...")
-      shutdown()
-    }
-    else ZIO.succeed()
 
   private[this] def close(): TaskB[Unit] = for {
     _ <- closed.succeed(())
@@ -245,7 +234,10 @@ class RemoteKernelClient(
 
   private val sessionHandles = new ConcurrentHashMap[Int, StreamingHandles.Service]()
 
-  def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Unit] =
+  private var lastKeepAlive = Instant.now.toEpochMilli()
+
+  def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Unit] = {
+    checkKeepAlive().repeat(Schedule.spaced(Duration(5, TimeUnit.SECONDS))).forkDaemon &>
     requests
       .map(handleRequest)
       .map(z => ZStream.fromEffect(z))
@@ -254,7 +246,20 @@ class RemoteKernelClient(
       .mapM(closeOnShutdown)
       .haltWhen(closed)
       .runDrain.uninterruptible
+  }
 
+  // TODO: Switch to clock and change timing (something like 10 min)
+
+  private def checkKeepAlive(): TaskC[Unit] = ZIO(
+    if (Instant.now().toEpochMilli > lastKeepAlive + 5000) {
+      Logging.warn("No connection detected to remote kernel. Shutting down...")
+      System.exit(10)
+    })
+
+  private def handleKeepAlive(reqId: Int): Task[UnitResponse] = ZIO {
+    lastKeepAlive = Instant.now().toEpochMilli
+    UnitResponse(reqId)
+  }
 
   private def closeOnShutdown(rep: RemoteResponse): URIO[BaseEnv, Unit] = rep match {
     case _: ShutdownResponse => close()
@@ -282,7 +287,7 @@ class RemoteKernelClient(
         case ModifyStreamRequest(reqId, sid, hid, ops)    => kernel.modifyStream(hid, ops).map(ModifyStreamResponse(reqId, _)).provideSomeLayer(streamingHandles(sid))
         case ReleaseHandleRequest(reqId, sid,  ht, hid)   => kernel.releaseHandle(ht, hid).as(UnitResponse(reqId)).provideSomeLayer(streamingHandles(sid))
         case KernelInfoRequest(reqId)                     => kernel.info().map(KernelInfoResponse(reqId, _))
-        case KeepAliveRequest(reqId)                      => ZIO.succeed(UnitResponse(reqId))
+        case KeepAliveRequest(reqId)                      => handleKeepAlive(reqId)
         // TODO: Kernel needs an API to release all streaming handles (then we could let go of elements from sessionHandles map; right now they will just accumulate forever)
         case req => ZIO.succeed(UnitResponse(req.reqId))
       }
@@ -344,6 +349,7 @@ object RemoteKernelClient extends polynote.app.App {
     _               <- kernel.init()
     _               <- publishResponse.publish(Announce(initial.reqId, localAddress))
     _               <- client.run().ensuring(client.close())
+
   } yield 0
 
   def mkEnv(
