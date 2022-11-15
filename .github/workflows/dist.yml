@@ -23,7 +23,7 @@ jobs:
           npm install
           npm run dist
           cd $GITHUB_WORKSPACE
-          sbt dist
+          build/sbt dist
       - name: Add archive to release
         uses: softprops/action-gh-release@v1
         with:
