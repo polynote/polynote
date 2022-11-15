@@ -18,3 +18,4 @@ tmp
 npm-debug.log.*
 run-jar.sh
 /.bsp
+build/*jar*

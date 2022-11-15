@@ -10,7 +10,6 @@ outlined under [Dependencies](#dependencies) prior to attempting to build from
 ## Dependencies
 
 - JDK 8
-- SBT
 - Node.js 13+
 - Python 3.7
 
@@ -27,7 +26,7 @@ npm run dist
 - Build the distribution
 
 ```
-sbt dist
+build/sbt dist
 ```
 
 # Running
