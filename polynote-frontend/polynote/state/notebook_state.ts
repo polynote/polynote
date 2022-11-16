@@ -19,7 +19,7 @@ import {ClientResult, CompileErrors, Output, PosRange, ResultValue, RuntimeError
 
 import * as messages from "../data/messages";
 import {
-    CompletionCandidate,
+    CompletionCandidate, GoToDefinitionResponse,
     HandleData,
     KernelStatusString,
     ModifyStream,
@@ -36,6 +36,9 @@ import {deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
 import {ConstView, ProxyStateView} from "./state_handler";
 import {ServerStateHandler} from "./server_state";
+import {languages} from "monaco-editor";
+import Definition = languages.Definition;
+import {Either, Left, Right} from "../data/codec_types";
 
 
 export type CellPresenceState = {id: number, name: string, color: string, range: PosRange, avatar?: string};
@@ -94,8 +97,9 @@ export interface NotebookState {
     kernel: KernelState,
     // ephemeral states
     activeCellId: number | undefined,
-    activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: () => void } | undefined,
-    activeSignature: { cellId: number, offset: number, resolve: (signature: SignatureHint) => void, reject: () => void } | undefined,
+    activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: (reason?: any) => void } | undefined,
+    activeSignature: { cellId: number, offset: number, resolve: (signature: SignatureHint) => void, reject: (reason?: any) => void } | undefined,
+    requestedDefinition: { cellOrFile: Left<string> | Right<number>, offset: number, resolve: (definition: GoToDefinitionResponse) => void, reject: (reason?: any) => void } | undefined,
     activePresence: Record<number, PresenceState>,
     // map of handle ID to message received.
     activeStreams: Record<number, (HandleData | ModifyStream)[]>,
@@ -187,6 +191,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             activeCellId: undefined,
             activeCompletion: undefined,
             activeSignature: undefined,
+            requestedDefinition: undefined,
             activeStreams: {},
         });
 

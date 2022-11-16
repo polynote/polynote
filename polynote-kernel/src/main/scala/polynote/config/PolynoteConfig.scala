@@ -234,6 +234,7 @@ final case class PolynoteConfig(
   repositories: List[RepositoryConfig] = Nil,
   exclusions: List[String] = Nil,
   dependencies: Map[String, List[String]] = Map.empty,
+  downloadSources: Boolean = true,
   spark: Option[SparkConfig] = None,
   behavior: Behavior = Behavior(),
   security: Security = Security(),

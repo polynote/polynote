@@ -100,6 +100,9 @@ object CancelRequest extends RemoteRequestCompanion[CancelRequest](12)
 final case class KernelInfoRequest(reqId: Int) extends RemoteRequest
 object KernelInfoRequest extends RemoteRequestCompanion[KernelInfoRequest](13)
 
+final case class GoToDefinitionRequest(reqId: Int, id: Either[String, CellID], pos: Int) extends RemoteRequest
+object GoToDefinitionRequest extends RemoteRequestCompanion[GoToDefinitionRequest](14)
+
 object RemoteRequest {
   implicit val discriminated: Discriminated[RemoteRequest, Byte] = Discriminated(byte)
   implicit val codec: Codec[RemoteRequest] = cachedImplicit
@@ -171,6 +174,9 @@ object ErrorResponse extends RemoteResponseCompanion[ErrorResponse](14) {
     e => (e.reqId -> e.err)
   )
 }
+
+final case class GoToDefinitionResponse(reqId: Int, locations: List[DefinitionLocation], source: Option[String]) extends RemoteRequestResponse
+object GoToDefinitionResponse extends RemoteResponseCompanion[GoToDefinitionResponse](14)
 
 object RemoteResponse {
   implicit val discriminated: Discriminated[RemoteResponse, Byte] = Discriminated(byte)

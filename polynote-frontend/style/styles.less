@@ -304,6 +304,22 @@ select {
   }
 }
 
+.dependency-viewer {
+  position: relative;
+}
+
+.dependency-viewer > div {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  bottom: 0;
+
+  .overflow-guard {
+    height: 100% !important;
+  }
+}
+
 .cell-container {
   border-radius: 6px;
   border: 1px solid transparent;
@@ -2084,6 +2100,12 @@ button {
   grid-template-columns: max-content 1px auto 1px max-content;
   grid-template-rows: 100%;
   overflow: hidden;
+
+  &.no-kernel {
+    .right.grid-shell {
+      display: none;
+    }
+  }
 
   &.right-collapsed {
     grid-template-columns: max-content 1px auto 1px 2em;

@@ -53,36 +53,41 @@ export class KernelPane extends Disposable {
         this.header = div(['ui-panel-header'], [this.statusEl]);
 
         const handleCurrentNotebook = (path?: string) => {
-            if (path && path !== "home") {
-                const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
-                // the notebook should already be loaded
-                if (nbInfo?.info) {
-                    if (this.kernels[path] === undefined) {
-                        const kernel = new Kernel(
-                            serverMessageDispatcher,
-                            nbInfo.info.dispatcher,
-                            nbInfo.handler,
-                            'rightPane');
-                        kernel.onDispose.then(() => delete this.kernels[path])
-                        this.kernels[path] = kernel;
+            if (path) {
+                const of = ServerStateHandler.state.openFiles.find(of => of.path === path);
+                if (of && of.type === 'notebook') {
+                    const nbInfo = ServerStateHandler.getOrCreateNotebook(path);
+                    // the notebook should already be loaded
+                    if (nbInfo?.info) {
+                        if (this.kernels[path] === undefined) {
+                            const kernel = new Kernel(
+                                serverMessageDispatcher,
+                                nbInfo.info.dispatcher,
+                                nbInfo.handler,
+                                'rightPane');
+                            kernel.onDispose.then(() => delete this.kernels[path])
+                            this.kernels[path] = kernel;
+                        }
+                        const kernel = this.kernels[path];
+                        document.getElementsByClassName('split-view')[0]?.classList?.remove('no-kernel');
+                        this.el.replaceWith(kernel.el);
+                        this.el = kernel.el
+
+                        this.statusEl.replaceWith(kernel.statusEl);
+                        this.statusEl = kernel.statusEl;
+                    } else {
+                        console.warn("Requested notebook at path", path, "but it wasn't loaded. This is unexpected...")
                     }
-                    const kernel = this.kernels[path];
-                    this.el.replaceWith(kernel.el);
-                    this.el = kernel.el
-
-                    this.statusEl.replaceWith(kernel.statusEl);
-                    this.statusEl = kernel.statusEl;
                 } else {
-                    console.warn("Requested notebook at path", path, "but it wasn't loaded. This is unexpected...")
-                }
-            } else {
-                // no notebook selected
-                // TODO: keep task component around for errors?
-                this.el.replaceWith(placeholderEl);
-                this.el = placeholderEl
+                    // no notebook selected
+                    // TODO: keep task component around for errors?
+                    document.getElementsByClassName('split-view')[0]?.classList?.add('no-kernel');
+                    this.el.replaceWith(placeholderEl);
+                    this.el = placeholderEl
 
-                this.statusEl.replaceWith(placeholderStatus);
-                this.statusEl = placeholderStatus;
+                    this.statusEl.replaceWith(placeholderStatus);
+                    this.statusEl = placeholderStatus;
+                }
             }
         }
         handleCurrentNotebook(ServerStateHandler.state.currentNotebook)

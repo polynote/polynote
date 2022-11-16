@@ -28,7 +28,7 @@ export class Home extends Disposable {
                     const {name, path} = recent;
                     recentNotebooks.appendChild(tag('li', ['notebook-link'], {}, [
                         span([], [path]).click(() => ServerStateHandler.loadNotebook(path, true).then(() => {
-                            ServerStateHandler.selectNotebook(path)
+                            ServerStateHandler.selectFile(path)
                         }))
                     ]))
                 } else {

@@ -4,7 +4,7 @@ package server
 import java.util.concurrent.atomic.AtomicInteger
 import polynote.kernel.util.{Publish, RefMap, UPublish}
 import polynote.kernel.environment.{CurrentNotebook, PublishMessage, PublishResult, PublishStatus}
-import polynote.messages.{CellID, CellResult, ContentEdit, ContentEdits, Error, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
+import polynote.messages.{CellID, CellResult, ContentEdit, ContentEdits, Error, DefinitionLocation, Message, Notebook, NotebookUpdate, ShortList, UpdateCell}
 import polynote.kernel.{BaseEnv, CellEnv, CellStatusUpdate, ClearResults, Completion, GlobalEnv, Kernel, KernelBusyState, KernelError, KernelStatusUpdate, NotebookRef, Presence, PresenceSelection, PresenceUpdate, Result, Signatures, TaskB, TaskG, TaskInfo}
 import polynote.util.VersionBuffer
 import zio.{Has, Hub, Promise, Queue, RIO, RManaged, Ref, Schedule, Semaphore, Task, UIO, ULayer, UManaged, URIO, ZHub, ZIO, ZLayer}
@@ -52,6 +52,9 @@ class KernelPublisher private (
 
   private def cellEnv(cellID: CellID, tapResults: Option[Result => Task[Unit]] = None): ZLayer[Logging, Nothing, CellEnv] =
     baseLayer ++ ZLayer.succeed(interpreterState) ++ cellLayer(cellID, tapResults)
+
+  private def depEnv: ZLayer[Logging, Nothing, CellEnv] =
+    baseLayer ++ ZLayer.succeed(interpreterState) ++ PublishResult.ignore
 
   private val kernelFactoryEnv: ZLayer[BaseEnv, Nothing, CellEnv] =
     cellEnv(CellID(-1))
@@ -142,6 +145,12 @@ class KernelPublisher private (
     kernel      <- kernel
     signatures  <- kernel.parametersAt(cellID, pos).provideSomeLayer[BaseEnv with GlobalEnv](cellEnv(cellID))
   } yield signatures
+
+  def goToDefinition(cellID: Either[String, CellID], pos: Int): RIO[BaseEnv with GlobalEnv, (List[DefinitionLocation], Option[String])] = for {
+    kernel <- kernel
+    env     = cellID.fold(_ => depEnv, id => cellEnv(id))
+    result <- kernel.goToDefinition(cellID, pos).provideSomeLayer[BaseEnv with GlobalEnv](env)
+  } yield result
 
   def kernelStatus(): TaskB[KernelBusyState] = for {
     kernelOpt <- kernelRef.get

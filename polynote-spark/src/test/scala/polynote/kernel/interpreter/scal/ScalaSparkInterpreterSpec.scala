@@ -5,7 +5,7 @@ import org.apache.spark.sql.SparkSession
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.ScalaCompiler
 import polynote.kernel.environment.Env
-import polynote.testing.InterpreterSpec
+import polynote.testing.{InterpreterSpec, MockTaskManager}
 import zio.ZLayer
 import zio.blocking.Blocking
 
@@ -24,7 +24,7 @@ class ScalaSparkInterpreterSpec extends FreeSpec with InterpreterSpec with Match
     Main.createSparkSession()
   }
 
-  lazy val interpreter: ScalaInterpreter = ScalaSparkInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)).runIO()
+  lazy val interpreter: ScalaInterpreter = ScalaInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler) ++ MockTaskManager.layer).runIO()
 
 
   "The Scala Spark Kernel" - {

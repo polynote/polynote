@@ -68,7 +68,7 @@ export class SearchModal extends Modal implements IDisposable {
                 newRow.addEventListener('click', () => {
                     ServerStateHandler.loadNotebook(result.path, true)
                         .then(() => {
-                            ServerStateHandler.selectNotebook(result.path)
+                            ServerStateHandler.selectFile(result.path)
                             const nbInfo = ServerStateHandler.getOrCreateNotebook(result.path);
                             nbInfo.handler.selectCell(result.cellID);
                         })

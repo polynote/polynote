@@ -14,13 +14,15 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, Cur
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.{BaseEnv, CompileErrors, Completion, CompletionType, GlobalEnv, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, ResultValue, ScalaCompiler, Signatures}
-import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
+import polynote.messages.{CellID, DefinitionLocation, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
+import zio.ZIO.effect
 import zio.blocking.{Blocking, effectBlocking}
 import zio.internal.Executor
 import zio.{Has, RIO, Runtime, Semaphore, Task, UIO, ZIO}
 
 import java.io.{FileReader, PrintWriter, StringWriter}
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths, StandardOpenOption}
 import java.util
@@ -128,6 +130,21 @@ class PythonInterpreter private[python] (
     resState        <- run(compiled, decls, globals, state)
   } yield resState
 
+  private def extractParamsFast(jep: Jep, jediDefinition: PyObject): List[(String, String)] = {
+    val sigs = jediDefinition.getAttr("get_signatures", classOf[PyCallable])
+      .callAs(classOf[Array[PyObject]])
+
+    sigs.headOption.toList.flatMap {
+      sig => sig.getAttr("params", classOf[Array[PyObject]]).toList.map {
+        param =>
+          val str = param.getAttr("to_string", classOf[PyCallable]).callAs(classOf[String])
+          str.split(':').toList match {
+            case first :: rest => (first, rest.mkString(":"))
+          }
+      }
+    }
+  }
+
   private def extractParams(jep: Jep, jediDefinition: PyObject): List[(String, String)] = {
     // TODO: this lambda is getting a bit unwieldy.
     val getParams = jep.getValue("lambda jediDef: list(map(lambda p: [p.name, next(iter(map(lambda t: t.name, p.infer())), None)], sum([s.params for s in jediDef.get_signatures()], [])))", classOf[PyCallable])
@@ -143,21 +160,19 @@ class PythonInterpreter private[python] (
     globals => jep {
       jep =>
         val jedi = jep.getValue("jedi.Interpreter", classOf[PyCallable])
-        val lines = code.substring(0, pos).split('\n')
-        val lineNo = lines.length
-        val col = lines.last.length
+        val (lineNo, col) = posToLineAndColumn(code, pos)
+        println(lineNo, col)
         val pyCompletions = jedi.callAs[PyObject](classOf[PyObject], code, Array(globals))
           .getAttr("complete", classOf[PyCallable])
           .callAs(classOf[Array[PyObject]], Integer.valueOf(lineNo), Integer.valueOf(col))
-
-        pyCompletions.map {
+        val result = pyCompletions.map {
           completion =>
+            val start1 = System.currentTimeMillis()
             val name = completion.getAttr("name", classOf[String])
             val typ = completion.getAttr("type", classOf[String])
             // TODO: can we get better type completions?
             val params = typ match {
-              case "function" =>
-                List(TinyList(extractParams(jep, completion).map { case (a, b) => (TinyString(a), ShortString(b))}))
+              case "function" => List(TinyList(extractParamsFast(jep, completion).map { case (a, b) => (TinyString(a), ShortString(b))}))
               case _ => Nil
             }
             val completionType = typ match {
@@ -172,6 +187,7 @@ class PythonInterpreter private[python] (
             Completion(name, Nil, params, ShortString(""), completionType)
         }.toList
 
+        result
     }
   }
 
@@ -179,9 +195,7 @@ class PythonInterpreter private[python] (
     globals => jep {
       jep =>
         try {
-          val lines = code.substring(0, pos).split('\n')
-          val line = lines.length
-          val col = lines.last.length
+          val (line, col) = posToLineAndColumn(code, pos)
           val jedi = jep.getValue("jedi.Interpreter", classOf[PyCallable])
           val sig = jedi.callAs[PyObject](classOf[PyObject], code, Array(globals))
             .getAttr("get_signatures", classOf[PyCallable])
@@ -212,6 +226,58 @@ class PythonInterpreter private[python] (
             None
         }
     }
+  }
+
+  private def definitionLocations(script: PyObject, line: Int, col: Int) = jep { jep =>
+    val pyNames = script.getAttr("goto", classOf[PyCallable]) // see https://jedi.readthedocs.io/en/latest/docs/api.html#jedi.Script.goto
+      .callAs(
+        classOf[Array[PyObject]],
+        Array[Object](Integer.valueOf(line), Integer.valueOf(col)), // positional args
+        Map[String, Object]("follow_imports" -> Boolean.box(true), "follow_builtin_imports" -> Boolean.box(true)).asJava)
+    pyNames.toList.flatMap {
+      jediName =>
+        val path = jediName.getAttr("module_path", classOf[String])
+        val line = jediName.getAttr("line", classOf[Integer])
+        val column = jediName.getAttr("column", classOf[Integer])
+        if (path != null)
+          Some(DefinitionLocation(s"python://$path", line, column))
+        else None
+    }
+  }
+
+  private def definitionSource(locations: List[DefinitionLocation]) = {
+    for {
+      firstLoc  <- ZIO(locations.headOption).someOrFailException
+      path      <- ZIO(Paths.get(firstLoc.uri.stripPrefix("python://")))
+      source    <- readFile(path)
+    } yield source
+  }.option
+
+  // TODO: we probably need to write out prior code cells, and use the jedi Project (https://jedi.readthedocs.io/en/latest/docs/api.html#jedi.Project)
+  //        to allow finding references to other cells. This will only find references that are external.
+  override def goToDefinition(code: String, pos: Int, state: State): RIO[Blocking with Logging, (List[DefinitionLocation], Option[String])] = {
+    for {
+      globals     <- populateGlobals(state)
+      (line, col)  = posToLineAndColumn(code, pos)
+      jedi        <- jep(_.getValue("jedi.Interpreter", classOf[PyCallable]).callAs(classOf[PyObject], code, Array(globals)))
+      locations   <- definitionLocations(jedi, line, col)
+      source      <- definitionSource(locations)
+    } yield (locations, source)
+  }.catchAllCause(cause => Logging.error(cause).as((Nil, None)))
+
+  override def goToDependencyDefinition(uri: String, pos: Int): RIO[Blocking, (List[DefinitionLocation], Option[String])] = for {
+    path        <- effect(new URI(uri).getPath)
+    // need this just for line/column. Probably should have just used that for position so it could come from front-end
+    codeStr     <- readFile(Paths.get(path))
+    (line, col)  = posToLineAndColumn(codeStr, pos)
+    script      <- jep(_.getValue("jedi.Script", classOf[PyCallable]).callAs(classOf[PyObject], Map[String, Object]("path" -> path).asJava))
+    locations   <- definitionLocations(script, line, col)
+    source      <- definitionSource(locations)
+  } yield (locations, source)
+
+  override def getDependencyContent(uri: String): RIO[Blocking, String] = ZIO {
+    val parsed = new URI(uri)
+    Files.readAllLines(Paths.get(parsed.getPath)).asScala.mkString("\n")
   }
 
   def init(state: State): RIO[InterpreterEnv, State] = for {
@@ -834,6 +900,8 @@ class PythonInterpreter private[python] (
     err.setStackTrace(stackTraceElements)
     err
   }
+
+  override val fileExtensions: Set[String] = Set("py")
 
   protected def errorCause(get: PyCallable): Option[Throwable] =
     Option(get.callAs(classOf[PyObject], "cause")).flatMap {

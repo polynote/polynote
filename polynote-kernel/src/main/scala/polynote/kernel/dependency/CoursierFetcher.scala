@@ -16,7 +16,7 @@ import coursier.credentials.{DirectCredentials, Credentials => CoursierCredentia
 import coursier.error.ResolutionError
 import coursier.ivy.IvyRepository
 import coursier.params.ResolutionParams
-import coursier.util.{Artifact, EitherT, Sync}
+import coursier.util.{Artifact => CoursierArtifact, EitherT, Sync}
 import coursier.{Artifacts, Attributes, Dependency, MavenRepository, Module, ModuleName, Organization, Resolve}
 import polynote.config.{RepositoryConfig, ivy, maven, Credentials => CredentialsConfig}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
@@ -36,7 +36,7 @@ object CoursierFetcher {
   private val excludedOrgs = Set(Organization("org.scala-lang"), Organization("org.apache.spark"))
   private val baseCache = FileCache[ArtifactTask]()
 
-  def fetch(language: String): RIO[Logging with Config with CurrentNotebook with TaskManager with Blocking, List[(Boolean, String, File)]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
+  def fetch(language: String): RIO[Logging with Config with CurrentNotebook with TaskManager with Blocking, List[Artifact]] = TaskManager.run("Coursier", "Dependencies", "Resolving dependencies") {
     for {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
@@ -163,30 +163,49 @@ object CoursierFetcher {
       .catchAll(recover)
   }.flatten  // this is pretty lazy, it's just so we can throw an exception in the main block.
 
+  private def whichClassifiers: RIO[Config, Set[coursier.Classifier]] = for {
+    config   <- Config.access
+  } yield if (config.downloadSources) Set(Classifier.sources) else Set.empty
+
+  private def artifacts(resolution: Resolution, cache: FileCache[ArtifactTask]) = for {
+    runtime          <- ZIO.runtime[Blocking]
+    blockingExecutor  = runtime.environment.get.blockingExecutor.asEC
+    classifiers      <- whichClassifiers
+  } yield Artifacts(new TaskManagedCache(cache, blockingExecutor))
+    .withResolution(resolution)
+    .withClassifiers(classifiers)
+    .withMainArtifacts(true)
+
+  private def isClasspath(pub: Publication) = pub.classifier.isEmpty || pub.classifier.value == "all"
+
   private def download(
     resolution: Resolution,
     cache: FileCache[ArtifactTask],
     maxIterations: Int = 100
-  ): RIO[Blocking with TaskManager with CurrentTask, List[(Boolean, String, File)]] = ZIO.runtime[Blocking].flatMap {
-    runtime =>
-      val blockingExecutor = runtime.environment.get.blockingExecutor.asEC
-      Artifacts(new TaskManagedCache(cache, blockingExecutor)).withResolution(resolution).withMainArtifacts(true).ioResult.map {
-        artifactResult =>
-          artifactResult.detailedArtifacts.toList.map {
-            case (dep, pub, artifact, file) =>
-              (resolution.rootDependencies.contains(dep), artifact.url, file)
-          }
+  ): RIO[Blocking with Config with TaskManager with CurrentTask with Logging, List[Artifact]] =
+    for {
+      artifacts <- artifacts(resolution, cache)
+      result    <- artifacts.ioResult
+      logging   <- Logging.access
+    } yield result.detailedArtifacts.groupBy(_._1.module).toList.flatMap {
+      case (module, downloads) => downloads.find(tup => isClasspath(tup._2)) match {
+        case Some((dep, pub, artifact, file)) =>
+          val sources = downloads.find(_._2.classifier == Classifier.sources).map(_._4)
+          Some(Artifact(resolution.rootDependencies.contains(dep), artifact.url, file, sources))
+        case None =>
+          logging.warnSync(s"Dependency for $module didn't contain any binaries; skipping")
+          None
       }
-  }
+    }
 
-  private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking with Logging, List[(Boolean, String, File)]] = {
+  private def downloadUris(uris: List[URI]): RIO[TaskManager with CurrentTask with Blocking with Logging, List[Artifact]] = {
     ZIO.foreachParN(16)(uris) {
       uri =>
         for {
           download <- TaskManager.runSubtask(uri.toString, uri.toString) {
             fetchUrl(uri, cacheLocation(uri).toFile)
           }
-        } yield (true, uri.toString, download)
+        } yield Artifact(true, uri.toString, download, None)
     }
   }
 
@@ -258,13 +277,13 @@ object CoursierFetcher {
     * Wraps an underlying [[FileCache]] such that each cache task is managed by the TaskManager
     */
   class TaskManagedCache(underlying: FileCache[ArtifactTask], val ec: ExecutionContext) extends Cache[OuterTask] {
-    override def fetch: Artifact => EitherT[OuterTask, String, String] = {
+    override def fetch: CoursierArtifact => EitherT[OuterTask, String, String] = {
       artifact =>
         val name = taskName(artifact.url)
         EitherT(TaskManager.runSubtask(name, name, artifact.url)(logged(_.fetch(artifact).run)))
     }
 
-    override def file(artifact: Artifact): EitherT[OuterTask, ArtifactError, File] = {
+    override def file(artifact: CoursierArtifact): EitherT[OuterTask, ArtifactError, File] = {
       val name = taskName(artifact.url)
       EitherT(TaskManager.runSubtask(name, name, artifact.url)(logged(_.file(artifact).run)))
     }

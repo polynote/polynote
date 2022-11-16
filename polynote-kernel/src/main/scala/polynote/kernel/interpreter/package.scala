@@ -1,7 +1,11 @@
 package polynote.kernel
 
 import polynote.messages.{DeleteCell, MoveCell, NotebookUpdate}
-import zio.{Has, Ref, UIO, ULayer, URIO, ZIO, ZLayer}
+import zio.blocking.{Blocking, effectBlocking}
+import zio.{Has, RIO, Ref, UIO, ULayer, URIO, ZIO, ZLayer}
+
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
 
 package object interpreter {
 
@@ -36,6 +40,24 @@ package object interpreter {
     def empty: UIO[Service] = Ref.make(State.empty).map(new Impl(_))
     def emptyLayer: ULayer[InterpreterState] = empty.toLayer
     def access: URIO[InterpreterState, Service] = ZIO.service[Service]
+  }
+
+  def posToLineAndColumn(code: String, pos: Int): (Int, Int) = {
+    var line = 1
+    var currentPos = 0
+    while (currentPos < pos) {
+      val nextCR = code.indexOf('\n', currentPos)
+      if (nextCR >= pos || nextCR == -1) {
+        return (line, pos - currentPos)
+      }
+      line += 1
+      currentPos = nextCR + 1
+    }
+    (line, 1)
+  }
+
+  def readFile(path: Path): RIO[Blocking, String] = effectBlocking {
+    new String(Files.readAllBytes(path), StandardCharsets.UTF_8)
   }
 
 }

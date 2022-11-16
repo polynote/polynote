@@ -3,19 +3,25 @@ package interpreter
 package scal
 
 import java.lang.reflect.{Constructor, InvocationTargetException}
-
 import scala.reflect.internal.util.{NoPosition, Position}
 import scala.tools.nsc.interactive.Global
-import polynote.messages.CellID
+import polynote.messages.{CellID, DefinitionLocation}
 import zio.blocking.{Blocking, effectBlockingInterrupt}
 import zio.{RIO, Task, ZIO}
 import ScalaInterpreter.{addPositionUpdates, captureLastExpression}
+import polynote.kernel.dependency.Artifact
 import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime, CurrentTask}
+import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
+import zio.clock.Clock
+
+import java.net.URI
+import scala.reflect.io.FileZipArchive
 
 class ScalaInterpreter private[scal] (
   val scalaCompiler: ScalaCompiler,
-  indexer: ClassIndexer
+  indexer: ClassIndexer,
+  scan: SemanticDbScan
 ) extends Interpreter {
   import scalaCompiler.{CellCode, global, Imports}
   import global.{Tree, ValDef, TermName, Modifiers, EmptyTree, TypeTree, Import, Name, Type, Quasiquote, typeOf, atPos, NoType}
@@ -50,9 +56,41 @@ class ScalaInterpreter private[scal] (
     hints          <- completer.paramHints(cellCode, pos + 2)
   } yield hints
 
+  override def goToDefinition(code: String, pos: Int, state: State): RIO[Blocking, (List[DefinitionLocation], Option[String])] = for {
+    collectedState <- injectState(collectState(state)).provideLayer(CurrentRuntime.noRuntime)
+    valDefs         = collectedState.values.mapValues(_._1).values.toList
+    cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n\n$code  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
+    locations      <- completer.locateDefinitions(cellCode, pos)
+  } yield locations
+
+  override def goToDependencyDefinition(uri: String, pos: Int): RIO[BaseEnv, (List[DefinitionLocation], Option[String])] =
+    completer.locateDefinitionsFromDependency(uri, pos)
+
   override def init(state: State): RIO[InterpreterEnv, State] = ZIO.succeed(state)
 
   override def shutdown(): Task[Unit] = ZIO.unit
+
+  override def fileExtensions: Set[String] = Set("scala")
+
+  override def getDependencyContent(uri: String): RIO[Blocking, String] = ZIO {
+    val parsed = new URI(uri)
+    val Seq(jarName, filePath) = parsed.getPath.stripPrefix("/").split('!').toSeq
+    val fileDirParts :+ fileName = filePath.split('/').toSeq
+    for {
+      artifact  <- scalaCompiler.dependencies.find(_.source.exists(_.getName == jarName))
+      source    <- artifact.source
+      insidePath = fileDirParts.mkString("/") + "/"
+      _ = println("TODO: Lots of junky here")
+      zippy = new FileZipArchive(source)
+      dirsy = zippy.allDirs
+      dirEntryHuh = dirsy.get(insidePath)
+      dirEntry  <- new FileZipArchive(source).allDirs.get(insidePath)
+      fileEntry <- dirEntry.entries.get(fileName)
+    } yield fileEntry
+  }.someOrFailException.flatMap {
+    entry =>
+      ZIO(new String(entry.toCharArray))
+  }
 
   ///////////////////////////////////////
   // Overrideable scala-specific stuff //
@@ -94,7 +132,7 @@ class ScalaInterpreter private[scal] (
   // Private scala-specific stuff //
   //////////////////////////////////
 
-  private val completer = ScalaCompleter(scalaCompiler, indexer)
+  private val completer = ScalaCompleter(scalaCompiler, indexer, scan)
 
   // for testing reliably
   private[scal] def awaitIndexer = indexer.await
@@ -210,10 +248,12 @@ class ScalaInterpreter private[scal] (
 
 object ScalaInterpreter {
 
-  def apply(): RIO[Blocking with ScalaCompiler.Provider, ScalaInterpreter] = for {
+  def apply(): RIO[BaseEnv with TaskManager with ScalaCompiler.Provider, ScalaInterpreter] = for {
     compiler <- ScalaCompiler.access
     index    <- ClassIndexer.default
-  } yield new ScalaInterpreter(compiler, index)
+    scan      = new SemanticDbScan(compiler)
+    _        <- scan.init.forkDaemon
+  } yield new ScalaInterpreter(compiler, index, scan)
 
   // capture the last statement in a value Out, if it's a free expression
   def captureLastExpression(global: Global)(trees: List[global.Tree]): List[global.Tree] = {

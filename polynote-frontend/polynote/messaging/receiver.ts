@@ -18,7 +18,7 @@ import {
     valueToUpdate
 } from "../state";
 import * as messages from "../data/messages";
-import {Identity, Message, TaskInfo, TaskStatus} from "../data/messages";
+import {GoToDefinitionResponse, Identity, Message, TaskInfo, TaskStatus} from "../data/messages";
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import match, {purematch} from "../util/match";
 import {ContentEdit} from "../data/content_edit";
@@ -47,6 +47,8 @@ import {
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
+import {IRange, languages, Uri} from "monaco-editor";
+import Definition = languages.Definition;
 
 export class MessageReceiver<S> extends Disposable {
     protected readonly socket: SocketStateHandler;
@@ -132,6 +134,21 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             } else {
                 console.warn("Got signature response but there was no activeSignature, this is a bit odd.", {cell, offset, signatures})
                 return NoUpdate
+            }
+        });
+        this.receive(messages.GoToDefinitionResponse, (s, reqId, location, source) => {
+            if (s.requestedDefinition) {
+                const definition: Definition = location.map(location => {
+                    const range: IRange = {startLineNumber: location.line, endLineNumber: location.line, startColumn: location.column, endColumn: location.column};
+                    const loc: languages.Location = {uri: Uri.parse(location.uri), range};
+                    return loc
+                })
+                s.requestedDefinition.resolve(new GoToDefinitionResponse(reqId, location, source));
+                return {
+                    requestedDefinition: destroy()
+                }
+            } else {
+                return NoUpdate;
             }
         });
         this.receive(messages.NotebookVersion, (s, path, serverGlobalVersion) => {
