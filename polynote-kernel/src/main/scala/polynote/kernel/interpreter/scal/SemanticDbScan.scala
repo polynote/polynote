@@ -1,4 +1,5 @@
-package polynote.kernel.interpreter.scal
+package polynote.kernel.interpreter
+package scal
 
 import polynote.kernel.{BaseEnv, ScalaCompiler}
 import polynote.kernel.dependency.Artifact
@@ -55,7 +56,7 @@ class SemanticDbScan (compiler: ScalaCompiler) {
         val scanFile = for {
           arch <- ZIO(new FileZipArchive(file))
           dirsMap <- ZIO(arch.allDirs)
-          entries <- ZIO.foreach(dirsMap.values.toSeq)(dir => ZIO(dir.entries.values.toSeq))
+          entries <- ZIO.foreach(dirsMap.valuesCompat)(dir => ZIO(dir.entries.valuesCompat))
         } yield for {
           entry <- entries.flatten
         } yield new BatchSourceFile(entry)

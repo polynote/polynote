@@ -1,4 +1,5 @@
-package polynote.kernel.interpreter.scal
+package polynote.kernel.interpreter
+package scal
 
 import polynote.kernel.{Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
 import polynote.messages.{DefinitionLocation, ShortString, TinyList, TinyString}
@@ -286,7 +287,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
       artifact  <- compiler.dependencies.find(_.source.exists(_.getName == jarName))
       source    <- artifact.source
       insidePath = fileDirParts.mkString("/") + "/"
-      dirEntry  <- new FileZipArchive(source).allDirs.get(insidePath)
+      dirEntry  <- new FileZipArchive(source).allDirs.getOpt(insidePath)
       fileEntry <- dirEntry.entries.get(fileName)
     } yield fileEntry
   }.someOrFailException.flatMap {

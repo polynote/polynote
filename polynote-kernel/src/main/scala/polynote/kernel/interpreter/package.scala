@@ -60,4 +60,19 @@ package object interpreter {
     new String(Files.readAllBytes(path), StandardCharsets.UTF_8)
   }
 
+  /**
+    * FileZipArchive#allDirs was changed to a java.util.Map in Scala 2.12. So these two extension methods are to give a
+    * consistent syntax between them
+    */
+  implicit class ScalaMapCompat[K, V](private val self: scala.collection.mutable.HashMap[K, V]) extends AnyVal {
+    def getOpt(key: K): Option[V] = self.get(key)
+    def valuesCompat: Seq[V] = self.values.toSeq
+  }
+
+  implicit class JavaMapCompat[K, V](private val self: java.util.Map[K, V]) extends AnyVal {
+    import scala.collection.JavaConverters._
+    def getOpt(key: K): Option[V] = Option(self.get(key))
+    def valuesCompat: Seq[V] = self.values().asScala.toSeq
+  }
+
 }

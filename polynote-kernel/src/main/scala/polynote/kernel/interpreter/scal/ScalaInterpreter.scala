@@ -80,12 +80,8 @@ class ScalaInterpreter private[scal] (
       artifact  <- scalaCompiler.dependencies.find(_.source.exists(_.getName == jarName))
       source    <- artifact.source
       insidePath = fileDirParts.mkString("/") + "/"
-      _ = println("TODO: Lots of junky here")
-      zippy = new FileZipArchive(source)
-      dirsy = zippy.allDirs
-      dirEntryHuh = dirsy.get(insidePath)
-      dirEntry  <- new FileZipArchive(source).allDirs.get(insidePath)
-      fileEntry <- dirEntry.entries.get(fileName)
+      dirEntry  <- new FileZipArchive(source).allDirs.getOpt(insidePath)
+      fileEntry <- dirEntry.entries.getOpt(fileName)
     } yield fileEntry
   }.someOrFailException.flatMap {
     entry =>
