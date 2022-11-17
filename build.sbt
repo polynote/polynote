@@ -40,7 +40,7 @@ lazy val nativeLibraryPath = {
 }
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
-val scalaVersions = Seq("2.11.12", "2.12.12", "2.13.6")
+val scalaVersions = Seq("2.11.12")
 lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
