@@ -12,6 +12,7 @@ import {
     float64,
     int16,
     int32,
+    int64,
     mapCodec,
     optional,
     Pair,
@@ -574,14 +575,26 @@ export class StartKernel extends Message {
     static get Kill() { return 3; }
 }
 
+export class FSNotebook {
+    static codec = combined(shortStr, int64).to(FSNotebook);
+
+    static unapply(inst: FSNotebook): ConstructorParameters<typeof FSNotebook> {
+        return [inst.path, inst.lastSaved];
+    }
+
+    constructor(readonly path: string, readonly lastSaved: number) {
+        Object.freeze(this);
+    }
+}
+
 export class ListNotebooks extends Message {
-    static codec = combined(arrayCodec(int32, shortStr)).to(ListNotebooks);
+    static codec = combined(arrayCodec(int32, FSNotebook.codec)).to(ListNotebooks);
     static get msgTypeId() { return 13; }
     static unapply(inst: ListNotebooks): ConstructorParameters<typeof ListNotebooks> {
         return [inst.notebooks];
     }
 
-    constructor(readonly notebooks: string[]) {
+    constructor(readonly notebooks: FSNotebook[]) {
         super();
         Object.freeze(this);
     }
@@ -996,9 +1009,27 @@ export class SearchNotebooks extends Message {
     }
 }
 
+export class NotebookSaved extends Message {
+    static codec = combined(shortStr, int64).to(NotebookSaved);
+    static get msgTypeId() { return 35; }
+
+    static unapply(inst: NotebookSaved): ConstructorParameters<typeof NotebookSaved> {
+        return [inst.path, inst.timestamp];
+    }
+
+    constructor(readonly path: string, readonly timestamp: number) {
+        super();
+        Object.freeze(this);
+    }
+
+    isResponse(other: Message): boolean {
+        return other instanceof NotebookSaved
+    }
+}
+
 export class GoToDefinitionRequest extends Message {
     static codec = combined(either(str, cellID), int32, int32).to(GoToDefinitionRequest)
-    static get msgTypeId() { return 35; }
+    static get msgTypeId() { return 36; }
 
     static unapply(inst: GoToDefinitionRequest): ConstructorParameters<typeof GoToDefinitionRequest> {
         return [inst.path, inst.pos, inst.reqId]
@@ -1027,7 +1058,7 @@ export class Location {
 
 export class GoToDefinitionResponse extends Message {
     static codec = combined(int32, arrayCodec(uint8, Location.codec), optional(str)).to(GoToDefinitionResponse);
-    static get msgTypeId() { return 36; }
+    static get msgTypeId() { return 37; }
     static unapply(inst: GoToDefinitionResponse): ConstructorParameters<typeof GoToDefinitionResponse> {
         return [inst.reqId, inst.location, inst.source];
     }
@@ -1040,7 +1071,7 @@ export class GoToDefinitionResponse extends Message {
 
 export class DependencySource extends Message {
     static codec = combined(str, str).to(DependencySource);
-    static get msgTypeId() { return 37; }
+    static get msgTypeId() { return 38; }
 
     static unapply(inst: DependencySource): ConstructorParameters<typeof DependencySource> {
         return [inst.uri, inst.content];
@@ -1089,9 +1120,10 @@ Message.codecs = [
     KeepAlive,        // 32
     MoveCell,         // 33
     SearchNotebooks,  // 34
-    GoToDefinitionRequest,  // 35
-    GoToDefinitionResponse, // 36
-    DependencySource  // 37
+    NotebookSaved,    // 35
+    GoToDefinitionRequest,  // 36
+    GoToDefinitionResponse, // 37
+    DependencySource  // 38
 ];
 
 

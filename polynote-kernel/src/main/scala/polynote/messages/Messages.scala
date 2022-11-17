@@ -382,6 +382,9 @@ object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
 final case class MoveCell(globalVersion: Int, localVersion: Int, id: CellID, after: CellID) extends Message with NotebookUpdate
 object MoveCell extends NotebookUpdateCompanion[MoveCell](33)
 
+final case class NotebookSaved(path: ShortString, timestamp: Long) extends Message
+object NotebookSaved extends MessageCompanion[NotebookSaved](35)
+
 final case class StartKernel(level: Byte) extends Message
 object StartKernel extends MessageCompanion[StartKernel](12) {
   // TODO: should probably make this an enum that codecs to a byte, but don't want to futz with that right now
@@ -391,7 +394,8 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
   final val Kill = 3.toByte
 }
 
-final case class ListNotebooks(paths: List[ShortString]) extends Message
+final case class fsNotebook(path: ShortString, lastSaved: Long)
+final case class ListNotebooks(paths: List[fsNotebook]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
 final case class CreateNotebook(path: ShortString, maybeContent: Option[String] = None, maybeTemplatePath: Option[String] = None) extends Message
@@ -451,7 +455,7 @@ final case class SearchNotebooks(query: ShortString, notebookSearchResults: List
 object SearchNotebooks extends MessageCompanion[SearchNotebooks](34)
 
 final case class GoToDefinitionRequest(source: Either[String, CellID], pos: Int, reqId: Int) extends Message
-object GoToDefinitionRequest extends MessageCompanion[GoToDefinitionRequest](35)
+object GoToDefinitionRequest extends MessageCompanion[GoToDefinitionRequest](36)
 
 /**
   *
@@ -463,10 +467,10 @@ object GoToDefinitionRequest extends MessageCompanion[GoToDefinitionRequest](35)
 final case class DefinitionLocation(uri: String, line: Int, column: Int)
 
 final case class GoToDefinitionResponse(reqId: Int, location: TinyList[DefinitionLocation], source: Option[String]) extends Message
-object GoToDefinitionResponse extends MessageCompanion[GoToDefinitionResponse](36)
+object GoToDefinitionResponse extends MessageCompanion[GoToDefinitionResponse](37)
 
 final case class DependencySource(uri: String, content: String) extends Message
-object DependencySource extends MessageCompanion[DependencySource](37)
+object DependencySource extends MessageCompanion[DependencySource](38)
 
 
 

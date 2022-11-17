@@ -1,5 +1,16 @@
 # Unreleased
 
+# 0.4.10 (Nov 7, 2022)
+**Features:**
+* Added a new design for the notebook list! #1118 
+  * You can now sort notebooks by recently edited timestamp or by name in ascending or descending order. [See docs here. ](https://polynote.org/latest/docs/notebooks-list/) 
+* Support `.txt` dependency lists for JARs #1349 
+  * You can now use `.txt` files as dependencies, where each JAR is listed on a newline. [See docs here. ](https://polynote.org/latest/docs/notebook-configuration/#jvm-dependencies) 
+
+**Bugfixes:**
+* Use relaxed dependency resolution #1300 
+* Remove extra dropdown button on advanced options label #1358 
+
 # 0.4.9 (Oct 18, 2022) 
 **Features:** 
 * Add branch-level granularity for notebook drag n' drop #1298 

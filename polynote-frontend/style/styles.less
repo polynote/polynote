@@ -2023,18 +2023,14 @@ button.inspect.icon-button {
       padding: 5px;
       margin-left: 5px;
 
-      h3 {
-        margin: 4px 0 4px 0;
+      h3:before {
+        content: none;
       }
     }
 
     &.show-advanced {
       .advanced {
         display: block;
-      }
-
-      .expand svg {
-        transform: rotate(90deg);
       }
     }
 
@@ -2264,6 +2260,75 @@ button {
 }
 
 .tree-view {
+  --date-width: 8em;
+  position: relative;
+
+  .heading {
+    scrollbar-gutter: stable;
+    overflow-y: scroll;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2em;
+    border-bottom: 1px solid;
+
+    .sizer {
+      position: absolute;
+      right: var(--date-width);
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      padding-left: 2px;
+      padding-right: 2px;
+      margin-right: -2px;
+      cursor: col-resize;
+      .border {
+        border-left: 1px solid;
+        border-right: 1px solid;
+        height: 100%;
+      }
+    }
+
+    .columns {
+      display: grid;
+      grid-template-columns: auto var(--date-width);
+      height: 100%;
+      width: 100%;
+      line-height: 2em;
+
+      span {
+        padding-left: 8pt;
+        .ascending, .descending {
+          display: none;
+          svg {
+            height: .6em;
+          }
+        }
+      }
+
+      span.sorting {
+        .ascending { display: inline; }
+      }
+
+      span.sorting.descending {
+        .ascending { display: none; }
+        .descending { display: inline; }
+      }
+    }
+  }
+
+  .tree {
+    overflow-y: scroll;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: 2em;
+    scrollbar-gutter: stable;
+    margin-top: 1px;
+  }
+
   ul {
     margin: 0;
     padding: 0;
@@ -2274,7 +2339,7 @@ button {
     li {
       user-select: none;
       cursor: pointer;
-      padding: 0 1em 0 0;
+      padding: 0;
       position: relative;
 
       ul {
@@ -2314,6 +2379,18 @@ button {
         white-space: nowrap;
         text-decoration: none;
       }
+
+    }
+
+    li.leaf > a > span {
+      display: grid;
+      grid-template-columns: auto var(--date-width);
+      width: 100%;
+
+      span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     }
 
     li.leaf > span, li.leaf a {
@@ -2322,10 +2399,17 @@ button {
       display: block;
       outline: none;
 
+      .date {
+        padding-left: 8pt;
+      }
+
       .placeholder-leaf {
-        min-width: 200px;
-        min-height: 32px;
-        border-radius: 4px;
+        height: 20px;
+
+        .placeholder-content {
+          height: 14px;
+          margin: auto 0;
+        }
       }
     }
 
@@ -2339,6 +2423,7 @@ button {
         line-height: 22px;
         background: transparent;
         border-radius: 0;
+        display: block;
 
         .expander {
           position: absolute;
@@ -2386,11 +2471,11 @@ button {
 
 .notebooks-list {
   position: relative;
-  overflow: auto;
   height: 100%;
 
   .tree-view {
-    padding: .5em 0 1.5em;
+    position: absolute;
+    inset: 0;
   }
 
   &.disabled {

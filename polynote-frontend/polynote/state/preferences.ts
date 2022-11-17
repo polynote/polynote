@@ -6,6 +6,11 @@ export type RecentNotebooks = {name: string, path: string}[];
 export type OpenNotebooks = string[]; // paths
 export type NotebookScrollLocations = Record<string, number>; // path -> scrollTop
 export type DismissedNotifications = string[];
+export interface NotebookListPrefs {
+    sortColumn: "name" | "date",
+    descending: boolean,
+    dateWidth: number
+};
 export interface ViewPreferences {
     leftPane: {
         size: string,
@@ -62,6 +67,11 @@ export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("
 export const OpenNotebooksHandler = new LocalStorageHandler<OpenNotebooks>("OpenNotebooks", []);
 export const NotebookScrollLocationsHandler = new LocalStorageHandler<NotebookScrollLocations>("NotebookScrollLocations", {});
 export const DismissedNotificationsHandler = new LocalStorageHandler<DismissedNotifications>("DismissedNotifications", []);
+export const NotebookListPrefsHandler = new LocalStorageHandler<NotebookListPrefs>("NotebookList", {
+    sortColumn: "name",
+    descending: false,
+    dateWidth: 108
+});
 export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
     leftPane: {
         size: '300px',
@@ -70,7 +80,7 @@ export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPr
     rightPane: {
         size: '300px',
         collapsed: false,
-    }
+    },
 });
 
 class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPreferences> {

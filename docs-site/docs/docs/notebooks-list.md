@@ -2,7 +2,9 @@ The Notebooks List displays a listing of all the notebooks in your current works
 
 ![Notebooks List](images/notebooks-list.png){: .centered-image }
 
-Notebooks are displayed in a directory structure. 
+Notebooks are displayed in a directory structure. You can sort the list by name or modified time in ascending or 
+descending order by clicking the respective column header. You can change the column width by clicking and dragging on 
+the divider in the header bar between `Name` and `Modified`. 
 
 Clicking on a notebook opens it, and clicking on a directory expands or collapses it. 
 
