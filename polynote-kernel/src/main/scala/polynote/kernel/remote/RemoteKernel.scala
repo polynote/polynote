@@ -189,7 +189,7 @@ class RemoteKernel[ServerAddress](
 
   private def keepAlive(): TaskB[Unit] = {
     request(KeepAliveRequest(nextReq)) {
-      case UnitResponse(reqId) => done(reqId, Unit)
+      case UnitResponse(reqId) => done(reqId, ())
     }
   }
 
