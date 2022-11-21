@@ -7,7 +7,7 @@ ARG DIST_TAR="polynote-dist.tar.gz"
 WORKDIR /opt
 
 RUN apt update -y && \
-    apt install -y wget python3 python3-dev python3-pip build-essential git
+    apt install -y wget python3 python3-dev python3-pip build-essential
 
 RUN wget -q https://github.com/polynote/polynote/releases/download/$POLYNOTE_VERSION/$DIST_TAR && \
     tar xfzp $DIST_TAR && \
