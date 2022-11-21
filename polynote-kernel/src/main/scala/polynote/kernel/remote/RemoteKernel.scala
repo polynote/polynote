@@ -15,12 +15,13 @@ import polynote.kernel.task.TaskManager
 import polynote.kernel.util.{Publish, RPublish, TPublish, UPublish}
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Layer, Promise, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Layer, Promise, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer, clock}
 import zio.blocking.effectBlocking
+import zio.clock.Clock
 import zio.duration.Duration
 import zio.stream.ZStream
 
-import java.time.Instant
+import java.time.{DateTimeException, Instant}
 import scala.collection.JavaConverters._
 
 class RemoteKernel[ServerAddress](
@@ -82,6 +83,9 @@ class RemoteKernel[ServerAddress](
     case rep: RemoteRequestResponse      => withHandler(rep)(_.run(rep).ignore)
   }
 
+  private val interval = 120000L // 2 minutes in ms
+  private val keepAliveIntervalDuration = Duration(interval, TimeUnit.MILLISECONDS)
+
   def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = for {
     notebookRef    <- CurrentNotebook.access
     pullUpdates    <- notebookRef.updates.interruptWhen(closed.await.ignore).foreach(transport.sendNotebookUpdate).forkDaemon
@@ -92,7 +96,7 @@ class RemoteKernel[ServerAddress](
     startup        <- request(StartupRequest(nextReq, notebook, ver, config)) {
       case Announce(reqId, remoteAddress) => done(reqId, ()) // TODO: may want to keep the remote address to try reconnecting?
     }
-    _              <- keepAlive().repeat(Schedule.spaced(Duration(5, TimeUnit.SECONDS)).untilInputM(_ => closed.isDone)).forkDaemon
+    _              <- keepAlive().repeat(Schedule.spaced(keepAliveIntervalDuration).untilInputM(_ => closed.isDone)).forkDaemon
   } yield ()
 
   def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = {
@@ -234,10 +238,13 @@ class RemoteKernelClient(
 
   private val sessionHandles = new ConcurrentHashMap[Int, StreamingHandles.Service]()
 
-  private var lastKeepAlive = Instant.now.toEpochMilli()
+  private val interval = 600000L // 10 minutes in ms
+  private val keepAliveIntervalDuration = Duration(interval, TimeUnit.MILLISECONDS)
+  private var lastKeepAlive: Long = 0
 
   def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Unit] = {
-    checkKeepAlive().repeat(Schedule.spaced(Duration(5, TimeUnit.SECONDS))).forkDaemon &>
+    clock.currentDateTime.map(dateTime => lastKeepAlive = dateTime.toInstant.toEpochMilli) &>
+    checkKeepAlive().repeat(Schedule.spaced(keepAliveIntervalDuration)).forkDaemon &>
     requests
       .map(handleRequest)
       .map(z => ZStream.fromEffect(z))
@@ -248,18 +255,19 @@ class RemoteKernelClient(
       .runDrain.uninterruptible
   }
 
-  // TODO: Switch to clock and change timing (something like 10 min)
-
-  private def checkKeepAlive(): TaskC[Unit] = ZIO(
-    if (Instant.now().toEpochMilli > lastKeepAlive + 5000) {
-      Logging.warn("No connection detected to remote kernel. Shutting down...")
-      System.exit(10)
-    })
-
-  private def handleKeepAlive(reqId: Int): Task[UnitResponse] = ZIO {
-    lastKeepAlive = Instant.now().toEpochMilli
-    UnitResponse(reqId)
+  private def checkKeepAlive(): TaskC[Unit] = clock.currentDateTime.flatMap { dateTime =>
+    val time = dateTime.toInstant.toEpochMilli
+    if (time > lastKeepAlive + interval) {
+      Logging.warn("No connection detected to remote kernel. Shutting remote kernel down...")
+      ZIO.succeed(System.exit(10))
+    } else ZIO.unit
   }
+
+  private def handleKeepAlive(reqId: Int): ZIO[Clock, DateTimeException, UnitResponse] = {
+    clock.currentDateTime.map(dateTime => lastKeepAlive = dateTime.toInstant.toEpochMilli) &>
+    ZIO.succeed(UnitResponse(reqId))
+  }
+
 
   private def closeOnShutdown(rep: RemoteResponse): URIO[BaseEnv, Unit] = rep match {
     case _: ShutdownResponse => close()
@@ -349,7 +357,6 @@ object RemoteKernelClient extends polynote.app.App {
     _               <- kernel.init()
     _               <- publishResponse.publish(Announce(initial.reqId, localAddress))
     _               <- client.run().ensuring(client.close())
-
   } yield 0
 
   def mkEnv(
