@@ -24,17 +24,29 @@ class ScalaInterpreter private[scal] (
   // Interpreter interface methods //
   ///////////////////////////////////
 
+  /**
+    * Because Polynote's shading tool doesn't know to re-write the classpath for shadow JARs in the Scala metadata,
+    * this is a short-term workaround to re-try a failed cell compilation a few times, which eventually causes the
+    * issue to resolve. Long-term, the best solution is to change how we do shading, or change the compile method to
+    * only retry for certain compilation errors.
+    */
   override def run(code: String, state: State): RIO[InterpreterEnv, State] = for {
-    collectedState <- injectState(collectState(state))
-    valDefs         = collectedState.values.mapValues(_._1).values.toList
-    cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", code, collectedState.prevCells, valDefs, collectedState.imports)
-      .flatMap(_.transformStats(transformCode).pruneInputs())
-    inputNames      = cellCode.inputs.map(_.name.decodedName.toString)
-    inputs          = inputNames.map(collectedState.values).map(_._2)
-    cls            <- scalaCompiler.compileCell(cellCode)
+    (cellCode, inputs, cls) <- compile(code, state)
     resultInstance <- cls.map(cls => runClass(cls, cellCode, inputs, state).map(Some(_))).getOrElse(ZIO.succeed(None))
     resultValues   <- resultInstance.map(resultInstance => getResultValues(state.id, cellCode, resultInstance)).getOrElse(ZIO.succeed(Nil))
   } yield ScalaCellState(state.id, state.prev, resultValues, cellCode, resultInstance)
+
+  private def compile(code: String, state: State) = {
+    for {
+      collectedState <- injectState(collectState(state))
+      valDefs = collectedState.values.mapValues(_._1).values.toList
+      cellCode <- scalaCompiler.cellCode(s"Cell${state.id.toString}", code, collectedState.prevCells, valDefs, collectedState.imports)
+        .flatMap(_.transformStats(transformCode).pruneInputs())
+      inputNames = cellCode.inputs.map(_.name.decodedName.toString)
+      inputs = inputNames.map(collectedState.values).map(_._2)
+      cls <- scalaCompiler.compileCell(cellCode)
+    } yield (cellCode, inputs, cls)
+  }.retryN(3)
 
   override def completionsAt(code: String, pos: Int, state: State): RIO[Blocking, List[Completion]] = for {
     collectedState   <- injectState(collectState(state)).provideLayer(CurrentRuntime.noRuntime)
