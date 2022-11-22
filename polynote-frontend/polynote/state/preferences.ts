@@ -15,11 +15,9 @@ export interface ViewPreferences {
         collapsed: boolean
     },
 };
+export type StickyLeftBarPreferences = {notebooks: boolean, summary: boolean};
 export interface LeftBarPreferences {
-    stickyLeftMenu: {
-        files: boolean,
-        summary: boolean,
-    }
+    stickyLeftBar: StickyLeftBarPreferences
 };
 
 export class LocalStorageHandler<T extends object> extends BaseHandler<T> {
@@ -77,8 +75,8 @@ export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPr
     }
 });
 export const LeftBarPrefsHandler = new LocalStorageHandler<LeftBarPreferences>("LeftBarPreferences", {
-    stickyLeftMenu: {
-        files: true,
+    stickyLeftBar: {
+        notebooks: true,
         summary: false,
     }
 })

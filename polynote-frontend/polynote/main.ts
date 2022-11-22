@@ -1,4 +1,4 @@
-import {div, TagElement} from "./ui/tags";
+import {div, iconButton, TagElement} from "./ui/tags";
 import {MarkdownIt} from "./ui/input/markdown-it";
 import {scala, vega} from "./ui/input/monaco/languages";
 import * as monaco from "monaco-editor";
@@ -7,7 +7,7 @@ import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
 import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
-import {LeftPaneContents, SplitView} from "./ui/layout/splitview";
+import {LeftPaneHandler} from "./ui/component/leftpane";
 import {InsertValue, moveArrayValue, NoUpdate, removeIndex, RemoveValue, RenameKey, setValue,} from "./state";
 import {Tabs} from "./ui/component/tabs";
 import {KernelPane} from "./ui/component/notebook/kernel";
@@ -21,6 +21,7 @@ import {OpenNotebooksHandler, RecentNotebooks, RecentNotebooksHandler} from "./s
 import {ThemeHandler} from "./state/theme";
 import {TableOfContents} from "./ui/component/table_of_contents";
 import {SearchModal} from "./ui/component/search";
+import {SplitView} from "./ui/layout/splitview";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -54,16 +55,21 @@ export class Main {
         // Create the left pane contents
         const nbList = new NotebookList(dispatcher);
         const tableOfContents = new TableOfContents();
-        // Create a searchModal and hide it immediately - this variable enables us to save results even on modal close
+        // Create a searchModal and hide it immediately - this enables us to save results even on modal close
         const searchModal = new SearchModal(dispatcher);
         searchModal.show();
         searchModal.hide();
 
-        const leftPaneContents: LeftPaneContents = {
-            "nbList": {header: nbList.header, el: nbList.el},
-            "tableOfContents": {header: tableOfContents.header, el: tableOfContents.el},
-            "search": searchModal
-        };
+        const leftPaneContents = new LeftPaneHandler([{
+            content: {header: nbList.header, el: nbList.el},
+            nav: {title: "Notebooks", icon: iconButton(['file-system'], 'View Notebooks', 'folder', 'View Files')}
+        }, {
+            content: {header: tableOfContents.header, el: tableOfContents.el},
+            nav: {title: "Summary", icon: iconButton(['list-ul'], 'View Summary', 'list-ul', 'View Summary')}
+        }], [{
+            nav: {title: "Search", icon: iconButton(['search'], 'Search Files', 'search', 'Search Files')},
+            action: () => searchModal.showUI(),
+        }]);
 
         const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
