@@ -4,11 +4,10 @@ import java.io.{ByteArrayOutputStream, File, OutputStream}
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.ConcurrentHashMap
-
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FreeSpec, Matchers}
 import polynote.kernel.BaseEnv
-import polynote.messages.{Notebook, ShortList}
+import polynote.messages.{Notebook, ShortList, fsNotebook}
 import polynote.server.MockServerSpec
 import polynote.server.repository.format.NotebookFormat
 import polynote.server.repository.fs.{NotebookFilesystem, WAL}
@@ -32,6 +31,8 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
     override def createLog(path: Path): RIO[BaseEnv, WAL.WALWriter] = ZIO.succeed(WAL.WALWriter.NoWAL)
 
     override def list(path: Path): RIO[BaseEnv, List[Path]] = ZIO(notebooks.keys().asScala.toList)
+
+    override def lastModified(path: Path): RIO[BaseEnv, Long] = ZIO(1)
 
     override def validate(path: Path): RIO[BaseEnv, Unit] = ZIO.unit  // should be mocked as needed by the test
 
@@ -84,10 +85,10 @@ class FileBasedRepositorySpec extends FreeSpec with Matchers with BeforeAndAfter
 
     "should list all available, supported notebooks" in {
       // initialize notebooks
-      val validNBs = List("validNB1.ipynb", "validNB2.ipynb", "validNB3.ipynb")
-      val invalidNBs = List("invalidNB1.unknown", "invalidNB2.unknown")
-      (validNBs ++ invalidNBs).foreach { path =>
-        tmpFS.writeStringToPath(Paths.get(path), "").runIO
+      val validNBs = List(fsNotebook("validNB1.ipynb", 1), fsNotebook("validNB2.ipynb", 1), fsNotebook("validNB3.ipynb", 1))
+      val invalidNBs = List(fsNotebook("invalidNB1.unknown", 1), fsNotebook("invalidNB2.unknown", 1))
+      (validNBs ++ invalidNBs).foreach { nb =>
+        tmpFS.writeStringToPath(Paths.get(nb.path), "").runIO
       }
 
       repo.listNotebooks().runIO should contain theSameElementsAs(validNBs)

@@ -13,12 +13,14 @@ The Notebooks List displays a listing of all the notebooks in your current works
 
 ![Notebooks List](images/notebooks-list.png){: .centered-image }
 
-Notebooks are displayed in a directory structure. 
+Notebooks are displayed in a directory structure. You can sort the list by name or modified time in ascending or
+descending order by clicking the respective column header. You can change the column width by clicking and dragging on
+the divider in the header bar between `Name` and `Modified`.
 
-Clicking on a notebook opens it, and clicking on a directory expands or collapses it. 
+Clicking on a notebook opens it, and clicking on a directory expands or collapses it.
 
 !!!tip
-    The current workspace can be set in the [Storage Configuration](server-configuration.md#storage).
+The current workspace can be set in the [Storage Configuration](server-configuration.md#storage).
 
 #### Creating a new notebook
 
@@ -32,8 +34,9 @@ already exists, a number will be appended at the end of the filename.
     Any slashes in the notebook name will place your new notebook in a directory (creating them if they don't already 
     exist). 
 
-    Addiitonally, Polynote will add an extension if you don't specify one. 
+    If you'd like to quickly create a new notebook inside of an existing directory, right-click on any directory and select `New Notebook`. 
 
+    Additionally, Polynote will add an extension if you don't specify one. 
     For example, typing in `foo/bar/My Notebook` will create a `My Notebook.ipynb` file and put it into a directory 
     named `bar`, within a directory named `foo`. 
 

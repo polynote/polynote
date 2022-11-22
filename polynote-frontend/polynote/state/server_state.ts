@@ -33,6 +33,7 @@ export type NotebookInfo = {
 export interface ServerState {
     // Keys are notebook path. Values denote whether the notebook has ever been loaded in this session.
     notebooks: Record<string, NotebookInfo["loaded"]>,
+    notebookTimestamps: Record<string, number>,
     connectionStatus: "connected" | "disconnected",
     interpreters: Record<string, string>,
     serverVersion: string,
@@ -40,6 +41,7 @@ export interface ServerState {
     identity: Identity,
     sparkTemplates: SparkPropertySet[],
     notebookTemplates: string[],
+    notifications: boolean,
     // ephemeral states
     currentNotebook?: string,
     openNotebooks: string[],
@@ -59,6 +61,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         if (!ServerStateHandler.inst) {
             ServerStateHandler.inst = new ServerStateHandler(new ObjectStateHandler<ServerState>({
                 notebooks: {},
+                notebookTimestamps: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
                 serverVersion: "unknown",
@@ -66,6 +69,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 notebookTemplates: [],
+                notifications: false,
                 currentNotebook: undefined,
                 openNotebooks: [],
                 serverOpenNotebooks: [],
@@ -103,6 +107,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
 
             ServerStateHandler.inst = new ServerStateHandler(new ObjectStateHandler<ServerState>({
                 notebooks: {},
+                notebookTimestamps: {},
                 connectionStatus: "disconnected",
                 interpreters: {},
                 serverVersion: "unknown",
@@ -110,6 +115,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 identity: new Identity("Unknown User", null),
                 sparkTemplates: [],
                 notebookTemplates: [],
+                notifications: false,
                 currentNotebook: undefined,
                 openNotebooks: [],
                 serverOpenNotebooks: [],
@@ -186,6 +192,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 const pathIdx = state.openNotebooks.indexOf(oldPath)
                 return {
                     notebooks: renameKey(oldPath, newPath),
+                    notebookTimestamps: renameKey(oldPath, newPath),
                     openNotebooks: pathIdx >= 0 ? replaceArrayValue(newPath, pathIdx) : NoUpdate
                 }
             })
@@ -194,8 +201,9 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
 
     static deleteNotebook(path: string) {
         ServerStateHandler.closeNotebook(path, /*reinitialize*/ false).then(() => {
-            // update the server state's notebook dictionary
+            // update the server state's notebook dictionaries
             ServerStateHandler.get.updateField("notebooks", notebooks => notebooks[path] !== undefined ? removeKey(path) : NoUpdate);
+            ServerStateHandler.get.updateField("notebookTimestamps", notebooks => notebooks[path] !== undefined ? removeKey(path) : NoUpdate);
         })
     }
 
@@ -226,13 +234,14 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         })
     }
 
-    static get serverOpenNotebooks(): [string, NotebookInfo][] {
-        return ServerStateHandler.state.serverOpenNotebooks.reduce<[string, NotebookInfo][]>((acc, path) => {
+    static get serverOpenNotebooks(): [string, number, NotebookInfo][] {
+        return ServerStateHandler.state.serverOpenNotebooks.reduce<[string, number, NotebookInfo][]>((acc, path) => {
             const info = this.notebooks[path]
+            const lastSaved = ServerStateHandler.state.notebookTimestamps[path];
             if (info?.loaded) {
-                return [...acc, [path, info]]
+                return [...acc, [path, lastSaved, info]]
             } else if (info?.handler.state.kernel.status !== "disconnected") {
-                return [...acc, [path, info]]
+                return [...acc, [path, lastSaved, info]]
             } else return acc
         }, [])
     }

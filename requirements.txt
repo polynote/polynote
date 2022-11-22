@@ -4,5 +4,4 @@ nbconvert
 numpy
 pandas==1.2.5
 jedi>=0.18.1
-# Jep MRO fix https://github.com/ninia/jep/pull/407
-git+https://github.com/ninia/jep.git@a8e0b649d9eea9389c2536c875c4fa52487c7c51
+jep

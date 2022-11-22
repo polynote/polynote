@@ -28,6 +28,9 @@ both Maven and Ivy resolvers (the type of resolver can be selected in the dropdo
 Additionally, Polynote supports specifying a URL directly to a jar file - such as `file:///home/jars/myCoolLibrary.jar`. 
 Supported schemas include `http` and `s3` (if Spark is enabled). 
 
+You can place your JVM dependencies in a newline-separated `.txt` file and include that file's URL in your dependencies.
+This will unpack the `.txt` and download each dependency individually. Note that this method will cache all of the JARs included. 
+
 !!!warning
     Note that if you specify a jar directly, Polynote will not resolve any transitive dependencies for this jar. In 
     general, we recommend using GAV coordinates if you can.
@@ -53,8 +56,8 @@ documentation](python.md#python-dependencies) for more details.
 By default, Polynote caches JVM dependencies that are specified with URLs, as well as the [virtual environment created
 for your notebook](python.md#python-dependencies). 
 
-You can choose to manually bust the cache by unfolding the Advanced Options pane for your dependency by clicking on the 
-`...` button next to it. 
+You can choose to manually bust the cache by either appending `?nocache` to the end of the dependency, or by 
+unfolding the Advanced Options pane for your dependency by clicking on the `...` button next to it. 
 
 ![Dependency Caching](images/notebook-configuration-cache.png)
 

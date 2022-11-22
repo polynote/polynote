@@ -382,6 +382,9 @@ object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
 final case class MoveCell(globalVersion: Int, localVersion: Int, id: CellID, after: CellID) extends Message with NotebookUpdate
 object MoveCell extends NotebookUpdateCompanion[MoveCell](33)
 
+final case class NotebookSaved(path: ShortString, timestamp: Long) extends Message
+object NotebookSaved extends MessageCompanion[NotebookSaved](35)
+
 final case class StartKernel(level: Byte) extends Message
 object StartKernel extends MessageCompanion[StartKernel](12) {
   // TODO: should probably make this an enum that codecs to a byte, but don't want to futz with that right now
@@ -391,7 +394,8 @@ object StartKernel extends MessageCompanion[StartKernel](12) {
   final val Kill = 3.toByte
 }
 
-final case class ListNotebooks(paths: List[ShortString]) extends Message
+final case class fsNotebook(path: ShortString, lastSaved: Long)
+final case class ListNotebooks(paths: List[fsNotebook]) extends Message
 object ListNotebooks extends MessageCompanion[ListNotebooks](13)
 
 final case class CreateNotebook(path: ShortString, maybeContent: Option[String] = None, maybeTemplatePath: Option[String] = None) extends Message
@@ -422,7 +426,8 @@ final case class ServerHandshake(
   serverCommit: TinyString,
   identity: Option[Identity],
   sparkTemplates: List[SparkPropertySet],
-  notebookTemplates: List[ShortString]
+  notebookTemplates: List[ShortString],
+  notifications: Boolean
 ) extends Message
 object ServerHandshake extends MessageCompanion[ServerHandshake](16)
 

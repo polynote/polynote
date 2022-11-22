@@ -239,6 +239,7 @@ final case class PolynoteConfig(
   security: Security = Security(),
   ui: UI = UI(),
   credentials: Credentials = Credentials(),
+  notifications: String = "",
   env: Map[String, String] = Map.empty,
   static: StaticConfig = StaticConfig()
 )

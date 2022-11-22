@@ -1,5 +1,13 @@
 import * as messages from "../data/messages";
-import {HandleData, ModifyStream, NotebookUpdate, NotebookVersion, ReleaseHandle, TableOp} from "../data/messages";
+import {
+    HandleData,
+    ModifyStream,
+    NotebookUpdate,
+    NotebookVersion,
+    ReleaseHandle,
+    NotebookSaved,
+    TableOp
+} from "../data/messages";
 import {
     ClientResult,
     Output,
