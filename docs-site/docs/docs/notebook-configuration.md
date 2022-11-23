@@ -90,8 +90,9 @@ For more details on using Spark with Polynote, check out the [Spark documentatio
 
 The Kernel configuration contains some miscellaneous configuration that affect the runtime environment of the Kernel. 
 
-First, the **Scala version** can be set (independently of the version running on the server). Currently, only 2.11 and
-2.12 are supported (since those are the versions supported by Spark). 
+First, the **Scala version** can be set (independently of the version running on the server). Currently, 2.11 and
+2.12 are supported (since those are the versions supported by Spark). Support for 2.13 is currently in alpha (build
+against Spark 3.2). 
 
 !!!warning
     The Scala version you select must match that of your Spark installation. If you're unsure what that is, just leave 
