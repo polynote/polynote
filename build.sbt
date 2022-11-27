@@ -16,12 +16,14 @@ val circeYamlVersion: SettingKey[String] = settingKey("circe-yaml version")
 val sparkInstallLocation: SettingKey[String] = settingKey("Location of Spark installation(s)")
 val sparkHome: SettingKey[String] = settingKey("Location of specific Spark installation to use for SPARK_HOME during tests")
 
+val scala_211 = "2.11.12"
+val scala_212 = "2.12.15"
+val scala_213 = "2.13.8"
 
 val versions = new {
   val coursier   = "2.0.0-RC5-6"
   val zio        = "1.0.11"
 }
-
 
 lazy val nativeLibraryPath = {
   val jepPath = sys.env.get("JEP_DIR") orElse Try {
@@ -32,21 +34,21 @@ lazy val nativeLibraryPath = {
       .filterNot(_.isEmpty)
       .map(_ + "/jep")
   }.toOption.flatten orElse
-    sys.env.get("JAVA_LIBRARY_PATH") orElse
-    sys.env.get("LD_LIBRARY_PATH") orElse
-    sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."
+  sys.env.get("JAVA_LIBRARY_PATH") orElse
+  sys.env.get("LD_LIBRARY_PATH") orElse
+  sys.env.get("DYLD_LIBRARY_PATH") getOrElse "."
 
   Seq(jepPath, ".").mkString(File.pathSeparator)
 }
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
-val scalaVersions = Seq("2.11.12", "2.12.12", "2.13.6")
+val scalaVersions = Seq(scala_211, scala_212, scala_213)
 lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
 
 val commonSettings = Seq(
-  scalaVersion := "2.11.12",
+  scalaVersion := scala_212,
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
