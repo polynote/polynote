@@ -218,11 +218,14 @@ class PySparkInterpreter(
            |java_import(gateway.jvm, "org.apache.spark.mllib.api.python.*")
            |java_import(gateway.jvm, "org.apache.spark.sql.*")
            |java_import(gateway.jvm, "org.apache.spark.sql.hive.*")
+           |java_import(gateway.jvm, "org.apache.spark.sql.api.python.*")
+           |
+           |from pyspark.sql import SQLContext
            |
            |__sparkConf = SparkConf(_jvm = gateway.jvm, _jconf = gateway.entry_point.sparkContext().getConf())
            |sc = SparkContext(jsc = gateway.jvm.org.apache.spark.api.java.JavaSparkContext(gateway.entry_point.sparkContext()), gateway = gateway, conf = __sparkConf)
            |spark = SparkSession(sc, gateway.entry_point)
-           |sqlContext = spark._wrapped
+           |sqlContext = SQLContext(spark._sc, spark, spark._jsparkSession.sqlContext())
            |from pyspark.sql import DataFrame
            |
            |
