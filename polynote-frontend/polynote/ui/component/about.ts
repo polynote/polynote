@@ -29,7 +29,7 @@ import {
     clearStorage, DismissedNotificationsHandler,
     LocalStorageHandler, NotebookListPrefsHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
-    UserPreferencesHandler, ViewPrefsHandler
+    UserPreferencesHandler, ViewPrefsHandler, LeftBarPrefsHandler
 } from "../../state/preferences";
 import {ClientBackup} from "../../state/client_backup";
 import {getHumanishDate} from "../../util/helpers";
@@ -199,6 +199,7 @@ export class About extends FullScreenModal implements IDisposable {
         addStorageEl(NotebookListPrefsHandler)
         addStorageEl(OpenNotebooksHandler)
         addStorageEl(ViewPrefsHandler)
+        addStorageEl(LeftBarPrefsHandler)
         addStorageEl(DismissedNotificationsHandler)
 
         storageInfoEl.appendChild(storageTable);

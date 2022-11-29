@@ -1,13 +1,30 @@
-import {div, TagElement} from "../tags";
-import {Disposable, IDisposable, mkDisposable, setProperty, StateHandler, updateProperty} from "../../state";
-import {ViewPreferences, ViewPrefsHandler} from "../../state/preferences";
+import {div, h2, TagElement} from "../tags";
+import {
+    Disposable,
+    IDisposable,
+    mkDisposable,
+    setProperty,
+    StateHandler,
+} from "../../state";
+import {
+    LeftBarPreferences,
+    LeftBarPrefsHandler,
+    ViewPreferences,
+    ViewPrefsHandler
+} from "../../state/preferences";
 import {safeForEach} from "../../util/helpers";
+import {LeftPaneHandler} from "../component/leftpane";
+
+export interface LeftMenuSections {
+    files: boolean,
+    summary: boolean,
+}
 
 /**
  * Holds a classic three-pane display, where the left and right panes can be both resized and collapsed.
  */
 
-export type Pane = { header: TagElement<"h2">, el: TagElement<"div">}
+export type Pane = { header: TagElement<"h2">, el: TagElement<"div"> };
 
 class Dragger extends Disposable {
     readonly el: TagElement<'div'>;
@@ -85,11 +102,13 @@ export class SplitView extends Disposable {
     private leftDragger: Dragger;
     private rightDragger: Dragger;
 
-    constructor(leftPane: Pane, private center: TagElement<"div">, rightPane: Pane) {
+    private readonly leftView: StateHandler<ViewPreferences["leftPane"]>;
+
+    constructor(leftPaneContents: LeftPaneHandler, private center: TagElement<"div">, rightPane: Pane) {
         super()
 
-        const leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
         const rightView = ViewPrefsHandler.lens("rightPane").disposeWith(this);
+        this.leftView = ViewPrefsHandler.lens("leftPane").disposeWith(this);
 
         const resizeObserver = this.centerResizeObserver = new ResizeObserver(([entry]) => this.triggerResize(entry.contentRect.width));
         resizeObserver.observe(center);
@@ -104,34 +123,32 @@ export class SplitView extends Disposable {
             this.endResizeObservers = [];
         })
 
-        const left = div(['grid-shell'], [
-            div(['ui-panel'], [
-                leftPane.header.click(() => this.togglePanel(leftView)),
-                div(['ui-panel-content', 'left'], [leftPane.el])])]);
+        const left = div(['grid-shell'], [leftPaneContents.leftBar, leftPaneContents.leftPane]);
 
         const right = div(['grid-shell'], [
             div(['ui-panel'], [
                 rightPane.header.click(() => this.togglePanel(rightView)),
                 div(['ui-panel-content', 'right'], [rightPane.el])])]);
 
-        const initialPrefs = ViewPrefsHandler.state;
+        const intialViewPrefs = ViewPrefsHandler.state;
+        const initialLeftBarPrefs = LeftBarPrefsHandler.state;
 
         // left pane
         left.classList.add('left');
         left.style.gridArea = 'left';
-        left.style.width = initialPrefs.leftPane.size;
+        left.style.width = intialViewPrefs.leftPane.size;
 
         let dragTimeout = 0;
         let leftX = 0;
         let rightX = 0;
 
         // left dragger
-        const leftDragger = this.leftDragger = new Dragger('left', leftView, left, this);
+        const leftDragger = this.leftDragger = new Dragger('left', this.leftView, left, this);
 
         // right pane
         right.classList.add('right');
         right.style.gridArea = 'right';
-        right.style.width = initialPrefs.rightPane.size;
+        right.style.width = intialViewPrefs.rightPane.size;
 
         // right dragger
         const rightDragger = this.rightDragger = new Dragger('right', rightView, right, this);
@@ -150,11 +167,11 @@ export class SplitView extends Disposable {
                 this.el.classList.remove('right-collapsed');
             }
         }
-        collapseStatus(initialPrefs)
-        ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this)
+        collapseStatus(intialViewPrefs);
+        ViewPrefsHandler.addObserver(collapseStatus).disposeWith(this);
     }
 
-    private togglePanel(state: StateHandler<{collapsed: boolean}>): void {
+    private togglePanel(state: StateHandler<{ collapsed: boolean }>): void {
         this.triggerStartResize(this.centerWidth);
         state.updateAsync(state => setProperty("collapsed", !state.collapsed)).then(() => {
             window.dispatchEvent(new CustomEvent('resize'));

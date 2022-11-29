@@ -1478,7 +1478,7 @@ button.inspect.icon-button {
   }
 }
 
-.ui-panel {
+.ui-panel, .sticky-left-bar {
   h2, h3 {
     font-size: 100%;
     margin: 0;
@@ -1488,7 +1488,9 @@ button.inspect.icon-button {
     grid-area: head;
     font-weight: normal;
   }
+}
 
+.ui-panel {
   & > h2, .ui-panel-header > h2 {
     grid-area: head;
     position: relative;
@@ -2112,6 +2114,51 @@ button {
     }
   }
 
+  .sticky-left-bar {
+    width: 2.5em;
+    height: 100%;
+
+    div {
+      cursor: pointer;
+      padding: 0.25em 0;
+    }
+
+    h2:first-of-type {
+      margin-top: 1em;
+    }
+
+    h2 {
+      transform: translateY(-100%) rotate(90deg);
+      transform-origin: bottom left;
+      font-size: 12px;
+      padding: 0.75em 0 0 0;
+      margin: 0 0.75em;
+    }
+
+    button {
+      padding: 0;
+      margin: 0em 0.4em 0.4em;
+    }
+
+    .notebooks {
+      button {
+        margin-top: 2.5em;
+      }
+    }
+
+    .summary {
+      button {
+        margin-top: 2.25em;
+      }
+    }
+
+    .search {
+      button {
+        margin-top: 1.5em;
+      }
+    }
+  }
+
   &.left-collapsed {
     grid-template-columns: 2em 1px auto 1px max-content;
 
@@ -2122,9 +2169,7 @@ button {
         border: unset;
 
         h2 {
-          transform: translateY(-100%) rotate(90deg);
-          transform-origin: bottom left;
-          width: fit-content;
+         display: none;
 
           .left-buttons, .right-buttons {
             display: none;
@@ -2458,6 +2503,46 @@ button {
 
   &.disabled {
     pointer-events: none;
+  }
+}
+
+.table-of-contents {
+  overflow: auto;
+  height: 100%;
+
+  h2 {
+    font-size: 1.25em;
+    margin: 1em 1.5em 1em 0.75em;
+    padding: 0 0 0 0.75em;
+    font-weight: normal;
+    cursor: pointer;
+    overflow-wrap: break-word;
+  }
+
+  .h2 {
+    margin-left: 2em;
+  }
+
+  .h3 {
+    margin-left: 3em;
+    background-color: transparent !important;
+  }
+
+  .h4 {
+    margin-left: 4em;
+  }
+
+  .h5 {
+    margin-left: 5em;
+  }
+
+  .h6 {
+    margin-left: 6em;
+  }
+
+  .active {
+    font-weight: bold;
+    border-left: 4px solid;
   }
 }
 

@@ -11,8 +11,9 @@ Here, we'll go over the various parts of the UI briefly, and then drill down on 
 This screenshot divides the UI into four sections: 
 
 - The [Toolbar](toolbar.md){: style="color:green"} at the top, which collects buttons for interaction with the notebook
-- The [Notebooks List](notebooks-list.md){: style="color:darkorange"} pane on the left, a file-like browser showing the 
-  notebooks in Polynote's workspace
+- The [left Pane](left-pane.md){: style="color:darkorange"}, which offers easy access to a file-like browser showing the 
+  notebooks in Polynote's workspace, a table of contents showing the headings in your current notebook, and a search button 
+  to search all of Polynote's notebooks. 
 - The [Kernel Pane](kernel-pane.md){: style="color:purple"} on the right, which shows the current state of the notebook. 
 - The [Notebook](notebook.md){: style="color:red"} section itself in the middle, which displays the actual notebook. 
 
