@@ -173,7 +173,6 @@ val `polynote-kernel` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
     "org.scalameta" % "semanticdb-scalac-core" % "4.6.0" cross CrossVersion.full,
-    "org.javassist" % "javassist" % "3.29.2-GA",
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
     "org.scodec" %% "scodec-core" % "1.11.4",
