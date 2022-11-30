@@ -271,13 +271,14 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         })
     }
 
-    static get serverOpenNotebooks(): [string, NotebookInfo][] {
-        return ServerStateHandler.state.serverOpenNotebooks.reduce<[string, NotebookInfo][]>((acc, path) => {
+    static get serverOpenNotebooks(): [string, number, NotebookInfo][] {
+        return ServerStateHandler.state.serverOpenNotebooks.reduce<[string, number, NotebookInfo][]>((acc, path) => {
             const info = this.notebooks[path]
+            const lastSaved = ServerStateHandler.state.notebookTimestamps[path];
             if (info?.loaded) {
-                return [...acc, [path, info]]
+                return [...acc, [path, lastSaved, info]]
             } else if (info?.handler.state.kernel.status !== "disconnected") {
-                return [...acc, [path, info]]
+                return [...acc, [path, lastSaved, info]]
             } else return acc
         }, [])
     }

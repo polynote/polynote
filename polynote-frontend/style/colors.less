@@ -596,17 +596,22 @@ button {
   }
 }
 
+.sticky-left-bar {
+  .active, div:hover, button:hover {
+    border-color: @ui-border;
+    background-color: @button-selected-bg;
+  }
+}
+
 .grid-shell {
   background-color: @ui-background;
 }
 
-.split-view.right-collapsed .right .ui-panel h2:hover,
-.split-view.left-collapsed .left .ui-panel h2:hover{
+.split-view.right-collapsed .right .ui-panel h2:hover {
   background-color: @ui-background-accent;
 }
 
-.split-view.right-collapsed .grid-shell.right,
-.split-view.left-collapsed .grid-shell.left {
+.split-view.right-collapsed .grid-shell.right {
   background-color: @ui-sidebar-header;
 }
 
@@ -715,6 +720,12 @@ button {
         border-color: green;
       }
     }
+  }
+}
+
+.table-of-contents {
+  .active {
+    border-left-color: @ui-sidebar-header;
   }
 }
 

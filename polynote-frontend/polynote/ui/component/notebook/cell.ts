@@ -735,7 +735,6 @@ abstract class MonacoCell extends Cell {
             // overflowWidgetsDomNode: this.overflowDomNode
         });
 
-
         this.editor.onDidChangeCursorSelection(evt => {
             if (this.applyingServerEdits) return // ignore when applying server edits.
 
@@ -771,6 +770,8 @@ abstract class MonacoCell extends Cell {
         cellState.observeKey("editing", editing => {
             if (editing) {
                 this.editor.focus()
+            } else {
+                this.onBlur();
             }
         })
 
@@ -956,6 +957,7 @@ abstract class MonacoCell extends Cell {
     }
 
     protected abstract onChangeModelContent(event: IModelContentChangedEvent): void
+    abstract onBlur(): void; // special method for extra changes that need to occur when blurring this cell
 }
 
 
@@ -979,6 +981,7 @@ export class MarkdownCell extends MonacoCell {
             this.layout(); // re-calculate the layout for the editor, as sometimes it fails to render otherwise
             this.el.classList.replace('text-cell', 'code-cell');
 
+            this.editor.focus();
             this.doSelect();
         });
     }
@@ -1645,6 +1648,8 @@ export class CodeCell extends MonacoCell {
                 .otherwise(() => super.keyAction(key, pos, range, selection)) ?? undefined
         }
     }
+
+    onBlur() {} // special method for extra changes that need to occur when blurring this cell
 
     setDisabled(disabled: boolean) {
         super.setDisabled(disabled);
