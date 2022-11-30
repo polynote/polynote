@@ -2,14 +2,14 @@ package polynote.kernel.util
 
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers, PrivateMethodTester}
-import polynote.kernel.util.TxtParser.{flattenTxtDeps, parseTxtDeps}
+import polynote.kernel.util.DepsParser.{flattenDeps, parseTxtDeps}
 import polynote.testing.ConfiguredZIOSpec
 
 import java.io.{File, FileWriter}
 import java.net.URI
 import java.nio.file.Paths
 
-class TxtParserTest extends FreeSpec with Matchers with MockFactory with ConfiguredZIOSpec with PrivateMethodTester {
+class DepsParserTest extends FreeSpec with Matchers with MockFactory with ConfiguredZIOSpec with PrivateMethodTester {
   def fileManager(fileName: String, content: String): URI = {
     // Create fake directory
     val dir = Paths.get("someDir").toFile
@@ -46,12 +46,10 @@ class TxtParserTest extends FreeSpec with Matchers with MockFactory with Configu
       }
     }
 
-    "flattenTxtDeps" - {
+    "flattenDeps" - {
       "correctly parses a list of dependencies including a .txt file" in {
         val uri = fileManager("someFileName.txt", "ex1.jar\nex2.jar").toString()
-        println(uri)
-
-        flattenTxtDeps(List("ex0.jar", uri, "ex3.jar")).runIO() shouldBe List("ex0.jar", "ex3.jar", "ex1.jar", "ex2.jar")
+        flattenDeps(List("ex0.jar", uri, "ex3.jar")).runIO() shouldBe List("ex0.jar", "ex3.jar", "ex1.jar", "ex2.jar")
       }
     }
   }

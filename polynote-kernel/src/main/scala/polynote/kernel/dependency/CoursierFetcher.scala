@@ -25,7 +25,7 @@ import polynote.config.{RepositoryConfig, ivy, maven, Credentials => Credentials
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
-import polynote.kernel.util.TxtParser.flattenTxtDeps
+import polynote.kernel.util.DepsParser.flattenDeps
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFile}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
@@ -44,8 +44,8 @@ object CoursierFetcher {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
       configDeps      = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
-      splitDeps      <- flattenTxtDeps(configDeps)
-      splitRes       <- splitDependencies(splitDeps)
+      flattenedDeps  <- flattenDeps(configDeps)
+      splitRes       <- splitDependencies(flattenedDeps)
       (deps, uris)    = splitRes
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
