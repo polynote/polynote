@@ -1,5 +1,22 @@
 # Unreleased
 
+# 0.5.0 (Nov 30, 2022) 
+**Features:**
+- Add a table of contents along with a full left navbar redesign #1301 
+  - The new table of contents can be accessed under the `Summary` button in the new left navbar
+  - Headings will automatically be added as you write h1-h6 headings in text cells. Click on a code cell to see where it is 
+  relevant to the closest heading, or click on a heading in the left pane to jump straight to that text cell. 
+  - For full documentation on the new left navbar redesign, [see the docs here. ](https://polynote.org/latest/docs/left-pane/)
+
+**Bugfixes:**
+- Fix a few issues where focusing raw markdown cells didn't always render the old markdown cell you left #1315 
+- Use a workaround to fix occasional compilation issues with shadowjars #1352 
+
+**Misc:**
+- Pin Jep back to its default version #1360 
+- Bump to sbt 1.7.2. and fix slash syntax (thanks @MasseGuillaume) #1350 
+- Mention that Scala 2.13 is in alpha support in docs (thanks @pan3793) #1368
+
 # 0.4.10 (Nov 7, 2022)
 **Features:**
 * Added a new design for the notebook list! #1118 
