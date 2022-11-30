@@ -25,6 +25,7 @@ import polynote.config.{RepositoryConfig, ivy, maven, Credentials => Credentials
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
+import polynote.kernel.util.TxtParser.flattenTxtDeps
 import polynote.kernel.util.{DownloadableFile, DownloadableFileProvider, LocalFile}
 import zio.blocking.{Blocking, effectBlocking}
 import zio.stream.ZStream
@@ -43,9 +44,8 @@ object CoursierFetcher {
       polynoteConfig <- Config.access
       config         <- CurrentNotebook.config
       configDeps      = config.dependencies.flatMap(_.toMap.get(language)).map(_.distinct.toList).getOrElse(Nil)
-      txtUris         = configDeps.filter(_.endsWith(".txt")).map(d => new URI(d))
-      txtDeps        <- ZIO.foreach(txtUris)(parseTxtDeps).map(_.flatten)
-      splitRes       <- splitDependencies(configDeps.filter(!_.endsWith(".txt")) ++ txtDeps)
+      splitDeps      <- flattenTxtDeps(configDeps)
+      splitRes       <- splitDependencies(splitDeps)
       (deps, uris)    = splitRes
       repoConfigs     = config.repositories.map(_.toList).getOrElse(Nil)
       exclusions      = config.exclusions.map(_.toList).getOrElse(Nil)
@@ -59,10 +59,6 @@ object CoursierFetcher {
       downloaded     <- ZIO.mapN(downloadDeps.join, downloadUris.join)(_ ++ _)
     } yield downloaded
   }
-
-  def parseTxtDeps(filename: URI): RIO[Blocking, List[String]] = DownloadableFileProvider.getFile(filename).flatMap(file => {
-    file.openStream.use(inputStream => ZIO(scala.io.Source.fromInputStream(inputStream).getLines().filter(_.nonEmpty).map(_.trim).toList))
-  })
 
   private def loadCredentials(credentials: CredentialsConfig): URIO[Logging, List[DirectCredentials]] = credentials.coursier match {
     case Some(CredentialsConfig.Coursier(path)) =>
