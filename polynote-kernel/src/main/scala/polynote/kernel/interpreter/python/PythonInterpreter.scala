@@ -139,7 +139,7 @@ class PythonInterpreter private[python] (
         param =>
           val str = param.getAttr("to_string", classOf[PyCallable]).callAs(classOf[String])
           str.split(':').toList match {
-            case first :: rest => (first, rest.mkString(":"))
+            case first :: rest => (first.trim, rest.mkString(":").trim)
           }
       }
     }
@@ -167,7 +167,6 @@ class PythonInterpreter private[python] (
           .callAs(classOf[Array[PyObject]], Integer.valueOf(lineNo), Integer.valueOf(col))
         val result = pyCompletions.map {
           completion =>
-            val start1 = System.currentTimeMillis()
             val name = completion.getAttr("name", classOf[String])
             val typ = completion.getAttr("type", classOf[String])
             // TODO: can we get better type completions?

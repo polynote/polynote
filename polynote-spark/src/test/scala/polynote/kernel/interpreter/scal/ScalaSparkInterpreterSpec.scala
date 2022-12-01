@@ -24,7 +24,7 @@ class ScalaSparkInterpreterSpec extends FreeSpec with InterpreterSpec with Match
     Main.createSparkSession()
   }
 
-  lazy val interpreter: ScalaInterpreter = ScalaInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler) ++ MockTaskManager.layer).runIO()
+  lazy val interpreter: ScalaInterpreter = ScalaSparkInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler) ++ MockTaskManager.layer).runIO()
 
 
   "The Scala Spark Kernel" - {
