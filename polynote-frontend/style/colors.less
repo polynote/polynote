@@ -596,17 +596,22 @@ button {
   }
 }
 
+.sticky-left-bar {
+  .active, div:hover, button:hover {
+    border-color: @ui-border;
+    background-color: @button-selected-bg;
+  }
+}
+
 .grid-shell {
   background-color: @ui-background;
 }
 
-.split-view.right-collapsed .right .ui-panel h2:hover,
-.split-view.left-collapsed .left .ui-panel h2:hover{
+.split-view.right-collapsed .right .ui-panel h2:hover {
   background-color: @ui-background-accent;
 }
 
-.split-view.right-collapsed .grid-shell.right,
-.split-view.left-collapsed .grid-shell.left {
+.split-view.right-collapsed .grid-shell.right {
   background-color: @ui-sidebar-header;
 }
 
@@ -636,6 +641,20 @@ button {
 }
 
 .tree-view {
+  .heading {
+    background-color: @ui-background;
+    border-bottom-color: @ui-border;
+
+    .sizer .border {
+      border-left-color: @ui-border-dark;
+      border-right-color: @ui-background-bright;
+    }
+  }
+
+  .tree > ul {
+    background: repeating-linear-gradient(180deg, transparent, transparent 22px, @ui-background 22px, @ui-background 44px);
+  }
+
   .highlight-branch {
     border-color: green;
   }
@@ -659,6 +678,10 @@ button {
       span, a {
         color: @ui-text;
       }
+
+      .date {
+        opacity: 0.6;
+      }
     }
 
     li.leaf a:focus span {
@@ -667,9 +690,8 @@ button {
     }
 
     li.leaf > span, li.leaf a {
-      .placeholder-leaf {
-        color: transparent; // hide the placeholder text
-        background-color: @ui-background;
+      .placeholder-content {
+        background-color: @ui-background-dark;
       }
     }
 
@@ -698,6 +720,12 @@ button {
         border-color: green;
       }
     }
+  }
+}
+
+.table-of-contents {
+  .active {
+    border-left-color: @ui-sidebar-header;
   }
 }
 
@@ -986,6 +1014,11 @@ button.dialog-button {
       border-top-color: @ui-border;
     }
   }
+}
+
+.snackbar {
+  background-color: @ui-background;
+  border-left: 2px solid @ui-selected;
 }
 
 .link-component {

@@ -1,10 +1,9 @@
 package polynote.server.repository
 
 import java.net.URI
-
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FreeSpec, Matchers}
-import polynote.messages.{Notebook, ShortList}
+import polynote.messages.{Notebook, ShortList, fsNotebook}
 import polynote.server.MockServerSpec
 import zio.ZIO
 
@@ -159,14 +158,16 @@ class NotebookRepositorySpec extends FreeSpec with Matchers with MockFactory wit
     }
 
     "should list all notebooks" in {
-      val rootNbs = List("a, b, c")
-      val oneNbs = List("1", "2", "3")
-      val twoNBs = List("!", "@", "#")
+      val rootNbs = List(fsNotebook("a", 0), fsNotebook("b", 0), fsNotebook("c", 0))
+      val oneNbs = List(fsNotebook("1", 0), fsNotebook("2", 0), fsNotebook("3", 0))
+      val twoNBs = List(fsNotebook("!", 0), fsNotebook("@", 0), fsNotebook("#", 0))
       (root.listNotebooks _).expects().once().returning(ZIO.succeed(rootNbs))
       (mount1.listNotebooks _).expects().once().returning(ZIO.succeed(oneNbs))
       (mount2.listNotebooks _).expects().once().returning(ZIO.succeed(twoNBs))
 
-      tr.listNotebooks().runIO should contain theSameElementsAs rootNbs ::: oneNbs.map(s => s"one/$s") ::: twoNBs.map(s => s"two/$s")
+      tr.listNotebooks().runIO should contain theSameElementsAs rootNbs :::
+        oneNbs.map(s => fsNotebook(s"one/${s.path}", s.lastSaved)) :::
+        twoNBs.map(s => fsNotebook(s"two/${s.path}", s.lastSaved))
     }
 
     "should rename notebooks" - {

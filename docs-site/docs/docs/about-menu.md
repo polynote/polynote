@@ -40,7 +40,7 @@ might have forgotten about.
 
 Note that the server keeps a notebook open for 30 seconds after it was last closed.  
 
-![Open Notebooks](images/open-kernels.png){: .centered-image }
+![Open Notebooks](images/open-notebooks.png){: .centered-image }
 
 ### Client-side Backups 
 The client-side backups menu contains a list of all the client-side backups that Polynote occasionally creates of your 

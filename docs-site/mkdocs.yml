@@ -32,7 +32,7 @@ nav:
     - Tour:
       - docs/tour.md
       - Toolbar: docs/toolbar.md
-      - Notebooks List: docs/notebooks-list.md
+      - Left Pane: docs/left-pane.md
       - Kernel Pane: docs/kernel-pane.md
       - Notebook:
         - docs/notebook.md

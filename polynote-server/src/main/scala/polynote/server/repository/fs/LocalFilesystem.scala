@@ -82,6 +82,9 @@ class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
   override def list(path: Path): RIO[BaseEnv, List[Path]] =
     effectBlocking(Files.walk(path, maxDepth, FileVisitOption.FOLLOW_LINKS).iterator().asScala.drop(1).toList)
 
+  override def lastModified(path: Path): RIO[BaseEnv, Long] =
+    effectBlocking(Files.getLastModifiedTime(path).toMillis)
+
   override def validate(path: Path): RIO[BaseEnv, Unit] = {
     if (path.iterator().asScala.length > maxDepth) {
       ZIO.fail(new IllegalArgumentException(s"Input path ($path) too deep, maxDepth is $maxDepth"))

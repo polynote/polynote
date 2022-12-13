@@ -5,6 +5,12 @@ import {deepEquals, diffArray} from "../util/helpers";
 export type RecentNotebooks = {name: string, path: string}[];
 export type OpenNotebooks = string[]; // paths
 export type NotebookScrollLocations = Record<string, number>; // path -> scrollTop
+export type DismissedNotifications = string[];
+export interface NotebookListPrefs {
+    sortColumn: "name" | "date",
+    descending: boolean,
+    dateWidth: number
+};
 export interface ViewPreferences {
     leftPane: {
         size: string,
@@ -14,7 +20,11 @@ export interface ViewPreferences {
         size: string,
         collapsed: boolean
     },
-}
+};
+export type StickyLeftBarPreferences = {notebooks: boolean, summary: boolean};
+export interface LeftBarPreferences {
+    stickyLeftBar: StickyLeftBarPreferences
+};
 
 export class LocalStorageHandler<T extends object> extends BaseHandler<T> {
     private static defaultHandler<T extends object>(key: string, defaultState: T): StateHandler<T> {
@@ -60,6 +70,12 @@ export function clearStorage() {
 export const RecentNotebooksHandler = new LocalStorageHandler<RecentNotebooks>("RecentNotebooks", storage.get("recentNotebooks") ?? []);
 export const OpenNotebooksHandler = new LocalStorageHandler<OpenNotebooks>("OpenNotebooks", []);
 export const NotebookScrollLocationsHandler = new LocalStorageHandler<NotebookScrollLocations>("NotebookScrollLocations", {});
+export const DismissedNotificationsHandler = new LocalStorageHandler<DismissedNotifications>("DismissedNotifications", []);
+export const NotebookListPrefsHandler = new LocalStorageHandler<NotebookListPrefs>("NotebookList", {
+    sortColumn: "name",
+    descending: false,
+    dateWidth: 108
+});
 export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPreferences", {
     leftPane: {
         size: '300px',
@@ -68,8 +84,14 @@ export const ViewPrefsHandler = new LocalStorageHandler<ViewPreferences>("ViewPr
     rightPane: {
         size: '300px',
         collapsed: false,
-    }
+    },
 });
+export const LeftBarPrefsHandler = new LocalStorageHandler<LeftBarPreferences>("LeftBarPreferences", {
+    stickyLeftBar: {
+        notebooks: true,
+        summary: false,
+    }
+})
 
 class UserPreferencesStorageHandler extends LocalStorageHandler<typeof UserPreferences> {
     constructor(initial: typeof UserPreferences) {

@@ -8,7 +8,7 @@ import java.util.UUID
 import polynote.buildinfo.BuildInfo
 import polynote.app.{Args, Environment, MainArgs}
 import polynote.config.PolynoteConfig
-import polynote.kernel.environment.{Config, Env}
+import polynote.kernel.environment.{BroadcastMessage, Config, Env}
 import Env.LayerOps
 import polynote.kernel.logging.Logging
 import polynote.kernel.{BaseEnv, GlobalEnv, Kernel}
@@ -17,6 +17,7 @@ import polynote.server.auth.{IdentityProvider, UserIdentity}
 import uzhttp.server.ServerLogger
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.{Forbidden, InternalServerError, NotFound}
+import polynote.kernel.util.Publish
 import polynote.server.repository.NotebookRepository
 import zio.{Has, Hub, IO, Promise, Task, URIO, ZIO, ZLayer, ZManaged}
 import zio.blocking.{Blocking, effectBlocking}
@@ -174,8 +175,9 @@ class Server {
       for {
         _             <- initNotebookStorageDir().toManaged_
         authRoutes    <- IdentityProvider.authRoutes.toManaged_
-        broadcastAll  <- Hub.unbounded[Message].toManaged(_.shutdown)  // used to broadcast messages to all connected clients
-        _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with MainEnv with MainArgs](broadcastAll))
+        broadcastHub  <- Hub.unbounded[Message].toManaged(_.shutdown) // used to broadcast messages to all connected clients
+        broadcastAll   = Publish(broadcastHub).asInstanceOf[BroadcastMessage]
+        _             <- Env.addManagedLayer(NotebookManager.layer[BaseEnv with MainEnv with MainArgs](broadcastHub))
         authorize     <- IdentityProvider.authorize[RequestEnv].toManaged_
         staticHandler <- staticFiles
         address       <- ZIO(config.listen.toSocketAddress).toManaged_
@@ -186,7 +188,12 @@ class Server {
             val query = uri.getQuery
             if ((path startsWith "/ws") && (query == s"key=$wsKey")) {
               path.stripPrefix("/ws").stripPrefix("/") match {
-                case "" => authorize(req, SocketSession(inputFrames, ZStream.fromHub(broadcastAll)).flatMap(output => Response.websocket(req, output)))
+                case "" => authorize(
+                  req,
+                  SocketSession(inputFrames, ZStream.fromHub(broadcastHub))
+                    .flatMap(output => Response.websocket(req, output))
+                    .provideSomeLayer[SessionEnv with NotebookManager](ZLayer.succeed(broadcastAll))
+                )
                 case rest =>
                     authorize(
                       req,

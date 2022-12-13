@@ -7,7 +7,8 @@ import {
     h2,
     h3,
     iconButton,
-    loader, para,
+    loader,
+    para,
     polynoteLogo,
     span,
     table,
@@ -25,12 +26,13 @@ import {TabNav} from "../layout/tab_nav";
 import {getHotkeys} from "../input/hotkeys";
 import {ServerStateHandler} from "../../state/server_state";
 import {
-    clearStorage,
-    LocalStorageHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
+    clearStorage, DismissedNotificationsHandler,
+    LocalStorageHandler, NotebookListPrefsHandler, NotebookScrollLocationsHandler, OpenNotebooksHandler,
     RecentNotebooksHandler,
-    UserPreferencesHandler, ViewPrefsHandler
+    UserPreferencesHandler, ViewPrefsHandler, LeftBarPrefsHandler
 } from "../../state/preferences";
 import {ClientBackup} from "../../state/client_backup";
+import {getHumanishDate} from "../../util/helpers";
 
 export class About extends FullScreenModal implements IDisposable {
     private disposable: Disposable;
@@ -194,8 +196,11 @@ export class About extends FullScreenModal implements IDisposable {
         addStorageEl(UserPreferencesHandler)
         addStorageEl(RecentNotebooksHandler)
         addStorageEl(NotebookScrollLocationsHandler)
+        addStorageEl(NotebookListPrefsHandler)
         addStorageEl(OpenNotebooksHandler)
         addStorageEl(ViewPrefsHandler)
+        addStorageEl(LeftBarPrefsHandler)
+        addStorageEl(DismissedNotificationsHandler)
 
         storageInfoEl.appendChild(storageTable);
 
@@ -257,7 +262,7 @@ export class About extends FullScreenModal implements IDisposable {
     }
 
     openNotebooks() {
-        let content = div([], ['Looks like no kernels are open now!']);
+        let content = div([], ['Looks like no notebooks are open now!']);
         const el = div(["open-kernels"], [
             div([], [
                 h2([], ["Open Notebooks"]),
@@ -275,17 +280,24 @@ export class About extends FullScreenModal implements IDisposable {
             observers.forEach(obs => obs.dispose())
 
             const tableEl = table(['kernels'], {
-                header: ['path', 'status', 'actions'],
-                classes: ['path', 'status', 'actions'],
+                header: ['path', 'status', 'lastSaved', 'lastExecuted', 'actions'],
+                classes: ['path', 'status', 'lastSaved', 'lastExecuted', 'actions'],
                 rowHeading: false,
                 addToTop: false
             });
 
-            ServerStateHandler.serverOpenNotebooks.forEach(([path, info]) => {
+            ServerStateHandler.serverOpenNotebooks.forEach(([path, lastSaved, info]) => {
                 const status = info.handler.state.kernel.status;
                 const statusEl = span([], [
                     span(['status'], [status]),
                 ]);
+                const lastSavedEl = para([], [getHumanishDate(lastSaved)]);
+                let lastExecuted = 0;
+                for (const cellState of Object.values(info.handler.state.cells)) {
+                    const startTs = Number(cellState.metadata.executionInfo?.startTs ?? -1);
+                    lastExecuted = Math.max(lastExecuted, startTs);
+                }
+                const lastExecutedEl = para([], [lastExecuted !== 0 ? getHumanishDate(lastExecuted) : "Never"]);
                 const actions = div([], [
                     loader(),
                     iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(() => {
@@ -303,7 +315,7 @@ export class About extends FullScreenModal implements IDisposable {
                     }),
                 ]);
 
-                const rowEl = tableEl.addRow({ path, status: statusEl, actions });
+                const rowEl = tableEl.addRow({ path, status: statusEl, lastSaved: lastSavedEl, lastExecuted: lastExecutedEl, actions });
                 rowEl.classList.add('kernel-status', status)
                 observers.push(info.handler.addPreObserver(prev => {
                     const prevStatus = prev.kernel.status

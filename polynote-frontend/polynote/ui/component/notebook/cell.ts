@@ -761,7 +761,6 @@ abstract class MonacoCell extends Cell {
             // overflowWidgetsDomNode: this.overflowDomNode
         });
 
-
         this.editor.onDidChangeCursorSelection(evt => {
             if (this.applyingServerEdits) return // ignore when applying server edits.
 
@@ -797,6 +796,8 @@ abstract class MonacoCell extends Cell {
         cellState.observeKey("editing", editing => {
             if (editing) {
                 this.editor.focus()
+            } else {
+                this.onBlur();
             }
         })
 
@@ -982,6 +983,7 @@ abstract class MonacoCell extends Cell {
     }
 
     protected abstract onChangeModelContent(event: IModelContentChangedEvent): void
+    abstract onBlur(): void; // special method for extra changes that need to occur when blurring this cell
 }
 
 
@@ -1005,6 +1007,7 @@ export class MarkdownCell extends MonacoCell {
             this.layout(); // re-calculate the layout for the editor, as sometimes it fails to render otherwise
             this.el.classList.replace('text-cell', 'code-cell');
 
+            this.editor.focus();
             this.doSelect();
         });
     }
@@ -1666,6 +1669,8 @@ export class CodeCell extends MonacoCell {
         }
     }
 
+    onBlur() {} // special method for extra changes that need to occur when blurring this cell
+
     setDisabled(disabled: boolean) {
         super.setDisabled(disabled);
         if (disabled) {
@@ -1705,12 +1710,16 @@ export class CodeCell extends MonacoCell {
 
     protected onDeselected() {
         super.onDeselected();
+        // hide parameter hints on blur
+        this.editor.trigger('keyboard', 'closeParameterHints', null);
         // TODO (overflow widgets)
         // this.overflowDomNode.parentNode?.removeChild(this.overflowDomNode)
         // this.editorEl.closest('.notebook-cells')?.removeEventListener('scroll', this.scrollListener);
-        this.commentHandler.hide()
-        // hide parameter hints on blur
-        this.editor.trigger('keyboard', 'closeParameterHints', null);
+
+        // If no line of text was previously selected, then the user wasn't creating a comment, so hide all comments.
+        if (this.cellState.state.currentSelection === undefined) {
+           this.commentHandler.hide()
+        }
     }
 
     delete() {

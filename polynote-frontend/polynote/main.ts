@@ -1,4 +1,4 @@
-import {div, TagElement} from "./ui/tags";
+import {div, iconButton, TagElement} from "./ui/tags";
 import {MarkdownIt} from "./ui/input/markdown-it";
 import {scala, vega} from "./ui/input/monaco/languages";
 import * as monaco from "monaco-editor";
@@ -7,7 +7,7 @@ import {SocketSession} from "./messaging/comms";
 import {ServerMessageReceiver} from "./messaging/receiver";
 import {ServerMessageDispatcher} from "./messaging/dispatcher";
 import {Toolbar} from "./ui/component/toolbar";
-import {SplitView} from "./ui/layout/splitview";
+import {LeftPaneHandler} from "./ui/component/leftpane";
 import {InsertValue, moveArrayValue, NoUpdate, removeIndex, RemoveValue, RenameKey, setValue,} from "./state";
 import {Tabs} from "./ui/component/tabs";
 import {KernelPane} from "./ui/component/notebook/kernel";
@@ -17,8 +17,17 @@ import {CodeCellModel} from "./ui/component/notebook/cell";
 import {collect, nameFromPath} from "./util/helpers";
 import {SocketStateHandler} from "./state/socket_state";
 import {ServerStateHandler} from "./state/server_state";
-import {OpenNotebooksHandler, RecentNotebooks, RecentNotebooksHandler} from "./state/preferences";
+import {
+    DismissedNotificationsHandler,
+    OpenNotebooksHandler,
+    RecentNotebooks,
+    RecentNotebooksHandler
+} from "./state/preferences";
 import {ThemeHandler} from "./state/theme";
+import {TableOfContents} from "./ui/component/table_of_contents";
+import {SearchModal} from "./ui/component/search";
+import {SplitView} from "./ui/layout/splitview";
+import {Notification} from "./ui/component/notification";
 
 /**
  * Main is the entry point to the entire UI. It initializes the state, starts the websocket connection, and contains the
@@ -48,8 +57,26 @@ export class Main {
             }
         }).disposeWith(this.receiver)
 
-        const nbList = new NotebookList(dispatcher)
-        const leftPane = { header: nbList.header, el: nbList.el };
+
+        // Create the left pane contents
+        const nbList = new NotebookList(dispatcher);
+        const tableOfContents = new TableOfContents();
+        // Create a searchModal and hide it immediately - this enables us to save results even on modal close
+        const searchModal = new SearchModal(dispatcher);
+        searchModal.show();
+        searchModal.hide();
+
+        const leftPaneContents = new LeftPaneHandler([{
+            content: {header: nbList.header, el: nbList.el},
+            nav: {title: "Notebooks", icon: iconButton(['file-system'], 'View Notebooks', 'folder', 'View Files')}
+        }, {
+            content: {header: tableOfContents.header, el: tableOfContents.el},
+            nav: {title: "Summary", icon: iconButton(['list-ul'], 'View Summary', 'list-ul', 'View Summary')}
+        }], [{
+            nav: {title: "Search", icon: iconButton(['search'], 'Search Files', 'search', 'Search Files')},
+            action: () => searchModal.showUI(),
+        }]);
+
         const home = new Home()
         const tabs = new Tabs(dispatcher, home.el);
         const center = tabs.el;
@@ -58,17 +85,31 @@ export class Main {
 
         this.el = div(['main-ui'], [
             div(['header'], [new Toolbar(dispatcher).el]),
-            div(['body'], [this.splitView = new SplitView(leftPane, center, rightPane)]),
+            div(['body'], [this.splitView = new SplitView(leftPaneContents, center, rightPane)]),
             div(['footer'], []) // no footer yet!
         ]);
 
         ServerStateHandler.get.view("currentNotebook").addObserver(path => {
-            Main.handlePath(path)
+            Main.handlePath(path);
+
+            if (path !== undefined && path !== "home") {
+                const nb = ServerStateHandler.getOrCreateNotebook(path);
+                if (nb?.handler) {
+                    tableOfContents.setNewNotebook(nb);
+                } else {
+                    tableOfContents.setHTML(true);
+                }
+            } else {
+                tableOfContents.setHTML(true);
+            }
         }).disposeWith(this.receiver)
 
         const path = decodeURIComponent(window.location.pathname.replace(new URL(document.baseURI).pathname, ''));
         Promise.allSettled(OpenNotebooksHandler.state.map(path => {
-            return ServerStateHandler.loadNotebook(path, true)
+            if (path !== "home")
+                return ServerStateHandler.loadNotebook(path, true)
+            else
+                return;
         })).then(() => {
             const notebookBase = 'notebook/';
             if (path.startsWith(notebookBase)) {
@@ -118,6 +159,22 @@ export class Main {
             }
         })
 
+        ServerStateHandler.get.observeKey("notifications", wantsNotification => {
+            if (wantsNotification && window.navigator.onLine) {
+                // Note: We have to fetch all releases and use the most recent one
+                // GitHub has a "Get the latest release" API, but it doesn't return pre-releases (which all of our releases are)
+                fetch('https://api.github.com/repos/polynote/polynote/releases')
+                    .then(res => res.json())
+                    .then(data => {
+                        const mostRecentRelease: string = data[0].tag_name;
+                        if (ServerStateHandler.state.serverVersion !== mostRecentRelease && DismissedNotificationsHandler.state.indexOf(mostRecentRelease) === -1) {
+                            const notification = new Notification(mostRecentRelease, data[0].html_url);
+                            document.body.appendChild(notification.el);
+                        }
+                    })
+                    .catch(err => {}) // silently fail
+            }
+        });
     }
 
     private static handlePath(path?: string) {

@@ -1,5 +1,48 @@
 # Unreleased
 
+# 0.5.0 (Nov 30, 2022) 
+**Features:**
+- Add a table of contents along with a full left navbar redesign #1301 
+  - The new table of contents can be accessed under the `Summary` button in the new left navbar
+  - Headings will automatically be added as you write h1-h6 headings in text cells. Click on a code cell to see where it is 
+  relevant to the closest heading, or click on a heading in the left pane to jump straight to that text cell. 
+  - For full documentation on the new left navbar redesign, [see the docs here. ](https://polynote.org/latest/docs/left-pane/)
+- Display each kernel's time since last run and since last save in settings pane #812 
+
+**Bugfixes:**
+- Fix a few issues where focusing raw markdown cells didn't always render the old markdown cell you left #1315 
+- Use a workaround to fix occasional compilation issues with shadowjars #1352 
+
+**Misc:**
+- Pin Jep back to its default version #1360 
+- Bump to sbt 1.7.2. and fix slash syntax (thanks @MasseGuillaume) #1350 
+- Mention that Scala 2.13 is in alpha support in docs (thanks @pan3793) #1368
+
+# 0.4.10 (Nov 7, 2022)
+**Features:**
+* Added a new design for the notebook list! #1118 
+  * You can now sort notebooks by recently edited timestamp or by name in ascending or descending order. [See docs here. ](https://polynote.org/latest/docs/notebooks-list/) 
+* Support `.txt` dependency lists for JARs #1349 
+  * You can now use `.txt` files as dependencies, where each JAR is listed on a newline. [See docs here. ](https://polynote.org/latest/docs/notebook-configuration/#jvm-dependencies) 
+
+**Bugfixes:**
+* Use relaxed dependency resolution #1300 
+* Remove extra dropdown button on advanced options label #1358 
+
+# 0.4.9 (Oct 18, 2022) 
+**Features:** 
+* Add branch-level granularity for notebook drag n' drop #1298 
+* Add in-app notifications for new updates 
+* Add run selected cell hotkey + VSCode hotkey link #1313 
+* Add more documentation around the PythonObject API #1320 
+
+**Bugfixes:** 
+* Fix a bug where new comments could not be created 
+* Fix an issue with the size of the search modal sometimes not conforming with the result table #1337 
+* Fix error cards in the task pane appearing clickable on hover when they shouldn't be #1316 
+* Fix the Copy & Paste configuration buttons to more accurately reflect the saved kernel state #1314 
+* Add a note to the documentation about using the `?nocache` query string. 
+
 # 0.4.8 (Sep 15, 2022) 
 **Bugfixes:**
 * Fixes a bug where there was no max width set on the search modal 
