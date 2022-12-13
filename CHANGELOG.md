@@ -7,6 +7,7 @@
   - Headings will automatically be added as you write h1-h6 headings in text cells. Click on a code cell to see where it is 
   relevant to the closest heading, or click on a heading in the left pane to jump straight to that text cell. 
   - For full documentation on the new left navbar redesign, [see the docs here. ](https://polynote.org/latest/docs/left-pane/)
+- Display each kernel's time since last run and since last save in settings pane #812 
 
 **Bugfixes:**
 - Fix a few issues where focusing raw markdown cells didn't always render the old markdown cell you left #1315 
