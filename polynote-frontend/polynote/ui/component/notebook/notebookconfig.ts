@@ -32,6 +32,7 @@ import {copyToClipboard} from "./cell";
 export class NotebookConfigEl extends Disposable {
     readonly el: TagElement<"div">;
     private readonly stateHandler: StateHandler<NBConfig>;
+    private pasteErrorMessage: TagElement<"p">
 
     constructor(dispatcher: NotebookMessageDispatcher, stateHandler: StateHandler<NBConfig>, kernelStateHandler: StateView<KernelStatusString>) {
         super()
@@ -71,7 +72,8 @@ export class NotebookConfigEl extends Disposable {
                             const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs);
                             this.copyConfig(conf);
                         }),
-                        button([], {}, ['Paste & Save Configuration']).click(() => this.pasteConfig())
+                        button([], {}, ['Paste & Save Configuration']).click(() => this.pasteConfig()),
+                        this.pasteErrorMessage = para(['hide', 'error-message'], ['Paste failed - your clipboard does not contain valid JSON'])
                     ])
                 ])
             ])
@@ -94,6 +96,7 @@ export class NotebookConfigEl extends Disposable {
             if (open) {
                 this.el.classList.add("open")
             } else {
+                this.pasteErrorMessage.classList.add('hide');
                 this.el.classList.remove("open")
             }
         }).disposeWith(this)
@@ -119,6 +122,7 @@ export class NotebookConfigEl extends Disposable {
                 conf = new NotebookConfig(paste.dependencies, paste.exclusions, paste.repositories, paste.sparkConfig, paste.sparkTemplate, paste.env, paste.scalaVersion, paste.jvmArgs);
                 this.saveConfig(conf)
             } catch (e) {
+                this.pasteErrorMessage.classList.remove('hide');
                 console.error("Paste failed - the following clipboard value is not valid JSON:", paste!);
                 console.error(e);
             }
