@@ -8,8 +8,14 @@
       
       
       
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../basic-usage/">
+      
       <link rel="icon" href="../../favicon.ico">
-      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-8.5.10">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-9.0.3">
     
     
       
@@ -17,15 +23,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.975780f9.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.6b71719e.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.2505c338.min.css">
-        
-          
-          
-          <meta name="theme-color" content="#000000">
-        
       
       
 
@@ -297,8 +298,9 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
       
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
       
       
       
@@ -453,8 +455,11 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
+      
+        
+      
+      <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" >
       
       
       
@@ -527,8 +532,11 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4_4" type="checkbox" id="__nav_2_4_4" checked>
       
+      
+        
+      
+      <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_4_4" type="checkbox" id="__nav_2_4_4" >
       
       
       
@@ -657,8 +665,11 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" checked>
       
+      
+        
+      
+      <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" >
       
       
       
@@ -881,10 +892,9 @@
                 
                   
 
-  <a href="https://github.com/polynote/polynote/edit/master/docs-site/docs/docs/installation.md" title="Edit this page" class="md-content__button md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z"/></svg>
-  </a>
+  
+  
+
 
 
 <h1 id="installing-polynote">Installing Polynote<a class="headerlink" href="#installing-polynote" title="Permanent link">&para;</a></h1>
@@ -959,9 +969,9 @@ This method works for on both Mac and Linux. </p>
 <p>Here is an example setup for Polynote on Mac. Also, check out the "Installing Spark on Mac with Homebrew"
 section below for an alternative installation method. </p>
 <p>Install Java 8 through any service you like (this uses SDKMAN):</p>
-<div class="highlight"><pre><span></span><code>curl -s <span class="s2">&quot;https://get.sdkman.io&quot;</span> <span class="p">|</span> bash
-<span class="nb">source</span> <span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.sdkman/bin/sdkman-init.sh&quot;</span>
-sdk install java <span class="m">8</span>.0.332-zulu
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-s<span class="w"> </span><span class="s2">&quot;https://get.sdkman.io&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
+<span class="nb">source</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/.sdkman/bin/sdkman-init.sh&quot;</span>
+sdk<span class="w"> </span>install<span class="w"> </span>java<span class="w"> </span><span class="m">8</span>.0.332-zulu
 </code></pre></div>
 <p><a href="https://archive.apache.org/dist/spark/spark-2.4.7/">Download spark</a> and then untar it wherever you like </p>
 <div class="highlight"><pre><span></span><code>tar -zxvf spark-2.4.7-bin-hadoop2.7.tgz
@@ -1017,8 +1027,8 @@ is less than 30 lines of Ruby code and quite readable. </p>
 <p>You can view the available formulae here: <a href="https://github.com/eddies/homebrew-spark-tap/tree/master/Formula">https://github.com/eddies/homebrew-spark-tap/tree/master/Formula</a></p>
 </div>
 <p>Here's an example for Spark 2.4:</p>
-<div class="highlight"><pre><span></span><code>brew tab eddies/spark-tap
-brew install apache-spark@2.4.6
+<div class="highlight"><pre><span></span><code>brew<span class="w"> </span>tab<span class="w"> </span>eddies/spark-tap
+brew<span class="w"> </span>install<span class="w"> </span>apache-spark@2.4.6
 </code></pre></div>
 </div>
 </div>
@@ -1040,8 +1050,8 @@ targeting. </p>
 <p>Polynote consists of a JVM-based server application, which serves a web-based client. To try it locally, find the latest
 release on the <a href="https://github.com/polynote/polynote/releases" target="_blank">releases page</a> and download the attached
 <code>polynote-dist.tar.gz</code> file (you'll find it under <code>Assets</code>). Unpack the archive:</p>
-<div class="highlight"><pre><span></span><code>tar -zxvpf polynote-dist.tar.gz
-<span class="nb">cd</span> polynote
+<div class="highlight"><pre><span></span><code>tar<span class="w"> </span>-zxvpf<span class="w"> </span>polynote-dist.tar.gz
+<span class="nb">cd</span><span class="w"> </span>polynote
 </code></pre></div>
 <h2 id="configure">Configure<a class="headerlink" href="#configure" title="Permanent link">&para;</a></h2>
 <p>You won't need to change any of the default configuration in order to get Polynote up and running locally. </p>
@@ -1066,42 +1076,6 @@ release on the <a href="https://github.com/polynote/polynote/releases" target="_
       </main>
       
         <footer class="md-footer">
-  
-    
-    <nav class="md-footer__inner md-grid" aria-label="Footer" >
-      
-        
-        <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Docs" rel="prev">
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
-          </div>
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              Docs
-            </div>
-          </div>
-        </a>
-      
-      
-        
-        <a href="../basic-usage/" class="md-footer__link md-footer__link--next" aria-label="Next: Basic Usage" rel="next">
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              Basic Usage
-            </div>
-          </div>
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
-          </div>
-        </a>
-      
-    </nav>
   
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
@@ -1146,7 +1120,7 @@ release on the <a href="https://github.com/polynote/polynote/releases" target="_
       <div class="md-dialog__inner md-typeset"></div>
     </div>
     
-    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.16e2a7d4.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}, "version": {"provider": "mike"}}</script>
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.e5c33ebb.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
     <script type="text/javascript">
@@ -1167,10 +1141,9 @@ release on the <a href="https://github.com/polynote/polynote/releases" target="_
         });
     </script>
     
-      <script src="../../assets/javascripts/bundle.5a2dcb6a.min.js"></script>
+      <script src="../../assets/javascripts/bundle.ba449ae6.min.js"></script>
       
     
 
-    
   </body>
 </html>

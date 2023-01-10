@@ -8,8 +8,14 @@
       
       
       
+      
+        <link rel="prev" href="../code-cells/">
+      
+      
+        <link rel="next" href="../about-menu/">
+      
       <link rel="icon" href="../../favicon.ico">
-      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-8.5.10">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-9.0.3">
     
     
       
@@ -17,15 +23,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.975780f9.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.6b71719e.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.2505c338.min.css">
-        
-          
-          
-          <meta name="theme-color" content="#000000">
-        
       
       
 
@@ -297,8 +298,9 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
       
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
       
       
       
@@ -373,8 +375,9 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_2_4" type="checkbox" id="__nav_2_4" checked>
       
       
       
@@ -449,8 +452,9 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_4_4" type="checkbox" id="__nav_2_4_4" checked>
       
+      
+      <input class="md-nav__toggle md-toggle " data-md-toggle="__nav_2_4_4" type="checkbox" id="__nav_2_4_4" checked>
       
       
       
@@ -704,8 +708,11 @@
     <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" checked>
       
+      
+        
+      
+      <input class="md-nav__toggle md-toggle md-toggle--indeterminate" data-md-toggle="__nav_2_6" type="checkbox" id="__nav_2_6" >
       
       
       
@@ -973,10 +980,9 @@
                 
                   
 
-  <a href="https://github.com/polynote/polynote/edit/master/docs-site/docs/docs/visualization-and-viz-cells.md" title="Edit this page" class="md-content__button md-icon">
-    
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z"/></svg>
-  </a>
+  
+  
+
 
 
   <h1>Visualization and Viz Cells</h1>
@@ -989,16 +995,16 @@ sends to the frontend. </p>
 <code>DataFrame</code>). </p>
 <p><abbr title="Representation of a value for display in the notebook">Reprs</abbr> form the building blocks for all of Polynote's native data visualization. They can be viewed in a number of 
 different ways. For example, as <a href="../code-cells/#cell-results">the result of a Code Cell</a>, or in a <a href="#viz-cells">Viz cell</a>. </p>
-<p>Let's take a look at a simple example: the <abbr title="Representation of a value for display in the notebook">Reprs</abbr> generated for a <code class="highlight"><span class="nc">String</span><span class="w"></span></code>. We'll show them in both a Code Cell
+<p>Let's take a look at a simple example: the <abbr title="Representation of a value for display in the notebook">Reprs</abbr> generated for a <code class="highlight"><span class="nc">String</span></code>. We'll show them in both a Code Cell
 result as well as a Viz Cell. </p>
 <p><img alt="Simple Viz Cell" src="../images/simple-viz-cell.png" /></p>
-<p>As the result of a Code Cell, the <code class="highlight"><span class="nc">String</span><span class="w"></span></code> is being stored in the <code>Out</code> symbol. Polynote generates two <abbr title="Representation of a value for display in the notebook">Reprs</abbr> 
-for a <code class="highlight"><span class="nc">String</span><span class="w"></span></code>. First, all symbols get a <code>StringRepr</code>, which just corresponds to its <code>toString()</code> output. </p>
+<p>As the result of a Code Cell, the <code class="highlight"><span class="nc">String</span></code> is being stored in the <code>Out</code> symbol. Polynote generates two <abbr title="Representation of a value for display in the notebook">Reprs</abbr> 
+for a <code class="highlight"><span class="nc">String</span></code>. First, all symbols get a <code>StringRepr</code>, which just corresponds to its <code>toString()</code> output. </p>
 <p>Additionally, most symbols have some sort of representation of the symbol's type and value, such as a <code>DataRepr</code> in this
 case, which carries the symbol's type as well as a serialized representation of symbol's entire value. </p>
 <p>In this case, <code>Out</code>'s <code>DataRepr</code> is seen both in the output of Cell 3, and in the "Data" tab of the Viz cell. In this
-case, since <code>Out</code> is a simple <code class="highlight"><span class="nc">String</span><span class="w"></span></code>, its <code>DataRepr</code> displays its value in its entirety.</p>
-<p>Clicking on the "Plain" tab of the Viz cell would display <code>Out</code>'s <code>StringRepr</code>, which is, of course, simply <code class="highlight"><span class="s">&quot;foo&quot;</span><span class="w"></span></code>.</p>
+case, since <code>Out</code> is a simple <code class="highlight"><span class="nc">String</span></code>, its <code>DataRepr</code> displays its value in its entirety.</p>
+<p>Clicking on the "Plain" tab of the Viz cell would display <code>Out</code>'s <code>StringRepr</code>, which is, of course, simply <code class="highlight"><span class="s">&quot;foo&quot;</span></code>.</p>
 <div class="admonition info">
 <p class="admonition-title"><abbr title="Representation of a value for display in the notebook">Repr</abbr> display priority</p>
 <p>When there are multiple <abbr title="Representation of a value for display in the notebook">Reprs</abbr> available, Polynote tries to choose the richest available <abbr title="Representation of a value for display in the notebook">Repr</abbr> as the default one
@@ -1022,38 +1028,38 @@ useful: most of the time, you'll want to reference data defined in variables in 
 <p>Luckily, Polynote supports that! Let's rewrite the Vega example but this time we'll have it reference data defined in 
 Scala. </p>
 <p>First, we'll grab the data from the example and turn it into a Scala cell:</p>
-<div class="highlight"><pre><span></span><code><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">AB</span><span class="p">(</span><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span><span class="p">)</span><span class="w"></span>
-<span class="kd">val</span><span class="w"> </span><span class="n">dataValues</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Seq</span><span class="p">(</span><span class="w"></span>
+<div class="highlight"><pre><span></span><code><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">AB</span><span class="p">(</span><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span><span class="p">)</span>
+<span class="kd">val</span><span class="w"> </span><span class="n">dataValues</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nc">Seq</span><span class="p">(</span>
 <span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;A&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">28</span><span class="p">),</span><span class="w"> </span>
 <span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;B&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">55</span><span class="p">),</span><span class="w"> </span>
-<span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;C&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">43</span><span class="p">),</span><span class="w"></span>
+<span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;C&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">43</span><span class="p">),</span>
 <span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;D&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">91</span><span class="p">),</span><span class="w"> </span>
 <span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;E&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">81</span><span class="p">),</span><span class="w"> </span>
-<span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;F&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">53</span><span class="p">),</span><span class="w"></span>
+<span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;F&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">53</span><span class="p">),</span>
 <span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;G&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">19</span><span class="p">),</span><span class="w"> </span>
 <span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;H&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">87</span><span class="p">),</span><span class="w"> </span>
-<span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;I&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">52</span><span class="p">)</span><span class="w"></span>
-<span class="p">)</span><span class="w"></span>
+<span class="w">    </span><span class="nc">AB</span><span class="p">(</span><span class="s">&quot;I&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">52</span><span class="p">)</span>
+<span class="p">)</span>
 </code></pre></div>
-<p>Now, we can reference <code class="highlight"><span class="n">dataValues</span><span class="w"></span></code> in our code.</p>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;$schema&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://vega.github.io/schema/vega-lite/v4.json&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dataValues&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dataValues&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;values&quot;</span><span class="p">:</span><span class="w"> </span><span class="err">da</span><span class="kc">ta</span><span class="err">Values.aggrega</span><span class="kc">te</span><span class="err">(</span><span class="p">[</span><span class="s2">&quot;a&quot;</span><span class="p">],</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;b&quot;</span><span class="p">:</span><span class="s2">&quot;mean&quot;</span><span class="p">}]</span><span class="err">)</span><span class="w"></span>
-<span class="w">  </span><span class="p">},</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;mark&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bar&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;tooltip&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;data&quot;</span><span class="w"></span>
-<span class="w">    </span><span class="p">}</span><span class="w"></span>
-<span class="w">  </span><span class="p">},</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;encoding&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;field&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nominal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;axis&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}},</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;y&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;field&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mean(b)&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;quantitative&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;axis&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}}</span><span class="w"></span>
-<span class="w">  </span><span class="p">}</span><span class="w"></span>
-<span class="p">}</span><span class="w"></span>
+<p>Now, we can reference <code class="highlight"><span class="n">dataValues</span></code> in our code.</p>
+<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;$schema&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://vega.github.io/schema/vega-lite/v4.json&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dataValues&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dataValues&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;values&quot;</span><span class="p">:</span><span class="w"> </span><span class="err">da</span><span class="kc">ta</span><span class="err">Values.aggrega</span><span class="kc">te</span><span class="err">(</span><span class="p">[</span><span class="s2">&quot;a&quot;</span><span class="p">],</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;b&quot;</span><span class="p">:</span><span class="s2">&quot;mean&quot;</span><span class="p">}]</span><span class="err">)</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;mark&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bar&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;tooltip&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;data&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;encoding&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;field&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nominal&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;axis&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}},</span>
+<span class="w">    </span><span class="nt">&quot;y&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;field&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mean(b)&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;quantitative&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;axis&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
 </code></pre></div>
 In order to transform the Scala code into something that Vega can handle, we call <code>aggregate</code> on the collection which
 collects the values into a format that Vega can understand.</p>
@@ -1071,11 +1077,11 @@ will create a new Viz cell inspecting the <code>Out</code> result of the cell), 
 <p>We already saw a simple Viz cell <a href="#data-reprs">above</a>, so let's take a look at a more interesting example: the 
 <code>dataValues</code> shown <a href="#vega-cells">earlier</a>. </p>
 <div class="admonition example">
-<p>As a reminder, <code>dataValues</code> is a collection of type <code class="highlight"><span class="nc">Seq</span><span class="p">[</span><span class="nc">AB</span><span class="p">]</span><span class="w"></span></code>, where <code>AB</code> is 
-<code class="highlight"><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">AB</span><span class="p">(</span><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span><span class="p">)</span><span class="w"></span></code>.  </p>
+<p>As a reminder, <code>dataValues</code> is a collection of type <code class="highlight"><span class="nc">Seq</span><span class="p">[</span><span class="nc">AB</span><span class="p">]</span></code>, where <code>AB</code> is 
+<code class="highlight"><span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">AB</span><span class="p">(</span><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span><span class="p">)</span></code>.  </p>
 </div>
 <p>This time, we'll start with the "Plain" tab of the Viz cell, which shows the <code>StringRepr</code> as mentioned above (you might
-recognize this output as the result of calling <code>toString()</code> on a Scala <code class="highlight"><span class="nc">List</span><span class="w"></span></code>).</p>
+recognize this output as the result of calling <code>toString()</code> on a Scala <code class="highlight"><span class="nc">List</span></code>).</p>
 <p><img alt="More Complex Viz Cell" src="../images/collection-viz-cell-plain.png" /></p>
 <p>Notice that this Viz Cell has no "Data" tab. Instead, there are three tabs we haven't seen before: "Plot", "Schema", 
 and "Browse".</p>
@@ -1091,8 +1097,8 @@ streams themselves. </p>
 </div>
 <p>Let's take a look at the three new tabs, which show different aspects of the <code>StreamingDataRepr</code> of <code>dataValues</code>.  </p>
 <h5 id="schema">Schema<a class="headerlink" href="#schema" title="Permanent link">&para;</a></h5>
-<p>The Schema view shows the types of the entries in the collection. In this case, the fields of <code class="highlight"><span class="nc">AB</span><span class="w"></span></code> are a
-<code class="highlight"><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="w"></span></code> and <code class="highlight"><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span><span class="w"></span></code>, shown below in a struct-like display. </p>
+<p>The Schema view shows the types of the entries in the collection. In this case, the fields of <code class="highlight"><span class="nc">AB</span></code> are a
+<code class="highlight"><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span></code> and <code class="highlight"><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="nc">Int</span></code>, shown below in a struct-like display. </p>
 <p><img alt="Schema" src="../images/collection-viz-cell-schema.png" /></p>
 <p>Nested schemas can also be expanded, like <a href="../code-cells/#nested-data">nested data in a Code Cell's output</a>.</p>
 <h5 id="browse">Browse<a class="headerlink" href="#browse" title="Permanent link">&para;</a></h5>
@@ -1122,30 +1128,30 @@ display capabilities. </p>
 trait. </p>
 <p>This allows you to register <abbr title="Representation of a value for display in the notebook">Reprs</abbr> for your types. The easiest way to create a new <abbr title="Representation of a value for display in the notebook">Repr</abbr> is to use a <code>MIMERepr</code>, which 
 takes a MIME type and content string. For example, you to display some HTML you could return 
-<code class="highlight"><span class="nc">MIMERepr</span><span class="p">(</span><span class="s">&quot;text/html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&lt;h1&gt;Heading&lt;/h1&gt;&quot;</span><span class="p">)</span><span class="w"></span></code>, or to show an image you could return 
-<code class="highlight"><span class="nc">MIMERepr</span><span class="p">(</span><span class="s">&quot;image/png&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&lt;a base64 encoding of a PNG&gt;&quot;</span><span class="p">)</span><span class="w"></span></code>. </p>
+<code class="highlight"><span class="nc">MIMERepr</span><span class="p">(</span><span class="s">&quot;text/html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&lt;h1&gt;Heading&lt;/h1&gt;&quot;</span><span class="p">)</span></code>, or to show an image you could return 
+<code class="highlight"><span class="nc">MIMERepr</span><span class="p">(</span><span class="s">&quot;image/png&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&lt;a base64 encoding of a PNG&gt;&quot;</span><span class="p">)</span></code>. </p>
 <p>Here's an example adding a simple HTML <code>MIMERepr</code> for the results of type <code>MyThing</code>.</p>
 <p><strong>DOESN'T WORK!</strong></p>
 <div class="highlight"><pre><span></span><code><span class="k">import</span><span class="w"> </span><span class="nn">polynote</span><span class="p">.</span><span class="nn">runtime</span><span class="p">.</span><span class="n">_</span>
 
-<span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">MyThing</span><span class="p">(</span><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span><span class="w"></span>
-<span class="k">object</span><span class="w"> </span><span class="nc">MyThing</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">    </span><span class="k">implicit</span><span class="w"> </span><span class="k">object</span><span class="w"> </span><span class="nc">MyThingRepr</span><span class="w"> </span><span class="k">extends</span><span class="w"> </span><span class="nc">ReprsOf</span><span class="p">[</span><span class="nc">MyThing3</span><span class="p">]{</span><span class="w"></span>
+<span class="k">case</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">MyThing</span><span class="p">(</span><span class="n">a</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span>
+<span class="k">object</span><span class="w"> </span><span class="nc">MyThing</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">implicit</span><span class="w"> </span><span class="k">object</span><span class="w"> </span><span class="nc">MyThingRepr</span><span class="w"> </span><span class="k">extends</span><span class="w"> </span><span class="nc">ReprsOf</span><span class="p">[</span><span class="nc">MyThing3</span><span class="p">]{</span>
 <span class="w">        </span><span class="k">override</span><span class="w"> </span><span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span><span class="n">value</span><span class="p">:</span><span class="w"> </span><span class="nc">MyThing</span><span class="p">):</span><span class="w"> </span><span class="nc">Array</span><span class="p">[</span><span class="nc">ValueRepr</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>
-<span class="w">            </span><span class="nc">Array</span><span class="p">(</span><span class="nc">MIMERepr</span><span class="p">(</span><span class="s">&quot;text/html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">s&quot;&lt;strong&gt;</span><span class="si">${</span><span class="n">value</span><span class="p">.</span><span class="n">a</span><span class="si">}</span><span class="s">&lt;/strong&gt;&quot;</span><span class="p">))</span><span class="w"></span>
-<span class="w">    </span><span class="p">}</span><span class="w"></span>
-<span class="p">}</span><span class="w"></span>
+<span class="w">            </span><span class="nc">Array</span><span class="p">(</span><span class="nc">MIMERepr</span><span class="p">(</span><span class="s">&quot;text/html&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">s&quot;&lt;strong&gt;</span><span class="si">${</span><span class="n">value</span><span class="p">.</span><span class="n">a</span><span class="si">}</span><span class="s">&lt;/strong&gt;&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
 
-<span class="nc">MyThing</span><span class="p">(</span><span class="s">&quot;hi&quot;</span><span class="p">)</span><span class="w"></span>
+<span class="nc">MyThing</span><span class="p">(</span><span class="s">&quot;hi&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h4 id="using-kerneldisplay">Using <code>kernel.display</code><a class="headerlink" href="#using-kerneldisplay" title="Permanent link">&para;</a></h4>
 <p>Let's say you just want to display some output, but you don't want to go through the trouble of defining a special <abbr title="Representation of a value for display in the notebook">Repr</abbr>.</p>
 <p>You can use the <code>kernel.display</code> package (available in <code>polynote.runtime</code>) to hook into Polynote's display mechanism. </p>
-<p>To display an HTML string, use <code class="highlight"><span class="n">kernel</span><span class="p">.</span><span class="n">display</span><span class="p">.</span><span class="n">html</span><span class="p">(</span><span class="n">content</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span><span class="w"></span></code>, which takes in a <code class="highlight"><span class="nc">String</span><span class="w"></span></code> and 
+<p>To display an HTML string, use <code class="highlight"><span class="n">kernel</span><span class="p">.</span><span class="n">display</span><span class="p">.</span><span class="n">html</span><span class="p">(</span><span class="n">content</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span></code>, which takes in a <code class="highlight"><span class="nc">String</span></code> and 
 outputs it as HTML. </p>
-<p>You can also display other MIME types using <code class="highlight"><span class="n">kernel</span><span class="p">.</span><span class="n">display</span><span class="p">.</span><span class="n">content</span><span class="p">(</span><span class="n">mimeType</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">,</span><span class="w"> </span><span class="n">content</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span><span class="w"></span></code>, where
-<code>content</code> is a <code class="highlight"><span class="nc">String</span><span class="w"></span></code> representation of the content (e.g., base64 encoded for an image). In fact, 
-<code>kernel.display.html</code> is actually a shortcut for <code class="highlight"><span class="n">kernel</span><span class="p">.</span><span class="n">display</span><span class="p">.</span><span class="n">content</span><span class="p">(</span><span class="s">&quot;text/html&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">_</span><span class="p">)</span><span class="w"></span></code>. </p>
+<p>You can also display other MIME types using <code class="highlight"><span class="n">kernel</span><span class="p">.</span><span class="n">display</span><span class="p">.</span><span class="n">content</span><span class="p">(</span><span class="n">mimeType</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">,</span><span class="w"> </span><span class="n">content</span><span class="p">:</span><span class="w"> </span><span class="nc">String</span><span class="p">)</span></code>, where
+<code>content</code> is a <code class="highlight"><span class="nc">String</span></code> representation of the content (e.g., base64 encoded for an image). In fact, 
+<code>kernel.display.html</code> is actually a shortcut for <code class="highlight"><span class="n">kernel</span><span class="p">.</span><span class="n">display</span><span class="p">.</span><span class="n">content</span><span class="p">(</span><span class="s">&quot;text/html&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">_</span><span class="p">)</span></code>. </p>
 <h4 id="visualization-with-python">Visualization with Python<a class="headerlink" href="#visualization-with-python" title="Permanent link">&para;</a></h4>
 <p>The Python ecosystem has a rich history of notebook usage with Jupyter/IPython, and many Python libraries define 
 <a href="https://ipython.readthedocs.io/en/stable/config/integrating.html#integrating-rich-display">rich display representations</a>
@@ -1177,42 +1183,6 @@ supports <code>matplotlib</code>, too!</p>
       </main>
       
         <footer class="md-footer">
-  
-    
-    <nav class="md-footer__inner md-grid" aria-label="Footer" >
-      
-        
-        <a href="../code-cells/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Code Cells" rel="prev">
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
-          </div>
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              Code Cells
-            </div>
-          </div>
-        </a>
-      
-      
-        
-        <a href="../about-menu/" class="md-footer__link md-footer__link--next" aria-label="Next: About Menu" rel="next">
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              About Menu
-            </div>
-          </div>
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
-          </div>
-        </a>
-      
-    </nav>
   
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
@@ -1257,7 +1227,7 @@ supports <code>matplotlib</code>, too!</p>
       <div class="md-dialog__inner md-typeset"></div>
     </div>
     
-    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.16e2a7d4.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}, "version": {"provider": "mike"}}</script>
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.e5c33ebb.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
     <script type="text/javascript">
@@ -1278,10 +1248,9 @@ supports <code>matplotlib</code>, too!</p>
         });
     </script>
     
-      <script src="../../assets/javascripts/bundle.5a2dcb6a.min.js"></script>
+      <script src="../../assets/javascripts/bundle.ba449ae6.min.js"></script>
       
     
 
-    
   </body>
 </html>
