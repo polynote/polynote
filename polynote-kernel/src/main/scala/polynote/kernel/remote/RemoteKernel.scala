@@ -15,7 +15,7 @@ import polynote.kernel.task.TaskManager
 import polynote.kernel.util.{Publish, RPublish, TPublish, UPublish}
 import polynote.messages._
 import polynote.runtime.{StreamingDataRepr, TableOp}
-import zio.{Layer, Promise, RIO, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer, clock}
+import zio.{Layer, Promise, RIO, Ref, RefM, Schedule, Semaphore, Task, UIO, URIO, ZIO, ZLayer, ZRefM, clock}
 import zio.blocking.effectBlocking
 import zio.clock.Clock
 import zio.duration.Duration
@@ -233,18 +233,18 @@ class RemoteKernelClient(
   publishResponse: RPublish[BaseEnv, RemoteResponse],
   cleanup: TaskB[Unit],
   closed: Promise[Throwable, Unit],
-  private[remote] val notebookRef: RemoteNotebookRef // for testing
+  private[remote] val notebookRef: RemoteNotebookRef, // for testing
+  lastKeepAliveRef: Ref[Long]
 ) {
 
   private val sessionHandles = new ConcurrentHashMap[Int, StreamingHandles.Service]()
 
   private val interval = 600000L // 10 minutes in ms
   private val keepAliveIntervalDuration = Duration(interval, TimeUnit.MILLISECONDS)
-  private var lastKeepAlive: Long = 0
+  private val setKeepAlive = clock.instant.flatMap(instant => lastKeepAliveRef.set(instant.toEpochMilli));
 
   def run(): RIO[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse, Unit] = {
-    clock.currentDateTime.map(dateTime => lastKeepAlive = dateTime.toInstant.toEpochMilli) &>
-    checkKeepAlive().repeat(Schedule.spaced(keepAliveIntervalDuration)).forkDaemon &>
+    setKeepAlive *> checkKeepAlive().repeat(Schedule.spaced(keepAliveIntervalDuration)).forkDaemon &>
     requests
       .map(handleRequest)
       .map(z => ZStream.fromEffect(z))
@@ -255,17 +255,17 @@ class RemoteKernelClient(
       .runDrain.uninterruptible
   }
 
-  private def checkKeepAlive(): TaskC[Unit] = clock.currentDateTime.flatMap { dateTime =>
-    val time = dateTime.toInstant.toEpochMilli
-    if (time > lastKeepAlive + interval) {
-      Logging.warn("No connection detected to remote kernel. Shutting remote kernel down...")
-      ZIO.succeed(System.exit(10))
-    } else ZIO.unit
+  private def checkKeepAlive(): TaskC[Unit] = clock.instant.flatMap { instant =>
+    lastKeepAliveRef.get.flatMap(lastKeepAlive => {
+      if (instant.toEpochMilli > lastKeepAlive + interval) {
+        Logging.warn("Lost connection to server. Shutting remote kernel down...") *>
+          ZIO.succeed(System.exit(10))
+      } else ZIO.unit
+    })
   }
 
   private def handleKeepAlive(reqId: Int): ZIO[Clock, DateTimeException, UnitResponse] = {
-    clock.currentDateTime.map(dateTime => lastKeepAlive = dateTime.toInstant.toEpochMilli) &>
-    ZIO.succeed(UnitResponse(reqId))
+    setKeepAlive &> ZIO.succeed(UnitResponse(reqId))
   }
 
 
@@ -352,7 +352,8 @@ object RemoteKernelClient extends polynote.app.App {
     interpFactories <- interpreter.Loader.load
     _               <- Env.addLayer(mkEnv(notebookRef, firstRequest.reqId, publishResponse, interpFactories, kernelFactory, initial.config))
     kernel          <- kernelFactory.apply()
-    client           = new RemoteKernelClient(kernel, requests, publishResponse, transport.close(), closed, notebookRef)
+    lastKeepAliveRef <- Ref.make(0L)
+    client           = new RemoteKernelClient(kernel, requests, publishResponse, transport.close(), closed, notebookRef, lastKeepAliveRef)
     _               <- tapClient.fold(ZIO.unit)(_.set(client))
     _               <- kernel.init()
     _               <- publishResponse.publish(Announce(initial.reqId, localAddress))
