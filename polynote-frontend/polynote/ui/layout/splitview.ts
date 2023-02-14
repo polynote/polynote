@@ -85,10 +85,10 @@ class Dragger extends Disposable {
             // Use different minimums for each side since the left side also has to factor in space for the sticky sidebar
             if (side === 'left') {
                 const leftWidth = this.initialWidth + (mouseX - this.initialX);
-                return leftWidth > 128 ? leftWidth : 128;
+                return Math.max(leftWidth, 128);
             } else {
                 const rightWidth = this.initialWidth - (mouseX - this.initialX);
-                return rightWidth > 64 ? rightWidth : 64;
+                return Math.max(rightWidth, 64);
             }
         }
 
