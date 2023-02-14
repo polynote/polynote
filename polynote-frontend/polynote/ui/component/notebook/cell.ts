@@ -725,6 +725,8 @@ abstract class MonacoCell extends Cell {
                 vertical: "hidden",
                 verticalScrollbarSize: 0,
             },
+            // @ts-ignore
+            'bracketPairColorization.enabled': true,
             // TODO (overflow widgets)
             // overflowWidgetsDomNode: this.overflowDomNode
         });

@@ -22,6 +22,7 @@ export function getHotkeys() {
 
     Object.entries(cellHotkeys).forEach(([code, keyInfo]) => {
         if (!keyInfo.hide) {
+            // TODO: This will need some fixing sadly
             const simpleKeybinding: Keybinding = createSimpleKeybinding(code, OS);
             const keyCombo = keybindingToString(simpleKeybinding);
             hotkeys[keyCombo] = keyInfo.description;
