@@ -418,14 +418,14 @@ export const cellHotkeys: Record<string, HotkeyInfo> = {
     [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: {key: "RunAndInsertBelow", description: "Run the selected cell and insert a new cell below it."},
     [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: {key: "SelectPrevious", description: "Move to previous."},
     [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: {key: "SelectNext", description: "Move to next cell. If there is no cell below, create it."},
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: {key: "InsertAbove", description: "Insert a cell above this cell"},
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B]: {key: "InsertBelow", description: "Insert a cell below this cell"},
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: {key: "Delete", description: "Delete this cell"},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyA]: {key: "InsertAbove", description: "Insert a cell above this cell"},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyB]: {key: "InsertBelow", description: "Insert a cell below this cell"},
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyD]: {key: "Delete", description: "Delete this cell"},
     [monaco.KeyMod.Shift | monaco.KeyCode.F10]: {key: "RunAll", description: "Run all cells."},
     [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: {key: "RunToCursor", description: "Run to cursor."},
     // Special hotkeys to support VIM movement across cells. They are not displayed in the hotkey list
-    [monaco.KeyCode.KEY_J]: {key: "MoveDownJ", description: "", hide: true, vimOnly: true},
-    [monaco.KeyCode.KEY_K]: {key: "MoveUpK", description: "", hide: true, vimOnly: true},
+    [monaco.KeyCode.KeyJ]: {key: "MoveDownJ", description: "", hide: true, vimOnly: true},
+    [monaco.KeyCode.KeyK]: {key: "MoveUpK", description: "", hide: true, vimOnly: true},
 };
 
 type PostKeyAction = "stopPropagation" | "preventDefault"
