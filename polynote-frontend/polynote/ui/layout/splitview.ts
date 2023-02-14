@@ -81,9 +81,16 @@ class Dragger extends Disposable {
         let currentWidth = 0;
         let dragTimeout = 0;
 
-        const updateWidth: (mouseX: number) => number =
-            side === 'left' ? (mouseX => (this.initialWidth + (mouseX - this.initialX)))
-                            : (mouseX => (this.initialWidth - (mouseX - this.initialX)))
+        const updateWidth = (mouseX: number): number => {
+            // Use different minimums for each side since the left side also has to factor in space for the sticky sidebar
+            if (side === 'left') {
+                const leftWidth = this.initialWidth + (mouseX - this.initialX);
+                return leftWidth > 128 ? leftWidth : 128;
+            } else {
+                const rightWidth = this.initialWidth - (mouseX - this.initialX);
+                return rightWidth > 64 ? rightWidth : 64;
+            }
+        }
 
         el.style.gridArea = `${side}drag`;
     }
