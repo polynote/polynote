@@ -22,7 +22,7 @@ import {
     editor,
     IKeyboardEvent,
     IPosition,
-    IRange,
+    IRange, KeyMod,
     languages,
     MarkerSeverity,
     Range,
@@ -409,6 +409,21 @@ export interface HotkeyInfo {
     hide?: boolean,
     vimOnly?: boolean
 }
+
+export const hotKeyCodeToString: Record<string, KeyMod[]> = {
+    [monaco.KeyCode.UpArrow]: [monaco.KeyCode.UpArrow],
+    [monaco.KeyCode.DownArrow]: [monaco.KeyCode.DownArrow],
+    [monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter]: [monaco.KeyMod.WinCtrl, monaco.KeyCode.Enter],
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: [monaco.KeyMod.Shift, monaco.KeyCode.Enter],
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: [monaco.KeyMod.Shift, monaco.KeyMod.CtrlCmd, monaco.KeyCode.Enter],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: [monaco.KeyMod.CtrlCmd, monaco.KeyCode.PageUp],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: [monaco.KeyMod.CtrlCmd, monaco.KeyCode.PageDown],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyA]: [monaco.KeyMod.WinCtrl, monaco.KeyMod.Alt, monaco.KeyCode.KeyA],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyB]: [monaco.KeyMod.WinCtrl, monaco.KeyMod.Alt, monaco.KeyCode.KeyB],
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyD]: [monaco.KeyMod.WinCtrl, monaco.KeyMod.Alt, monaco.KeyCode.KeyD],
+    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: [monaco.KeyMod.Shift, monaco.KeyCode.F10],
+    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: [monaco.KeyMod.CtrlCmd, monaco.KeyMod.Alt, monaco.KeyCode.F9]
+};
 
 export const cellHotkeys: Record<string, HotkeyInfo> = {
     [monaco.KeyCode.UpArrow]: {key: "MoveUp", description: "Move to previous cell."},
