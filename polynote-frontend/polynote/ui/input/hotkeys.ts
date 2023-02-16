@@ -6,15 +6,15 @@ import {KeyMod} from "monaco-editor";
 import {isMacintosh, OS} from 'monaco-editor/esm/vs/base/common/platform.js'
 // @ts-ignore
 import {KeyCodeUtils} from 'monaco-editor/esm/vs/base/common/keyCodes.js'
-import {cellHotkeys, hotKeyCodeToString} from "../component/notebook/cell";
+import {cellHotkeys} from "../component/notebook/cell";
 import * as monaco from "monaco-editor";
 
 export function getHotkeys() {
     const hotkeys: Record<string, string> = {};
 
     Object.entries(cellHotkeys).forEach(([hotkeyCode, keyInfo]) => {
-        if (!keyInfo.hide) {
-            const keyCombo = hotkeyCodeToString(hotkeyCode);
+        if (!keyInfo.hide && keyInfo.keyCodes) {
+            const keyCombo = hotkeyCodeToString(keyInfo.keyCodes);
             hotkeys[keyCombo] = keyInfo.description;
         }
     })
@@ -22,10 +22,10 @@ export function getHotkeys() {
     return hotkeys;
 }
 
-function hotkeyCodeToString(hotkeyCode: string): string {
+function hotkeyCodeToString(keyCodes: KeyMod[]): string {
     const keys: string[] = [];
 
-    hotKeyCodeToString[hotkeyCode].forEach((code: KeyMod) => {
+    keyCodes.forEach((code: KeyMod) => {
         if (code === monaco.KeyMod.WinCtrl)  keys.push("Ctrl");
         else if (code === monaco.KeyMod.Shift) keys.push("Shift");
         else if (code === monaco.KeyMod.Alt) {
