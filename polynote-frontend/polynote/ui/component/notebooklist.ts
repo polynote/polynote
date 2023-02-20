@@ -234,8 +234,6 @@ export class NotebookList extends Disposable {
         searchModal.hide();
 
         this.searchbox = textbox(['notebook-searchbox'], 'search');
-        //this.el = div(['notebooks-list'], [div(['tree-view'], [this.tree.el])])
-        //    .listener("contextmenu", evt => NotebookListContextMenu.get(dispatcher).showFor(evt));
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['left-buttons'], [
