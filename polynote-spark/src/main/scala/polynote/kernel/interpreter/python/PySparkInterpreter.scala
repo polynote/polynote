@@ -222,7 +222,7 @@ class PySparkInterpreter(
            |__sparkConf = SparkConf(_jvm = gateway.jvm, _jconf = gateway.entry_point.sparkContext().getConf())
            |sc = SparkContext(jsc = gateway.jvm.org.apache.spark.api.java.JavaSparkContext(gateway.entry_point.sparkContext()), gateway = gateway, conf = __sparkConf)
            |spark = SparkSession(sc, gateway.entry_point)
-           |sqlContext = spark._wrapped
+           |sqlContext = SQLContext._get_or_create(sc)
            |from pyspark.sql import DataFrame
            |
            |
