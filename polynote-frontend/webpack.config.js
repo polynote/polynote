@@ -10,7 +10,8 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'dist/static'),
     filename: 'app.[contenthash].js',
-    publicPath: 'static/'
+    publicPath: 'static/',
+    hashFunction: 'sha256'
   },
   module: {
     rules: [{
