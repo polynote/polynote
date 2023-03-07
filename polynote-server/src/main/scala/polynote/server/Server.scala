@@ -99,6 +99,7 @@ class Server {
       _            <- Logging.warn(securityWarning)
       _            <- Logging.info(banner)
       _            <- Logging.info(s"Polynote version ${BuildInfo.version}")
+      _            <- Logging.setVerbosity(Logging.Verbosity.getVerbosityFromString(config.log.verbosity))
       _            <- serve(wsKey).orDie
     } yield 0
   }.provideSomeLayer[AppEnv](IdentityProvider.layer.orDie)
