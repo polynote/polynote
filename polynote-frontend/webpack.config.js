@@ -11,7 +11,7 @@ module.exports = {
     path: path.resolve(__dirname, 'dist/static'),
     filename: 'app.[contenthash].js',
     publicPath: 'static/',
-    hashFunction: 'sha256'
+    hashFunction: 'xxhash64'
   },
   module: {
     rules: [{

@@ -2476,8 +2476,8 @@ export class VizCell extends Cell {
         this.resultValue = value;
         this.viz = this.viz || parseMaybeViz(this.cellState.state.content);
         if (!isViz(this.viz)) {
-            this.updateViz(this.selectDefaultViz(this.resultValue));
-            this.valueName = this.viz!.value;
+            const viz = this.updateViz(this.selectDefaultViz(this.resultValue));
+            this.valueName = viz.value;
         }
 
         if (this.editor) {
@@ -2533,7 +2533,7 @@ export class VizCell extends Cell {
             .otherwise({ type: "string", value: resultValue.name })
     }
 
-    private updateViz(viz: Viz) {
+    private updateViz(viz: Viz): Viz {
         const newCode = saveViz(viz);
         const oldViz = this.viz;
         const edits = diffEdits(this.cellState.state.content, newCode);
@@ -2558,6 +2558,7 @@ export class VizCell extends Cell {
 
         }
         this.onChangeViz();
+        return this.viz;
     }
 
     private onChangeViz() {
