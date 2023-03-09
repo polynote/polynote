@@ -90,7 +90,7 @@ export function __getProxyTarget<S>(obj: S): S {
  * This currently isn't used; the build should eliminate it. It's here in case we want to develop a read-only view for
  * production runtime which isn't based on proxies. Currently, arrays make this difficult.
  */
-function readOnlyObject<S>(obj: S): S {
+function readOnlyObject<S extends object>(obj: S): S {
     const view: S = {} as S;
     const props: PropertyDescriptorMap = {};
     let memberViews: S = {} as S;

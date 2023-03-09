@@ -29,6 +29,10 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |  host: 1.1.1.1
         |  port: 8193
         |
+        |# The logger verbosity level: info, warn, error (default: info)
+        |log:
+        |  verbosity: error
+        |
         |# The host and port range for server/kernel communication
         |kernel:
         |  listen: 127.1.1.1
@@ -103,7 +107,8 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       Some(SparkConfig(Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true"), Some("testing"))),
       credentials = Credentials(
         coursier = Some(Credentials.Coursier("~/.config/coursier/credentials.properties"))
-      )
+      ),
+      log= Log(verbosity="error")
     )
 
   }

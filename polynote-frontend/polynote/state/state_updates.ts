@@ -128,6 +128,7 @@ function arrayFieldUpdates<V>(arr: V[], minIdx: number, maxIdx: number, indexShi
         return enumerated;
     }
     return new Proxy(dict, {
+        // @ts-ignore
         get(target: Record<number, UpdateResult<V>>, idx: number, receiver: any): UpdateResult<V> {
             if (idx >= minIdx && idx <= maxIdx) {
                 if (!target[idx]) {
@@ -143,9 +144,11 @@ function arrayFieldUpdates<V>(arr: V[], minIdx: number, maxIdx: number, indexShi
             }
             return noChange(arr[idx]);
         },
+        // @ts-ignore
         has(target: Record<number, UpdateResult<V>>, idx: number): boolean {
             return idx >= minIdx && idx <= maxIdx;
         },
+        // @ts-ignore
         ownKeys: enumerate
     })
 }
@@ -154,13 +157,14 @@ export class RemoveKey<S, K extends keyof S> extends Update<S> {
     constructor(readonly key: K, private _value?: S[K]) { super() }
 
     static unapply<S, K extends keyof S>(inst: RemoveKey<S, K>): ConstructorParameters<typeof RemoveKey> {
+        // @ts-ignore
         return [inst.key, inst.value]
     }
 
     get value(): S[K] | undefined { return this._value }
 
     applyMutate(value: S): UpdateResult<S> {
-        if (value === null || value === undefined || !(this.key in value))
+        if (value === null || value === undefined || !(this.key in (value as any)))
             return noChange(value);
         const oldValue: S[K] = value[this.key];
         delete value[this.key];
@@ -195,7 +199,7 @@ export class UpdateKey<S, K extends keyof S> extends Update<S> {
             } as FieldUpdates<S>
         }
 
-        if (!(this.key in oldValue)) {
+        if (!(this.key in (oldValue as any))) {
             result.addedValues = {
                 [this.key]: childResult.newValue
             } as Partial1<S>;
@@ -355,6 +359,7 @@ export class RenameKey<S, K0 extends keyof S, K1 extends keyof S, V extends S[K0
     constructor(readonly oldKey: K0, readonly newKey: K1) { super() }
 
     static unapply<S, K0 extends keyof S, K1 extends keyof S, V extends S[K0] & S[K1]>(inst: RenameKey<S, K0, K1, V>): ConstructorParameters<typeof RenameKey> {
+        // @ts-ignore
         return [inst.oldKey, inst.newKey];
     }
 

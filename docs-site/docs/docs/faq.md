@@ -9,6 +9,10 @@ navigate to `./docs-site/docs/docs/examples` in your local directory or view the
 
 These examples are pre-populated into the Docker distribution of Polynote. 
 
+### Does Polynote have support for headless mode/programmatic execution of notebooks? 
+
+Polynote has a very rudimentary notebook runner that can be accessed via the command line today, however there is not currently full support for the programmatic execution of notebooks. You can track this issue [here](https://github.com/polynote/polynote/issues/1052). 
+
 ### Who can contribute to Polynote? 
 
 Anyone! Polynote is made possible by the investment of [Netflix OSS](https://netflix.github.io/). 
