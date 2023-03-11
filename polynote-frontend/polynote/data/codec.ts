@@ -325,79 +325,79 @@ export abstract class Codec<T> {
 }
 
 export const str: Codec<string | null> = Object.freeze({
-    encode: (str, writer) => writer.writeString(str),
-    decode: (reader) => reader.readString()
+    encode: (str: string, writer: DataWriter) => writer.writeString(str),
+    decode: (reader: DataReader) => reader.readString()
 });
 
 export const shortStr: Codec<string> = Object.freeze({
-    encode: (str, writer) => writer.writeShortString(str),
-    decode: (reader) => reader.readShortString()
+    encode: (str: string, writer: DataWriter) => writer.writeShortString(str),
+    decode: (reader: DataReader) => reader.readShortString()
 });
 
 export const tinyStr: Codec<string> = Object.freeze({
-    encode: (str, writer) => writer.writeTinyString(str),
-    decode: (reader) => reader.readTinyString()
+    encode: (str: string, writer: DataWriter) => writer.writeTinyString(str),
+    decode: (reader: DataReader) => reader.readTinyString()
 });
 
 export const uint8: Codec<number> = Object.freeze({
-    encode: (value, writer) => writer.writeUint8(value),
-    decode: (reader) => reader.readUint8()
+    encode: (value: number, writer: DataWriter) => writer.writeUint8(value),
+    decode: (reader: DataReader) => reader.readUint8()
 });
 
 export const int8: Codec<number> = Object.freeze({
-    encode: (value, writer) => writer.writeInt8(value),
-    decode: (reader) => reader.readInt8()
+    encode: (value: number, writer: DataWriter) => writer.writeInt8(value),
+    decode: (reader: DataReader) => reader.readInt8()
 });
 
 export const uint16: Codec<number>  = Object.freeze({
-    encode: (value, writer) => writer.writeUint16(value),
-    decode: (reader) => reader.readUint16()
+    encode: (value: number, writer: DataWriter) => writer.writeUint16(value),
+    decode: (reader: DataReader) => reader.readUint16()
 });
 
 export const int16: Codec<number>  = Object.freeze({
-    encode: (value, writer) => writer.writeInt16(value),
-    decode: (reader) => reader.readInt16()
+    encode: (value: number, writer: DataWriter) => writer.writeInt16(value),
+    decode: (reader: DataReader) => reader.readInt16()
 });
 
 export const uint32: Codec<number>  = Object.freeze({
-    encode: (value, writer) => writer.writeUint32(value),
-    decode: (reader) => reader.readUint32()
+    encode: (value: number, writer: DataWriter) => writer.writeUint32(value),
+    decode: (reader: DataReader) => reader.readUint32()
 });
 
 export const int32: Codec<number>  = Object.freeze({
-    encode: (value, writer) => writer.writeInt32(value),
-    decode: (reader) => reader.readInt32()
+    encode: (value: number, writer: DataWriter) => writer.writeInt32(value),
+    decode: (reader: DataReader) => reader.readInt32()
 });
 
 export const int64: Codec<bigint>  = Object.freeze({
-    encode: (value, writer) => writer.writeInt64(value),
-    decode: (reader) => reader.readInt64()
+    encode: (value: bigint, writer: DataWriter) => writer.writeInt64(value),
+    decode: (reader: DataReader) => reader.readInt64()
 });
 
 export const float32: Codec<number>  = Object.freeze({
-    encode: (value, writer) => writer.writeFloat32(value),
-    decode: (reader) => reader.readFloat32()
+    encode: (value: number, writer: DataWriter) => writer.writeFloat32(value),
+    decode: (reader: DataReader) => reader.readFloat32()
 });
 
 export const float64: Codec<number>  = Object.freeze({
-    encode: (value, writer) => writer.writeFloat64(value),
-    decode: (reader) => reader.readFloat64()
+    encode: (value: number, writer: DataWriter) => writer.writeFloat64(value),
+    decode: (reader: DataReader) => reader.readFloat64()
 });
 
 export const bool: Codec<boolean> = Object.freeze({
-    encode: (value, writer) => value ? writer.writeUint8(255) : writer.writeUint8(0),
-    decode: (reader) => !!reader.readUint8()
+    encode: (value: boolean, writer: DataWriter) => value ? writer.writeUint8(255) : writer.writeUint8(0),
+    decode: (reader: DataReader) => !!reader.readUint8()
 });
 
 export const nullCodec: Codec<null> = Object.freeze({
-    encode: (value, writer) => undefined,
-    decode: (reader) => null
+    encode: (value: null, writer: DataWriter) => undefined,
+    decode: (reader: DataReader) => null
 });
 
 export const bufferCodec: Codec<ArrayBuffer> = Object.freeze({
     // TODO: hope `length` is correct here!
-    encode: (value, writer) => writer.writeBuffer({...value, length: value.byteLength}),
-    decode: (reader) => reader.readBuffer()
+    encode: (value: ArrayBuffer, writer: DataWriter) => writer.writeBuffer({...value, length: value.byteLength}),
+    decode: (reader: DataReader) => reader.readBuffer()
 });
 
 class CombinedCodec {

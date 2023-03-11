@@ -505,7 +505,7 @@ function linePlot(plotDef: PlotDefinition, plot: LinePlot, schema: StructType): 
         const colorField = plot.y.colorChannel || 'key';
         const colorType = plot.y.colorChannel ? dimensionType(schema.fieldType(plot.y.colorChannel)!) : 'nominal';
 
-        const layerResult: LayerSpec = {
+        return {
             ...resultCopy,
             transform: quartilesTransform(plot.y.series, plot.y.colorChannel),
             layer: [
@@ -553,7 +553,6 @@ function linePlot(plotDef: PlotDefinition, plot: LinePlot, schema: StructType): 
                 }],
             encoding: undefined
         };
-        return layerResult;
     }
     return result;
 }
