@@ -124,7 +124,7 @@ export function copyObject<T>(srcObj: T, changes?: Partial<T>): T {
 
 export function equalsByKey<A, B>(a: A, b: B, keys: NonEmptyArray<(keyof A & keyof B & PropertyKey)>): boolean {
     return keys.every(k => {
-        if (k in a && k in b) {
+        if (k in (a as any) && k in (b as any)) {
             return deepEquals(a[k], b[k] as any) // TODO: is there a way to fiddle with the types so this works without any?
         } else return false
     })
@@ -137,7 +137,7 @@ export function removeKeys<T>(obj: T, k: (keyof T)[] | keyof T): T {
     } else {
         keyStrings = [k.toString()]
     }
-    return Object.keys(obj).reduce((acc: T, key: string) => {
+    return Object.keys(obj as any).reduce((acc: T, key: string) => {
         if (! keyStrings.includes(key)) {
             return { ...acc, [key]: obj[key as keyof T] }
         }

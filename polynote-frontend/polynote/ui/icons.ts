@@ -25,7 +25,7 @@ function loadXML(uri: string): Promise<Document> {
 
 export function loadIcon(name: string): Promise<SVGElement | HTMLImageElement> {
 
-    if (icons[name])
+    if (name in icons)
         return icons[name];
 
     const srcUrl = `static/style/icons/fa/${name}.svg`;

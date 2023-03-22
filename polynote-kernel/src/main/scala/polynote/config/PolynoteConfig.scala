@@ -227,6 +227,15 @@ object StaticConfig {
   implicit val decoder: Decoder[StaticConfig] = deriveDecoder
 }
 
+final case class Log(
+  verbosity: String = "info"
+)
+
+object Log {
+  implicit val encoder: Encoder.AsObject[Log] = deriveEncoder
+  implicit val decoder: Decoder[Log] = deriveDecoder
+}
+
 final case class PolynoteConfig(
   listen: Listen = Listen(),
   kernel: KernelConfig = KernelConfig(),
@@ -241,7 +250,8 @@ final case class PolynoteConfig(
   credentials: Credentials = Credentials(),
   notifications: String = "",
   env: Map[String, String] = Map.empty,
-  static: StaticConfig = StaticConfig()
+  static: StaticConfig = StaticConfig(),
+  log: Log = Log()
 )
 
 
