@@ -22,7 +22,7 @@ import {
     editor,
     IKeyboardEvent,
     IPosition,
-    IRange,
+    IRange, KeyMod,
     languages,
     MarkerSeverity,
     Range,
@@ -406,26 +406,75 @@ export class CellContainer extends Disposable {
 export interface HotkeyInfo {
     key: string,
     description: string,
+    keyCodes?: KeyMod[],
     hide?: boolean,
     vimOnly?: boolean
 }
 
 export const cellHotkeys: Record<string, HotkeyInfo> = {
-    [monaco.KeyCode.UpArrow]: {key: "MoveUp", description: "Move to previous cell."},
-    [monaco.KeyCode.DownArrow]: {key: "MoveDown", description: "Move to next cell. If there is no cell below, create it."},
-    [monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter]: {key: "RunSelected", description: "Run the selected cell."},
-    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {key: "RunAndSelectNext", description: "Run the selected cell and select the next cell. If there is no cell, create one."},
-    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: {key: "RunAndInsertBelow", description: "Run the selected cell and insert a new cell below it."},
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: {key: "SelectPrevious", description: "Move to previous."},
-    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: {key: "SelectNext", description: "Move to next cell. If there is no cell below, create it."},
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_A]: {key: "InsertAbove", description: "Insert a cell above this cell"},
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_B]: {key: "InsertBelow", description: "Insert a cell below this cell"},
-    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KEY_D]: {key: "Delete", description: "Delete this cell"},
-    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: {key: "RunAll", description: "Run all cells."},
-    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: {key: "RunToCursor", description: "Run to cursor."},
+    [monaco.KeyCode.UpArrow]: {
+        key: "MoveUp",
+        description: "Move to previous cell.",
+        keyCodes: [monaco.KeyCode.UpArrow]
+    },
+    [monaco.KeyCode.DownArrow]: {
+        key: "MoveDown",
+        description: "Move to next cell. If there is no cell below, create it.",
+        keyCodes: [monaco.KeyCode.DownArrow]
+    },
+    [monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter]: {
+        key: "RunSelected",
+        description: "Run the selected cell.",
+        keyCodes: [monaco.KeyMod.WinCtrl, monaco.KeyCode.Enter]
+    },
+    [monaco.KeyMod.Shift | monaco.KeyCode.Enter]: {
+        key: "RunAndSelectNext",
+        description: "Run the selected cell and select the next cell. If there is no cell, create one.",
+        keyCodes: [monaco.KeyMod.Shift, monaco.KeyCode.Enter]
+    },
+    [monaco.KeyMod.Shift | monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter]: {
+        key: "RunAndInsertBelow",
+        description: "Run the selected cell and insert a new cell below it.",
+        keyCodes: [monaco.KeyMod.Shift, monaco.KeyMod.CtrlCmd, monaco.KeyCode.Enter]
+    },
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageUp]: {
+        key: "SelectPrevious",
+        description: "Move to previous.",
+        keyCodes: [monaco.KeyMod.CtrlCmd, monaco.KeyCode.PageUp]
+    },
+    [monaco.KeyMod.CtrlCmd | monaco.KeyCode.PageDown]: {
+        key: "SelectNext",
+        description: "Move to next cell. If there is no cell below, create it.",
+        keyCodes: [monaco.KeyMod.CtrlCmd, monaco.KeyCode.PageDown]
+    },
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyA]: {
+        key: "InsertAbove",
+        description: "Insert a cell above this cell",
+        keyCodes: [monaco.KeyMod.WinCtrl, monaco.KeyMod.Alt, monaco.KeyCode.KeyA]
+    },
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyB]: {
+        key: "InsertBelow",
+        description: "Insert a cell below this cell",
+        keyCodes: [monaco.KeyMod.WinCtrl, monaco.KeyMod.Alt, monaco.KeyCode.KeyB]
+    },
+    [monaco.KeyMod.WinCtrl | monaco.KeyMod.Alt | monaco.KeyCode.KeyD]: {
+        key: "Delete",
+        description: "Delete this cell",
+        keyCodes: [monaco.KeyMod.WinCtrl, monaco.KeyMod.Alt, monaco.KeyCode.KeyD]
+    },
+    [monaco.KeyMod.Shift | monaco.KeyCode.F10]: {
+        key: "RunAll",
+        description: "Run all cells.",
+        keyCodes: [monaco.KeyMod.Shift, monaco.KeyCode.F10]
+    },
+    [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.F9]: {
+        key: "RunToCursor",
+        description: "Run to cursor.",
+        keyCodes: [monaco.KeyMod.CtrlCmd, monaco.KeyMod.Alt, monaco.KeyCode.F9]
+    },
     // Special hotkeys to support VIM movement across cells. They are not displayed in the hotkey list
-    [monaco.KeyCode.KEY_J]: {key: "MoveDownJ", description: "", hide: true, vimOnly: true},
-    [monaco.KeyCode.KEY_K]: {key: "MoveUpK", description: "", hide: true, vimOnly: true},
+    [monaco.KeyCode.KeyJ]: {key: "MoveDownJ", description: "", hide: true, vimOnly: true},
+    [monaco.KeyCode.KeyK]: {key: "MoveUpK", description: "", hide: true, vimOnly: true},
 };
 
 type PostKeyAction = "stopPropagation" | "preventDefault"
@@ -725,6 +774,8 @@ abstract class MonacoCell extends Cell {
                 vertical: "hidden",
                 verticalScrollbarSize: 0,
             },
+            // @ts-ignore
+            'bracketPairColorization.enabled': true,
             // TODO (overflow widgets)
             // overflowWidgetsDomNode: this.overflowDomNode
         });
