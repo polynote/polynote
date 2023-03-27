@@ -534,6 +534,13 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#dependency-lists" class="md-nav__link">
+    Dependency Lists
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#dependency-caching" class="md-nav__link">
     Dependency Caching
   </a>
@@ -854,6 +861,13 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#dependency-lists" class="md-nav__link">
+    Dependency Lists
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#dependency-caching" class="md-nav__link">
     Dependency Caching
   </a>
@@ -927,8 +941,6 @@ causing you problems.</p>
 both Maven and Ivy resolvers (the type of resolver can be selected in the dropdown).</p>
 <p>Additionally, Polynote supports specifying a URL directly to a jar file - such as <code>file:///home/jars/myCoolLibrary.jar</code>. 
 Supported schemas include <code>http</code> and <code>s3</code> (if Spark is enabled). </p>
-<p>You can place your JVM dependencies in a newline-separated <code>.txt</code> file and include that file's URL in your dependencies.
-This will unpack the <code>.txt</code> and download each dependency individually. Note that this method will cache all of the JARs included. </p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
 <p>Note that if you specify a jar directly, Polynote will not resolve any transitive dependencies for this jar. In 
@@ -945,6 +957,10 @@ it's supported by pip. </p>
 repository URL works with that. </p>
 <p>Polynote creates a virtual environment for your notebook when you specify any pip dependencies. See the <a href="../python/#python-dependencies">python 
 documentation</a> for more details. </p>
+<h4 id="dependency-lists">Dependency Lists<a class="headerlink" href="#dependency-lists" title="Permanent link">&para;</a></h4>
+<p>You can place your dependencies in a newline-separated <code>.txt</code> file and include that file's URL in your dependencies.
+The <code>.txt</code> file will be downloaded and each dependency added individually. </p>
+<p>Note that this method will automatically cache all of the dependencies from the <code>.txt</code> file. </p>
 <h4 id="dependency-caching">Dependency Caching<a class="headerlink" href="#dependency-caching" title="Permanent link">&para;</a></h4>
 <p>By default, Polynote caches JVM dependencies that are specified with URLs, as well as the <a href="../python/#python-dependencies">virtual environment created
 for your notebook</a>. </p>
