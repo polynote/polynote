@@ -32,7 +32,7 @@ import {
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepCopy, deepEquals, Deferred} from "../util/helpers";
+import {deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
 import {ConstView, ProxyStateView} from "./state_handler";
 import {ServerStateHandler} from "./server_state";
