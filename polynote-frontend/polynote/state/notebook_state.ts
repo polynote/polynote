@@ -283,6 +283,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
      * @param anchor     The anchor. If it is undefined, the anchor is based on the currently selected cell. If none is
      *                   selected, the anchor is either the first or last cell (depending on the direction supplied).
      *                   The anchor is used to determine the location, language, and metadata to supply to the new cell.
+     *                   If an anchor is not explicitly defined, the new cell will not assume the found anchor cell's metadata.
      * @return           A Promise that resolves with the inserted cell's id.
      */
     insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
@@ -297,7 +298,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 }
             }
             const currentCell = state.cells[currentCellId];
-            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: currentCell?.metadata ?? new CellMetadata()};
+            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: new CellMetadata()};
         }
         const anchorIdx = this.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
