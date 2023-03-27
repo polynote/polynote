@@ -13,6 +13,7 @@ import polynote.kernel.dependency.noCacheSentinel
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
+import polynote.kernel.util.DepsParser.flattenDeps
 import polynote.kernel.{BaseEnv, CompileErrors, Completion, CompletionType, GlobalEnv, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.{CellID, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
@@ -1014,11 +1015,12 @@ object VirtualEnvFetcher {
     val notebookConfig = notebook.config.getOrElse(NotebookConfig.empty)
     val dependencies = notebookConfig.dependencies.toList.flatMap(_.getOrElse("python", Nil)).distinct
     val pipRepos = notebookConfig.repositories.toList.flatten.collect { case x: pip => x }
-    val pyConfig = PythonDepConfig(dependencies, pipRepos, notebookConfig.exclusions.toList.flatten)
     if (dependencies.nonEmpty) {
       for {
         dir         <- effectBlocking(Paths.get(sanitize(config.storage.cache), sanitize(notebook.path), "venv").toAbsolutePath)
         _           <- CurrentTask.update(_.progress(0.0, Some("Initializing virtual environment")))
+        txtDeps     <- flattenDeps(dependencies)
+        pyConfig     = PythonDepConfig(txtDeps, pipRepos, notebookConfig.exclusions.toList.flatten)
         initialized <- initVenv(dir, pyConfig)
         _           <- ZIO.when(initialized)(CurrentTask.update(_.progress(0.2, Some("Installing dependencies"))))
         _           <- ZIO.when(initialized)(installDependencies(dir, pyConfig))
