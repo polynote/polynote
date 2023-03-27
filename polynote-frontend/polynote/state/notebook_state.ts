@@ -300,8 +300,10 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             }
             const currentCell = state.cells[currentCellId];
             // Shed old execution info
-            const newCellMetadata = new CellMetadata(currentCell.metadata.disableRun, currentCell.metadata.hideSource, currentCell.metadata.hideOutput, currentCell.metadata.splitDisplay, currentCell.metadata.wrapOutput);
-            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: newCellMetadata ?? new CellMetadata()};
+            const newCellMetadata = currentCell ?
+                new CellMetadata(currentCell.metadata.disableRun, currentCell.metadata.hideSource, currentCell.metadata.hideOutput, currentCell.metadata.splitDisplay, currentCell.metadata.wrapOutput) :
+                new CellMetadata();
+            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: newCellMetadata};
         }
         const anchorIdx = this.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
