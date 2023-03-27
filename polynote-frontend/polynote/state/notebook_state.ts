@@ -32,7 +32,7 @@ import {
 import {CellComment, CellMetadata, NotebookCell, NotebookConfig} from "../data/data";
 import {ContentEdit, diffEdits} from "../data/content_edit";
 import {EditBuffer} from "../data/edit_buffer";
-import {deepEquals, Deferred} from "../util/helpers";
+import {deepCopy, deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
 import {ConstView, ProxyStateView} from "./state_handler";
 import {ServerStateHandler} from "./server_state";
@@ -283,7 +283,8 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
      * @param anchor     The anchor. If it is undefined, the anchor is based on the currently selected cell. If none is
      *                   selected, the anchor is either the first or last cell (depending on the direction supplied).
      *                   The anchor is used to determine the location, language, and metadata to supply to the new cell.
-     *                   If an anchor is not explicitly defined, the new cell will not assume the found anchor cell's metadata.
+     *                   If an anchor is not explicitly defined, the new cell's metadata will not contain the old cell's
+     *                   execution info.
      * @return           A Promise that resolves with the inserted cell's id.
      */
     insertCell(direction: 'above' | 'below', anchor?: {id: number, language: string, metadata: CellMetadata, content?: string}): Promise<number> {
@@ -298,7 +299,9 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
                 }
             }
             const currentCell = state.cells[currentCellId];
-            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: new CellMetadata()};
+            // Shed old execution info
+            const newCellMetadata = new CellMetadata(currentCell.metadata.disableRun, currentCell.metadata.hideSource, currentCell.metadata.hideOutput, currentCell.metadata.splitDisplay, currentCell.metadata.wrapOutput);
+            anchor = {id: currentCellId, language: (currentCell?.language === undefined || currentCell?.language === 'viz') ? 'scala' : currentCell.language, metadata: newCellMetadata ?? new CellMetadata()};
         }
         const anchorIdx = this.getCellIndex(anchor.id)!;
         const prevIdx = direction === 'above' ? anchorIdx - 1 : anchorIdx;
