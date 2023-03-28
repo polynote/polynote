@@ -120,7 +120,8 @@ export class NotebookConfigEl extends Disposable {
             try {
                 paste = JSON.parse(clipText);
                 conf = new NotebookConfig(paste.dependencies, paste.exclusions, paste.repositories, paste.sparkConfig, paste.sparkTemplate, paste.env, paste.scalaVersion, paste.jvmArgs);
-                this.saveConfig(conf)
+                this.saveConfig(conf);
+                this.pasteErrorMessage.classList.add('hide');
             } catch (e) {
                 this.pasteErrorMessage.classList.remove('hide');
                 console.error("Paste failed - the following clipboard value is not valid JSON:", paste!);
