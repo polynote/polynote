@@ -22,7 +22,9 @@ RUN pip3 install -r /tmp/requirements.txt
 # Package everything together by making the distribution with `sbt dist`
 # Then build this from the project root using `-f docker/dev/Dockerfile` to select this file.
 # for example (don't forget the dot at the end!):
+# for frontend dev
 #   cd polynote-frontend; npm install; npm run dist; cd..
+# for image creation
 #   sbt dist
 #   docker build -t strava/polynote:dev -f docker/dev/Dockerfile .
 COPY target/polynote-dist.tar.gz .
