@@ -3,7 +3,7 @@
 
 set -e -x
 
-SPARK_VERSION=${SPARK_VERSION:-"2.4.5"}
+SPARK_VERSION=${SPARK_VERSION:-"3.3.1"}
 SPARK_VERSION_DIR="spark-${SPARK_VERSION}"
 
 if test "${SPARK_VERSION}" \> "3" -a "${SCALA_VERSION}" = "2.11"
@@ -24,7 +24,7 @@ then
   SPARK_DIST_CLASSPATH=$($HADOOP_HOME/bin/hadoop classpath)
   popd
 else
-  SPARK_NAME="spark-${SPARK_VERSION}-bin-hadoop2.7"
+  SPARK_NAME="spark-${SPARK_VERSION}-bin-hadoop3"
 fi
 
 pushd /opt
