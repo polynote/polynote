@@ -23,7 +23,7 @@ RUN pip3 install -r /tmp/requirements.txt
 # Then build this from the project root using `-f docker/dev/Dockerfile` to select this file.
 # for example (don't forget the dot at the end!):
 # for frontend dev
-#   cd polynote-frontend; npm install; npm run dist; cd..
+#   cd polynote-frontend; npm install; npm run dist; cd ..
 # for image creation
 #   sbt dist
 #   docker build -t strava/polynote:dev -f docker/dev/Dockerfile .

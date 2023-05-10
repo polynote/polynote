@@ -1,0 +1,6 @@
+default:
+  tasks:
+    pre:
+      - ./scripts/pre.sh
+    build:
+      - ./scripts/build.sh
