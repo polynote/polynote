@@ -44,6 +44,7 @@ export interface CellState {
     id: number,
     language: string,
     content: string,
+    title: string,
     metadata: CellMetadata,
     comments: Record<string, CellComment>,
     output: Output[],
@@ -372,6 +373,12 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         }), source)
     }
 
+    setCellTitle(id: number, title: string) {
+        this.cellsHandler.updateField(id, () => ({
+            title: title
+        }))
+    }
+
     // wait for cell to transition to a specific state
     waitForCellChange(id: number, targetState: "queued" | "running" | "error"): Promise<void> {
         return new Promise<void>(resolve => {
@@ -548,6 +555,10 @@ export class NotebookUpdateHandler extends Disposable { // extends ObjectStateHa
 
         handler.view("language").addObserver(lang => {
             this.addUpdate(new messages.SetCellLanguage(this.globalVersion, this.localVersion, id, lang))
+        }).disposeWith(this)
+
+        handler.view("title").addObserver(title => {
+            this.addUpdate(new messages.SetCellTitle(this.globalVersion, this.localVersion, id, title))
         }).disposeWith(this)
 
         handler.view("content").addObserver((content, updateResult) => {

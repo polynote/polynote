@@ -28,7 +28,7 @@ import {ServerStateHandler} from "../../../state/server_state";
 import {KernelInfo, KernelState, KernelSymbols, KernelTasks, NotebookStateHandler} from "../../../state/notebook_state";
 import {ViewPreferences} from "../../../state/preferences";
 import {DisplayError, ErrorStateHandler} from "../../../state/error_state";
-import {changedKeys, findInstance} from "../../../util/helpers";
+import {findInstance, truncateStr} from "../../../util/helpers";
 import {remove} from "vega-lite/build/src/compositemark";
 import * as monaco from "monaco-editor";
 import {displayData, prettyDisplayData, prettyDisplayString} from "../../display/display_content";
@@ -324,6 +324,8 @@ class KernelTasksEl extends Disposable {
 
     private addTask(id: string, label: string, detail: Content, status: number, progress: number, parent: string | undefined = undefined, remove: () => void = () => this.cancelTaskWrapper(id), copy?: () => string) {
         // short-circuit if the task coming in is already completed.
+        let labelEl: HTMLHeadingElement;
+
         if (status === TaskStatus.Complete) {
             remove()
         } else {
@@ -332,7 +334,7 @@ class KernelTasksEl extends Disposable {
                     evt.stopPropagation();
                     remove();
                 }),
-                h4([], [label]),
+                labelEl = h4([], [label]),
                 div(['detail'], detail),
                 div(['progress'], [div(['progress-bar'], [])]),
                 div(['child-tasks'], [])
@@ -345,6 +347,18 @@ class KernelTasksEl extends Disposable {
 
             if (detail && typeof detail === "string") {
                 taskEl.attr('title', detail);
+            }
+
+            const idAsNum = parseInt(id);
+            const updateCellTitle = (cellTitle: string): void => {
+                if (cellTitle != "" && cellTitle !== `Cell ${id}`)
+                    labelEl.innerText = label + ` (${truncateStr(cellTitle, 20)})`;
+            }
+            if (!isNaN(idAsNum)) {
+                const nbInfoHandler = ServerStateHandler.getOrCreateNotebook(this.notebookPathHandler.state).handler;
+                const lens = nbInfoHandler.cellsHandler.lens(idAsNum);
+                lens.observeKey("title", newTitle => updateCellTitle(newTitle));
+                updateCellTitle(nbInfoHandler.state.cells[idAsNum].title);
             }
 
             if (Object.keys(TaskStatus)[status] === "Error") {
@@ -376,9 +390,8 @@ class KernelTasksEl extends Disposable {
 
     private jumpToCell(id: string) {
         const nbInfo = ServerStateHandler.getOrCreateNotebook(this.notebookPathHandler.state);
-        const idAsNum = id.split(" ").pop(); // extract the actual id number
-        if (idAsNum != undefined && !isNaN(parseInt(idAsNum))) { // Check there was a second word, and verify it is a number
-            nbInfo.handler.selectCell(parseInt(idAsNum));
+        if (!isNaN(parseInt(id))) { // Verify the id is a number
+            nbInfo.handler.selectCell(parseInt(id));
         }
     }
 

@@ -72,7 +72,8 @@ final case class NotebookCell(
   content: Rope,
   results: ShortList[Result] = ShortList(Nil),
   metadata: CellMetadata = CellMetadata(),
-  comments: ShortMap[CommentID, Comment] = Map.empty[CommentID, Comment]
+  comments: ShortMap[CommentID, Comment] = Map.empty[CommentID, Comment],
+  title: Option[TinyString] = None
 ) {
   def updateContent(fn: Rope => Rope): NotebookCell = copy(content = fn(content))
 }
@@ -248,6 +249,7 @@ sealed trait NotebookUpdate extends Message {
     case d @ DeleteCell(_, _, _)               => d.copy(globalVersion = global, localVersion = local)
     case u @ UpdateConfig(_, _, _)             => u.copy(globalVersion = global, localVersion = local)
     case l @ SetCellLanguage(_, _, _, _)       => l.copy(globalVersion = global, localVersion = local)
+    case t @ SetCellTitle(_, _, _, _)          => t.copy(globalVersion = global, localVersion = local)
     case o @ SetCellOutput(_, _, _, _)         => o.copy(globalVersion = global, localVersion = local)
     case cc @ CreateComment(_, _, _, _)        => cc.copy(globalVersion = global, localVersion = local)
     case dc @ DeleteComment(_, _, _, _)        => dc.copy(globalVersion = global, localVersion = local)
@@ -299,6 +301,7 @@ sealed trait NotebookUpdate extends Message {
       }
     case UpdateConfig(_, _, config)    => notebook.copy(config = Some(config))
     case SetCellLanguage(_, _, id, lang) => notebook.updateCell(id)(_.copy(language = lang))
+    case SetCellTitle(_, _, id, newTitle) => notebook.updateCell(id)(_.copy(title = Some(newTitle)))
     case SetCellOutput(_, _, id, output) => notebook.setResults(id, output.toList)
     case CreateComment(_, _, cellId, comment) => notebook.createComment(cellId, comment)
     case UpdateComment(_, _, cellId, commentId, range, content) => notebook.updateComment(cellId, commentId, range, content)
@@ -379,11 +382,14 @@ final case class SetCellLanguage(globalVersion: Int, localVersion: Int, id: Cell
 }
 object SetCellLanguage extends NotebookUpdateCompanion[SetCellLanguage](11)
 
+final case class SetCellTitle(globalVersion: Int, localVersion: Int, id: CellID, title: TinyString) extends Message with NotebookUpdate
+object SetCellTitle extends NotebookUpdateCompanion[SetCellTitle](35)
+
 final case class MoveCell(globalVersion: Int, localVersion: Int, id: CellID, after: CellID) extends Message with NotebookUpdate
 object MoveCell extends NotebookUpdateCompanion[MoveCell](33)
 
 final case class NotebookSaved(path: ShortString, timestamp: Long) extends Message
-object NotebookSaved extends MessageCompanion[NotebookSaved](35)
+object NotebookSaved extends MessageCompanion[NotebookSaved](36)
 
 final case class StartKernel(level: Byte) extends Message
 object StartKernel extends MessageCompanion[StartKernel](12) {
@@ -449,7 +455,8 @@ object KeepAlive extends MessageCompanion[KeepAlive](32)
 final case class NotebookSearchResult(
   path: ShortString,
   cellID: CellID,
-  cellContent: ShortString
+  cellContent: ShortString,
+  title: Option[TinyString]
 )
 final case class SearchNotebooks(query: ShortString, notebookSearchResults: List[NotebookSearchResult]) extends Message
 object SearchNotebooks extends MessageCompanion[SearchNotebooks](34)

@@ -315,7 +315,7 @@ class CodeToolbar extends ToolbarElement {
                     .click(() => {
                         const activeId = this.activeCellView?.state?.id;
                         if (activeId !== undefined) {
-                            this.dispatcher?.cancelTask(`Cell ${activeId}`);
+                            this.dispatcher?.cancelTask(activeId.toString());
                         }
                     }),
             ]

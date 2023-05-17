@@ -202,7 +202,7 @@ export function cleanCells(cells: NotebookCell[]): CleanedCell[] {
         Object.entries(cell.comments).forEach(([id, comment]) => {
             cleaned[id] = clean(comment) // We need to remove prototypes and functions from CellComment before storing it in the database.
         })
-        return {id: cell.id, content: cell.content, language: cell.language, comments: cleaned}
+        return {id: cell.id, content: cell.content, language: cell.language, comments: cleaned, title: cell.title}
     })
 }
 

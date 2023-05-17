@@ -179,15 +179,8 @@ class KernelPublisher private (
       } orElse taskManager.list
     )
 
-  // TODO: A bit ugly. There's probably a better way to keep track of cell status.
-  private val extract = """Cell (\d*)""".r
   def statuses: TaskB[List[CellStatusUpdate]] = tasks().map(tasks => tasks.flatMap {
-    task =>
-      task.id match {
-        case extract(cellId) =>
-          List(CellStatusUpdate(cellId.toShort, task.status))
-        case _ => Nil
-      }
+    task => List(CellStatusUpdate(task.id.toShort, task.status))
   })
 
   def subscribe(): RManaged[BaseEnv with GlobalEnv with PublishMessage with UserIdentity, KernelSubscriber] =

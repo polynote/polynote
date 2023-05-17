@@ -331,7 +331,7 @@ select {
       display: grid;
       font-size: 11pt;
       grid-template-areas: "button label lang options exec-info";
-      grid-template-columns: min-content 10ch auto 2fr min-content;
+      grid-template-columns: min-content auto auto 2fr min-content;
       grid-template-rows: min-content;
       border-bottom-width: 1px;
       border-bottom-style: solid;
@@ -371,6 +371,18 @@ select {
         &:after {
           content: '):';
         }
+
+        &:hover {
+          cursor: pointer;
+        }
+      }
+
+      .cell-label-input {
+        margin: 0 4px;
+      }
+
+      .hidden-cell-label {
+        display: none;
       }
 
       .lang-selector, .value-name {

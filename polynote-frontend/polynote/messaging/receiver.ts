@@ -293,10 +293,9 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
 
                     let kernel = NoUpdate as UpdateOf<KernelState>;
                     if (status === TaskStatus.Queued) {
-                        const taskId = `Cell ${cellId}`;
                         kernel = {
                             tasks: {
-                                [taskId]: new TaskInfo(taskId, taskId, '', TaskStatus.Queued, 0)
+                                [cellId]: new TaskInfo(cellId.toString(), `Cell ${cellId}`, '', TaskStatus.Queued, 0)
                             }
                         }
                     }
@@ -490,6 +489,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
             id: cell.id,
             language: cell.language,
             content: cell.content,
+            title: cell.title ?? `Cell ${cell.id}`,
             metadata: cell.metadata,
             comments: cell.comments,
             output: [],

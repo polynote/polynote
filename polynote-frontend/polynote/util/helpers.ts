@@ -397,6 +397,10 @@ export function joinQuotedArgs(strs: string[] | undefined): string | undefined {
     return strs?.map(quoted).join(' ')
 }
 
+export function truncateStr(str: string, limit: number) {
+    return (str.length > limit) ? str.substr(0, limit - 1) + '...' : str;
+}
+
 //****************
 //* Date Helpers
 //****************
