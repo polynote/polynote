@@ -1,4 +1,4 @@
-name: Build
+name: Build 2.12
 
 on:
   push:
@@ -32,5 +32,5 @@ jobs:
         export LD_PRELOAD=${jep_lib_path}/libpython3.so
 
         pushd $GITHUB_WORKSPACE
-          sbt +test
+          sbt 'set scalaVersion := "2.12.12"' test
         popd
