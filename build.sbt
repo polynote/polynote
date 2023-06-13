@@ -58,7 +58,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.5.0",
+  version := "0.5.1",
   publishTo := sonatypePublishToBundle.value,
   developers := List(
     Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),

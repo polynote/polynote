@@ -1,5 +1,21 @@
 # Unreleased
 
+# 0.5.1 (Mar 28, 2022)
+**Features:**
+- Add log verbosity configuration #1380 (thanks @dhia-gharsallaoui)
+
+**Bugfixes:**
+- Fix an issue preventing the creation of zombie kernels by adding a KeepAlive between kernel <-> server #1319
+- Add support for .txt dependencies in Python #1357 
+- Add stylesheet versions to bust the CSS cache on new version deployments #1136 
+- Fix an issue where panels can be dragged to a negative width and then couldn't be adjusted again #1335 
+- Add an error message on config paste failure #1375
+- Fix a bug where execution info was copied when a new cell was inserted without being explicitly requested #1392
+
+**Misc:**
+- Upgrade Monaco version, adding support for various new Monaco features and fixing some longstanding editor bugs #457 #1382 
+- Upgrade Webpack version to fix CI failures #1388 
+
 # 0.5.0 (Nov 30, 2022) 
 **Features:**
 - Add a table of contents along with a full left navbar redesign #1301 
