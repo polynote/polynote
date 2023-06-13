@@ -243,7 +243,7 @@ val sparkSettings = Seq(
     import sys.process._
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
-    val pkgName = s"spark-$distVersion-bin-hadoop2.7"
+    val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-$distVersion-bin-hadoop2.7-scala2.13" else s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
