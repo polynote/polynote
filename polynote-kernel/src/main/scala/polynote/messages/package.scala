@@ -31,6 +31,10 @@ package object messages {
     else
       str.asInstanceOf[ShortString]
 
+    def truncatePretty(str: String): ShortString = if (str.length > Short.MaxValue) {
+      (str.substring(0, Short.MaxValue - 2) + "…").asInstanceOf[ShortString]
+    } else str.asInstanceOf[ShortString]
+
     def unapply(str: ShortString): Option[String] = Option(str)
   }
 

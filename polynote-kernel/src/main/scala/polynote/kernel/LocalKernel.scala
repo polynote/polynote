@@ -11,7 +11,7 @@ import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState,
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.RefMap
-import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, Streaming, TinyString, Updating, truncateTinyString}
+import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, ShortString, Streaming, TinyString, Updating, truncateTinyString}
 import polynote.runtime._
 import scodec.bits.ByteVector
 import zio.blocking.{Blocking, effectBlocking}
@@ -239,8 +239,9 @@ class LocalKernel private[kernel] (
         }.toMap
 
         def updateValue(value: ResultValue): RIO[Blocking with Logging, ResultValue] = {
-          val makeStringRepr: UIO[StringRepr] =
-            ZIO(StringRepr(TinyString.truncatePretty(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null"))))
+          val makeStringRepr: RIO[Logging, StringRepr] =
+            ZIO(StringRepr(ShortString.truncatePretty(Option(value.value).flatMap(v => Option(v.toString)).getOrElse("null"))))
+              .onError(err => Logging.error("Error creating String repr", err))
               .catchAll {
                 err => ZIO.succeed(StringRepr(s"Error while representing ${value.name} as a String: ${err.getClass.getName}. Try executing ${value.name}.toString() to see the stack trace."))
               }
