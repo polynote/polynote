@@ -67,7 +67,7 @@ Let's enter some Scala code in the code cell. The code we're writing is just a l
 Here it is in case you're following along:
 
 
-???example "Demonstation Code"
+???example "Demonstration Code"
     ```scala
     import scala.util.Random.nextGaussian
 
