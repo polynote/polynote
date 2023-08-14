@@ -60,9 +60,12 @@ val commonSettings = Seq(
   ),
   version := "0.5.1",
   publishTo := sonatypePublishToBundle.value,
+  // disable scalaDoc generation because it's causing weird compiler errors and we don't use it anyways
+  Compile / packageDoc / publishArtifact := false,
   developers := List(
     Developer(id = "jeremyrsmith", name = "Jeremy Smith", email = "", url = url("https://github.com/jeremyrsmith")),
-    Developer(id = "jonathanindig", name = "Jonathan Indig", email = "", url = url("https://github.com/jonathanindig"))
+    Developer(id = "jonathanindig", name = "Jonathan Indig", email = "", url = url("https://github.com/jonathanindig")),
+    Developer(id = "omidmogasemi", name = "Omid Mogasemi", email = "", url = url("https://github.com/omidmogasemi"))
   ),
   scalacOptions ++= Seq(
     "-language:higherKinds",
