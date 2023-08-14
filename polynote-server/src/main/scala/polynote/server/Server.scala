@@ -150,8 +150,8 @@ class Server {
 
         gzipped orElse nogzip orElse fromJar
       }.catchAll {
-        case err: HTTPError => ZIO.fail(err)
-        case err => Logging.error("Error serving file", err) *> ZIO.fail(InternalServerError("Error serving file", Some(err)))
+        case err: HTTPError => Logging.error(s"Error serving file: $name", err) *> ZIO.fail(err)
+        case err => Logging.error(s"Error serving file: $name", err) *> ZIO.fail(InternalServerError(s"Error serving file: $name", Some(err)))
       }
 
       val serveStatic: PartialFunction[Request, ZIO[RequestEnv, HTTPError, Response]] = {
