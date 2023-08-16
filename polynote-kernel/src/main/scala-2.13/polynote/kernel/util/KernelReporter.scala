@@ -36,7 +36,7 @@ case class KernelReporter(settings: Settings) extends FilteringReporter {
   private def captureState = State(reports, 0, warningCount, errorCount)
   private def restoreState(state: State): Unit = {
     reset()
-    _reports.addAll(state.reports)
+    _reports ++= state.reports
     (0 until state.warns).foreach(_ => increment(WARNING))
     (0 until state.errs).foreach(_ => increment(ERROR))
   }
