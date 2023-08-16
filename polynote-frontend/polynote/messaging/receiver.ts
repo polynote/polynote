@@ -47,6 +47,7 @@ import {
 import {ClientBackup} from "../state/client_backup";
 import {ErrorStateHandler} from "../state/error_state";
 import {ServerState, ServerStateHandler} from "../state/server_state";
+import {posToRange} from "../util/helpers";
 import {IRange, languages, Uri} from "monaco-editor";
 import Definition = languages.Definition;
 
@@ -139,8 +140,7 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
         this.receive(messages.GoToDefinitionResponse, (s, reqId, location, source) => {
             if (s.requestedDefinition) {
                 const definition: Definition = location.map(location => {
-                    const range: IRange = {startLineNumber: location.line, endLineNumber: location.line, startColumn: location.column, endColumn: location.column};
-                    const loc: languages.Location = {uri: Uri.parse(location.uri), range};
+                    const loc: languages.Location = {uri: Uri.parse(location.uri), range: posToRange(location)};
                     return loc
                 })
                 s.requestedDefinition.resolve(new GoToDefinitionResponse(reqId, location, source));

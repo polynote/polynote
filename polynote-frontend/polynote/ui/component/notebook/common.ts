@@ -5,21 +5,14 @@ import {ServerStateHandler} from "../../../state/server_state";
 import Definition = languages.Definition;
 import {NotebookStateHandler} from "../../../state/notebook_state";
 import {Either, Left, Right} from "../../../data/codec_types";
-import {arrExists} from "../../../util/helpers";
+import {arrExists, posToRange} from "../../../util/helpers";
+
 
 export function goToDefinition(
     notebookState: NotebookStateHandler,
     cellOrFile: Left<string> | Right<number>,
     offset: number
 ): Promise<Definition> {
-    function range(loc: {line: number, column: number}) {
-        return {
-            startLineNumber: loc.line,
-            endLineNumber: loc.line,
-            startColumn: loc.column,
-            endColumn: loc.column
-        }
-    }
 
     return new Promise<GoToDefinitionResponse>((resolve, reject) => {
         notebookState.state.requestedDefinition?.reject("cancelled");
@@ -53,7 +46,7 @@ export function goToDefinition(
         }
         return result.location.map(loc => ({
             uri: Uri.parse(loc.uri),
-            range: range(loc)
+            range: posToRange(loc)
         }))
     })
 }

@@ -124,7 +124,7 @@ class LocalKernel private[kernel] (
           (cell, interp, state) <- cellInterpreter(id, forceStart = true).onError(cause => Logging.error(cause))
           locations             <- interp.goToDefinition(cell.content.toString, pos, state)
         } yield locations
-        lookup.catchAll(_ => ZIO.succeed((Nil, None)))
+        lookup.onError(Logging.error).catchAll(_ => ZIO.succeed((Nil, None)))
 
       case Left(uri) =>
         val ext = uri.split('.').last

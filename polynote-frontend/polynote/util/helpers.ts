@@ -3,6 +3,15 @@
 import * as fastEquals from 'fast-deep-equal/es6';
 import match, {Matcher} from "./match";
 
+export function posToRange(loc: {line: number, column: number}) {
+    return {
+        startLineNumber: loc.line,
+        endLineNumber: loc.line,
+        startColumn: loc.column,
+        endColumn: loc.column
+    }
+}
+
 export function deepEquals<T>(a: T, b: T, ignoreKeys?: (keyof T)[]): boolean {
     if ((a === undefined && b !== undefined) || (b === undefined && a !== undefined)) {
         return false;

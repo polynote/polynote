@@ -6,7 +6,7 @@ import {ServerStateHandler} from "../../state/server_state";
 import {Notebook} from "./notebook/notebook";
 import {VimStatus} from "./notebook/vim_status";
 import {nameFromPath} from "../../util/helpers";
-import {DependencyViewer} from "./notebook/depdency_viewer";
+import {DependencyViewer} from "./notebook/dependency_viewer";
 import {matchS} from "../../util/match";
 
 export class Tabs extends Disposable {

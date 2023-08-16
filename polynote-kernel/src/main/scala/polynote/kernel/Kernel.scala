@@ -32,7 +32,7 @@ trait Kernel {
   /**
     * Provide a location for the definition of whatever is at the given position in the given cell
     */
-  def goToDefinition(id: Either[String, CellID], pos: Int): TaskC[(List[DefinitionLocation], Option[String])]
+  def goToDefinition(fileOrCell: Either[String, CellID], pos: Int): TaskC[(List[DefinitionLocation], Option[String])]
 
   /**
     * Perform any initialization for the kernel

@@ -180,6 +180,7 @@ object CoursierFetcher {
     .withClassifiers(classifiers)
     .withMainArtifacts(true)
 
+  // should this artifact go on the classpath? I.e. does it have classes in it, or is it a source/doc JAR?
   private def isClasspath(pub: Publication) = pub.classifier.isEmpty || pub.classifier.value == "all"
 
   private def download(
