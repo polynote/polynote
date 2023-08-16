@@ -737,7 +737,7 @@ export class LeafEl extends Disposable {
                 evt.stopPropagation();
                 ServerStateHandler.loadNotebook(leaf.fullPath, true)
                     .then(() => {
-                        ServerStateHandler.selectNotebook(leaf.fullPath)
+                        ServerStateHandler.selectFile(leaf.fullPath)
                     })
             })
     }

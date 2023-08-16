@@ -8,7 +8,7 @@ import polynote.kernel.{CompileErrors, Completion, CompletionType, Output, Param
 import polynote.messages.TinyList
 import polynote.runtime.MIMERepr
 import polynote.runtime.python.{PythonFunction, PythonObject}
-import polynote.testing.InterpreterSpec
+import polynote.testing.{InterpreterSpec, MockTaskManager}
 import polynote.testing.kernel.MockEnv
 import zio.ZLayer
 
@@ -418,7 +418,7 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
 
     "completions" in {
       val completions = interpreter.completionsAt("dela", 4, State.id(1)).runIO()
-      completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("obj", ""), ("name", "str"))))), "", CompletionType.Method))
+      completions shouldEqual List(Completion("delattr", Nil, TinyList(List(TinyList(List(("obj", "Any"), ("name", "str"))))), "", CompletionType.Method))
       val keywordCompletion = interpreter.completionsAt("d={'foo': 'bar'}; d['']", 21, State.id(1)).runIO()
       keywordCompletion shouldEqual List(Completion("'foo", Nil, Nil, "", CompletionType.Unknown, None))
     }
@@ -793,7 +793,7 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
 
   "Polyglot interop" - {
     "should work with a Scala List" in {
-      val scalaInterpreter = ScalaInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler)).runIO()
+      val scalaInterpreter = ScalaInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler) ++ MockTaskManager.layer).runIO()
       val pythonInterpreter = interpreter
       // works with python!
       assertPolyOutput(List(

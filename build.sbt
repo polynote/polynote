@@ -175,6 +175,7 @@ val `polynote-kernel` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
+    "org.scalameta" % "semanticdb-scalac-core" % "4.6.0" cross CrossVersion.full,
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
     "org.scodec" %% "scodec-core" % "1.11.4",
@@ -245,7 +246,7 @@ val sparkSettings = Seq(
     import sys.process._
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
-    val pkgName = s"spark-$distVersion-bin-hadoop2.7"
+    val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-$distVersion-bin-hadoop2.7-scala2.13" else s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName

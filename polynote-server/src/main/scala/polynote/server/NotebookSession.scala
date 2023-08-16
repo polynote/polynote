@@ -54,6 +54,12 @@ class NotebookSession(
       _          <- PublishMessage(req.copy(signatures = signatures))
     } yield ()
 
+    case GoToDefinitionRequest(source, pos, reqId) =>
+      for {
+        definitions <- subscriber.publisher.goToDefinition(source, pos)
+        _           <- PublishMessage(GoToDefinitionResponse(reqId, definitions._1, definitions._2))
+      } yield ()
+
     case KernelStatus( _) => for {
       status <- subscriber.publisher.kernelStatus()
       _      <- PublishMessage(KernelStatus(status))

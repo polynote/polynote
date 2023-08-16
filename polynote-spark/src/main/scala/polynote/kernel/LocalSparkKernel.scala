@@ -8,7 +8,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
 import polynote.config.{PolynoteConfig, SparkConfig}
-import polynote.kernel.dependency.CoursierFetcher
+import polynote.kernel.dependency.{Artifact, CoursierFetcher}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
 import polynote.kernel.interpreter.{Interpreter, InterpreterState, State}
@@ -121,17 +121,16 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
 
   def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
     scalaDeps        <- CoursierFetcher.fetch("scala")
-    (main, transitive) = scalaDeps.partition(_._1)
     sparkRuntimeJar   = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
     sparkClasspath   <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
     _                <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
-    sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map { case (_, uri, file) => (uri, file) }
-    compiler         <- ScalaCompiler(main.map(_._3), sparkRuntimeJar :: transitive.map(_._3), sparkClasspath, updateSettings)
+    sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map {a => (a.url, a.file) }
+    compiler         <- ScalaCompiler(Artifact(false, sparkRuntimeJar.toURI.toString, sparkRuntimeJar, None) :: scalaDeps, sparkClasspath, updateSettings _)
     classLoader       = compiler.classLoader
     session          <- startSparkSession(sparkJars, classLoader)
     busyState        <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
-    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
+    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[BaseEnv with TaskManager](ZLayer.succeed(compiler)))
     interpState      <- InterpreterState.access
     closed           <- Promise.make[Throwable, Unit]
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)

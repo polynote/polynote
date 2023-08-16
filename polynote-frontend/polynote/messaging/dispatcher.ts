@@ -85,6 +85,14 @@ export class NotebookMessageDispatcher extends MessageDispatcher<NotebookState, 
             }
         })
 
+        let nextReqId = 0;
+
+        this.handler.observeKey("requestedDefinition", req => {
+            if (req) {
+                this.socket.send(new messages.GoToDefinitionRequest(req.cellOrFile, req.offset, nextReqId++));
+            }
+        })
+
         this.handler.updateHandler.addObserver((update, rep) => {
             if (rep) {
                 // notify when a response message arrives
@@ -368,7 +376,7 @@ export class ServerMessageDispatcher extends MessageDispatcher<ServerState>{
                         disposable.dispose()
                         ServerStateHandler.loadNotebook(newNb, true).then(nbInfo => {
                             nbInfo.handler.updateField("config", () => setProperty("open", true))
-                            ServerStateHandler.selectNotebook(newNb)
+                            ServerStateHandler.selectFile(newNb)
                         })
                     }
                 })

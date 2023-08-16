@@ -10,6 +10,7 @@ import zio.system.{System, env}
 import zio.internal.{ExecutionMetrics, Executor}
 import zio.{Has, RIO, Task, UIO, ZIO}
 
+import scala.meta.internal.semanticdb.scalac.{SemanticdbOps, SemanticdbPlugin}
 import scala.collection.mutable
 import scala.reflect.internal.util.{AbstractFileClassLoader, NoSourceFile, Position, SourceFile}
 import scala.reflect.io.VirtualDirectory
@@ -18,6 +19,7 @@ import scala.tools.nsc.Settings
 import scala.tools.nsc.interactive.{Global, NscThief}
 import scala.reflect.internal.util.ScalaClassLoader.URLClassLoader
 import ScalaCompiler.OriginalPos
+import polynote.kernel.dependency.Artifact
 
 import scala.util.control.NonFatal
 
@@ -25,7 +27,7 @@ class ScalaCompiler private (
   val global: Global,
   val notebookPackage: String,
   val classLoader: AbstractFileClassLoader,
-  val dependencies: List[File],
+  val dependencies: List[Artifact],
   val otherClasspath: List[File]
 ) {
   import global._
@@ -579,7 +581,7 @@ object ScalaCompiler {
 
   def access: ZIO[Provider, Nothing, ScalaCompiler]    = ZIO.access[ScalaCompiler.Provider](_.get)
   def settings: ZIO[Provider, Nothing, Settings]       = access.map(_.global.settings)
-  def dependencies: ZIO[Provider, Nothing, List[File]] = access.map(_.dependencies)
+  def dependencies: ZIO[Provider, Nothing, List[Artifact]] = access.map(_.dependencies)
 
   private val _kernelCounter = new AtomicInteger(0)
   private[kernel] def kernelCounter: UIO[Int] = ZIO.effectTotal(_kernelCounter.getAndIncrement())
@@ -605,35 +607,35 @@ object ScalaCompiler {
     * @return A [[ScalaCompiler]] instance
     */
   def apply(
-    dependencyClasspath: List[File],
-    transitiveClasspath: List[File],
+    dependencies: List[Artifact],
     otherClasspath: List[File],
     modifySettings: Settings => Settings
   ): RIO[Config with System, ScalaCompiler] = for {
-    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencyClasspath ++ transitiveClasspath ++ otherClasspath)))
+    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencies.map(_.file) ++ otherClasspath)))
     global            <- ZIO(new Global(settings, KernelReporter(settings)))
     counter           <- kernelCounter
     notebookPackage    = s"notebook$counter"
-    classLoader       <- makeClassLoader(settings, dependencyClasspath ++ transitiveClasspath)
-  } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencyClasspath, otherClasspath)
+    classLoader       <- makeClassLoader(settings, dependencies)
+    _                 <- ZIO(new SemanticdbPlugin(global))
+  } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencies, otherClasspath)
 
-  def apply(dependencyClasspath: List[File], transitiveClasspath: List[File], otherClasspath: List[File]): RIO[Config with System, ScalaCompiler] =
-    apply(dependencyClasspath, transitiveClasspath, otherClasspath, identity[Settings])
+  def apply(dependencies: List[Artifact], otherClasspath: List[File]): RIO[Config with System, ScalaCompiler] =
+    apply(dependencies, otherClasspath, identity[Settings] _)
 
-  def makeClassLoader(settings: Settings, dependencyClasspath: List[File]): RIO[Config, AbstractFileClassLoader] = for {
+  def makeClassLoader(settings: Settings, dependencyClasspath: List[Artifact]): RIO[Config, AbstractFileClassLoader] = for {
     dependencyClassLoader <- makeDependencyClassLoader(settings, dependencyClasspath)
     compilerOutput        <- ZIO.fromOption(settings.outputDirs.getSingleOutput).mapError(_ => new IllegalArgumentException("Compiler must have a single output directory"))
   } yield new AbstractFileClassLoader(compilerOutput, dependencyClassLoader)
 
-  def makeDependencyClassLoader(settings: Settings, dependencyClasspath: List[File]): RIO[Config, URLClassLoader] = Config.access.flatMap {
+  def makeDependencyClassLoader(settings: Settings, dependencyClasspath: List[Artifact]): RIO[Config, URLClassLoader] = Config.access.flatMap {
     config => ZIO {
       if (config.behavior.dependencyIsolation) {
         new LimitedSharingClassLoader(
           config.behavior.getSharedString,
-          dependencyClasspath.map(_.toURI.toURL),
+          dependencyClasspath.map(_.file.toURI.toURL),
           getClass.getClassLoader)
       } else {
-        new URLClassLoader(dependencyClasspath.map(_.toURI.toURL), getClass.getClassLoader)
+        new URLClassLoader(dependencyClasspath.map(_.file.toURI.toURL), getClass.getClassLoader)
       }
     }
   }

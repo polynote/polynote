@@ -309,7 +309,7 @@ export class About extends FullScreenModal implements IDisposable {
                     iconButton(['open'], 'Open notebook', 'external-link-alt', 'Open').click(() => {
                         ServerStateHandler.loadNotebook(path, true)
                             .then(() => {
-                                ServerStateHandler.selectNotebook(path)
+                                ServerStateHandler.selectFile(path)
                             })
                         this.hide();
                     }),
@@ -334,7 +334,7 @@ export class About extends FullScreenModal implements IDisposable {
                         ServerStateHandler.loadNotebook(path, false).then(newInfo => {
                             info = newInfo; // update `info` for the button click callbacks
                             rowEl.classList.remove("loading");
-                            this.onDispose.then(() => ServerStateHandler.closeNotebook(path))
+                            this.onDispose.then(() => ServerStateHandler.closeFile(path))
                             resolve(newInfo.info!.dispatcher)
                         })
                     }

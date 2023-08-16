@@ -454,6 +454,22 @@ final case class NotebookSearchResult(
 final case class SearchNotebooks(query: ShortString, notebookSearchResults: List[NotebookSearchResult]) extends Message
 object SearchNotebooks extends MessageCompanion[SearchNotebooks](34)
 
+final case class GoToDefinitionRequest(source: Either[String, CellID], pos: Int, reqId: Int) extends Message
+object GoToDefinitionRequest extends MessageCompanion[GoToDefinitionRequest](36)
+
+/**
+  *
+  * @param uri     A URI that points either to a cell in the same notebook (a bare fragment identifier), or a relative URL
+  *                  to retrieve the contents of a dependency source file.
+  * @param line    The line within the pointed source at which the definition starts
+  * @param column  The column within the pointed source at which the definition starts
+  */
+final case class DefinitionLocation(uri: String, line: Int, column: Int)
+
+final case class GoToDefinitionResponse(reqId: Int, location: TinyList[DefinitionLocation], source: Option[String]) extends Message
+object GoToDefinitionResponse extends MessageCompanion[GoToDefinitionResponse](37)
+
+
 /*****************************************
  ** Stuff for stream-ish value handling **
  *****************************************/

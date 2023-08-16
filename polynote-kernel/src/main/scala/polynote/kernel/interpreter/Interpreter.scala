@@ -2,15 +2,16 @@ package polynote.kernel
 package interpreter
 
 import java.util.ServiceLoader
-
 import scala.collection.JavaConverters._
 import cats.syntax.semigroup._
 import cats.instances.map._
 import cats.instances.list._
-import polynote.messages.CellID
+import polynote.messages.{CellID, DefinitionLocation}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
+import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import zio.blocking.{Blocking, effectBlocking}
+import zio.clock.Clock
 import zio.{Has, Layer, RIO, Task, ZIO, ZLayer}
 
 trait Interpreter {
@@ -47,6 +48,13 @@ trait Interpreter {
     */
   def parametersAt(code: String, pos: Int, state: State): RIO[Blocking, Option[Signatures]]
 
+  // TODO: probably remove Logging capability from these after initial spike
+  def goToDefinition(code: String, pos: Int, state: State): RIO[Blocking with Logging, (List[DefinitionLocation], Option[String])]
+
+  def goToDependencyDefinition(uri: String, pos: Int): RIO[BaseEnv, (List[DefinitionLocation], Option[String])]
+
+  def getDependencyContent(uri: String): RIO[Blocking, String]
+
   /**
     * Initialize the interpreter, running any predef code and setting up an initial state.
     * @param state A [[State]] which is the current state of the notebook execution.
@@ -58,6 +66,8 @@ trait Interpreter {
     * Shut down this interpreter, releasing its resources and ending any internally managed tasks or processes
     */
   def shutdown(): Task[Unit]
+
+  def fileExtensions: Set[String]
 }
 
 object Interpreter {

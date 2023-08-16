@@ -6,14 +6,15 @@ import cats.syntax.traverse._
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.kernel.{Completion, CompletionType, Output, ResultValue}
 import polynote.messages.CellID
-import polynote.testing.{InterpreterSpec, ValueMap}
+import polynote.testing.{InterpreterSpec, MockTaskManager, ValueMap}
 import zio.{ZIO, ZLayer}
 
 import scala.collection.mutable.ListBuffer
 
 class ScalaInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec {
 
-  val interpreter: ScalaInterpreter = ScalaInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler)).runIO()
+  val interpreter: ScalaInterpreter =
+    ScalaInterpreter().provideSomeLayer[Environment](ZLayer.succeed(compiler) ++ MockTaskManager.layer).runIO()
   import interpreter.ScalaCellState
 
 

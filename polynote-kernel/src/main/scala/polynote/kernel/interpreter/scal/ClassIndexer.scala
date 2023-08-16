@@ -4,9 +4,9 @@ import java.io.File
 import java.net.URI
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.UnaryOperator
-
 import io.github.classgraph.ClassGraph
 import polynote.kernel.ScalaCompiler
+import polynote.kernel.dependency.Artifact
 import polynote.kernel.util.pathOf
 import zio.blocking.{Blocking, effectBlocking}
 import zio.{Fiber, RIO, UIO, ZIO}
@@ -76,7 +76,7 @@ object SimpleClassIndexer {
     for {
       classPath <- ScalaCompiler.settings.map(_.classpath.value.split(File.pathSeparatorChar).map(new File(_)))
       deps      <- ScalaCompiler.dependencies
-      priorities = new File(pathOf(classOf[List[_]]).toURI) :: javaLibraryPath.toList ::: deps
+      priorities = new File(pathOf(classOf[List[_]]).toURI) :: javaLibraryPath.toList ::: deps.filter(_.isRootDependency).map(_.file)
       indexRef   = new AtomicReference[TreeMap[String, List[(Int, String)]]](new TreeMap)
       process   <- buildIndex(priorities.toArray, classPath, indexRef).forkDaemon
     } yield new SimpleClassIndexer(indexRef, process)

@@ -1,24 +1,32 @@
-package polynote.kernel.interpreter.scal
+package polynote.kernel.interpreter
+package scal
 
 import polynote.kernel.{Completion, CompletionType, ParameterHint, ParameterHints, ScalaCompiler, Signatures}
-import polynote.messages.{ShortString, TinyList, TinyString}
+import polynote.messages.{DefinitionLocation, ShortString, TinyList, TinyString}
 import cats.syntax.either._
 import zio.{Fiber, RIO, Schedule, Task, UIO, URIO, ZIO}
 import ZIO.{effect, effectTotal}
 import polynote.kernel.ScalaCompiler.OriginalPos
 import polynote.kernel.interpreter.scal.ScalaCompleter.NoTree
+import polynote.kernel.task.TaskManager
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 
+import java.io.File
+import java.net.URI
 import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
-import scala.reflect.internal.util.Position
+import scala.meta.interactive.InteractiveSemanticdb
+import scala.reflect.internal.util.{BatchSourceFile, Position, SourceFile}
+import scala.reflect.io.{AbstractFile, FileZipArchive, VirtualFile, ZipArchive}
+import scala.tools.nsc.interactive.Global
 import scala.util.control.NonFatal
 
 class ScalaCompleter[Compiler <: ScalaCompiler](
   val compiler: Compiler,
-  index: ClassIndexer
+  val index: ClassIndexer,
+  semanticDbScan: SemanticDbScan
 ) {
 
   import compiler.global._
@@ -235,6 +243,57 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
   }.option.map(_.flatten)
 
+  private def urlOf(source: AbstractFile) = if (source.name.startsWith("Cell")) {
+    val n = source.name
+    Some("#" + n)
+  } else source match {
+    case inJar: ZipArchive#Entry =>
+      val lang = inJar.name.split('.').last
+      Some(s"$lang:///${inJar.getArchive.getName.split(File.separatorChar).last}!${inJar.path}")
+    case _ => None
+  }
+
+  private def symbolLocation(global: Global)(sym: global.Symbol): Option[(DefinitionLocation, SourceFile)] = for {
+    pos    <- Option(sym.pos).filter(_.isDefined).orElse(Option(semanticDbScan.lookupPosition(sym))) if pos.isDefined
+    source <- Option(pos.source)
+    file   <- Option(source.file)
+    url    <- urlOf(file)
+  } yield (DefinitionLocation(url, pos.line, pos.column), source)
+
+  private def treePos(global: Global)(tree: global.Tree, pos: Int): RIO[Blocking, (List[DefinitionLocation], Option[String])]  = {
+    import global._
+    val alts = tree match {
+      case Import(expr, selectors) =>
+        selectors.dropWhile(sel => sel.namePos + sel.name.length < pos).headOption.toList.flatMap {
+          selector =>
+            expr.tpe.members.lookup(selector.name).alternatives
+        }
+      case tree: RefTree => tree.symbol.alternatives
+      case tree => Nil
+    }
+    effectBlocking(alts.flatMap(sym => symbolLocation(global)(sym).toList)).map {
+      altSyms => altSyms.map(_._1) -> altSyms.headOption.map(_._2.content).map(String.valueOf)
+    }
+  }
+
+  def locateDefinitions(cellCode: compiler.CellCode, pos: Int): RIO[Blocking, (List[DefinitionLocation], Option[String])] =
+    cellCode.typedTreeAt(pos).flatMap(treePos(compiler.global)(_, pos))
+
+  def locateDefinitionsFromDependency(uri: String, pos: Int): RIO[Blocking with Clock, (List[DefinitionLocation], Option[String])] = effectBlocking {
+    val parsed = new URI(uri)
+    val Seq(jarName, filePath) = parsed.getPath.stripPrefix("/").split('!').toSeq
+    val fileDirParts :+ fileName = filePath.split('/').toSeq
+    for {
+      artifact  <- compiler.dependencies.find(_.source.exists(_.getName == jarName))
+      source    <- artifact.source
+      insidePath = fileDirParts.mkString("/") + "/"
+      dirEntry  <- new FileZipArchive(source).allDirs.getOpt(insidePath)
+      fileEntry <- dirEntry.entries.get(fileName)
+    } yield fileEntry
+  }.someOrFailException.flatMap {
+    fileEntry => semanticDbScan.lookupTypedTree(fileEntry, pos).flatMap(treePos(semanticDbScan.semanticdbGlobal)(_, pos))
+  }
+
   @tailrec
   private def whichParamList(tree: Apply, n: Int, nArgs: Int): (Int, Int, Apply) = tree.fun match {
     case a@Apply(_, args) => whichParamList(a, n + 1, nArgs + args.size)
@@ -379,5 +438,5 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 
 object ScalaCompleter {
   object NoTree extends Throwable("No typed tree found")
-  def apply(compiler: ScalaCompiler, indexer: ClassIndexer): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler, indexer)
+  def apply(compiler: ScalaCompiler, indexer: ClassIndexer, scan: SemanticDbScan): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler, indexer, scan)
 }

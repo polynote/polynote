@@ -11,7 +11,7 @@ import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState,
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.RefMap
-import polynote.messages.{ByteVector32, CellID, HandleType, Lazy, NotebookCell, ShortString, Streaming, TinyString, Updating, truncateTinyString}
+import polynote.messages.{ByteVector32, CellID, DefinitionLocation, HandleType, Lazy, NotebookCell, ShortString, Streaming, TinyString, Updating, truncateTinyString}
 import polynote.runtime._
 import scodec.bits.ByteVector
 import zio.blocking.{Blocking, effectBlocking}
@@ -117,6 +117,25 @@ class LocalKernel private[kernel] (
     } yield signatures
   }.catchAll(_ => ZIO.succeed(None))
 
+  override def goToDefinition(source: Either[String, CellID], pos: Int): TaskC[(List[DefinitionLocation], Option[String])] =
+    source match {
+      case Right(id) =>
+        val lookup = for {
+          (cell, interp, state) <- cellInterpreter(id, forceStart = true).onError(cause => Logging.error(cause))
+          locations             <- interp.goToDefinition(cell.content.toString, pos, state)
+        } yield locations
+        lookup.onError(Logging.error).catchAll(_ => ZIO.succeed((Nil, None)))
+
+      case Left(uri) =>
+        val ext = uri.split('.').last
+        val lookup = for {
+          interps   <- interpreters.values
+          interp    <- ZIO.succeed(interps.find(_.fileExtensions.contains(ext))).someOrFailException
+          locations <- interp.goToDependencyDefinition(uri, pos)
+        } yield locations
+        lookup.onError(Logging.error).catchAll(_ => ZIO.succeed((Nil, None)))
+    }
+
   override def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
     for {
       publishStatus <- PublishStatus.access
@@ -192,7 +211,7 @@ class LocalKernel private[kernel] (
     } yield (cell, interpreter, State.id(id, prevState))
   }.provideSomeLayer[BaseEnv with GlobalEnv with CellEnv](CurrentTask.none).map {
     result => Option(result)
-  }.catchAll(_ => ZIO.succeed(None)).someOrFailException  // TODO: need a real OptionT
+  }.catchAll(err => Logging.error(err).as(None)).someOrFailException  // TODO: need a real OptionT
 
   private def getOrLaunch(language: String, at: CellID): RIO[BaseEnv with GlobalEnv with InterpreterEnv with CurrentNotebook with TaskManager, Interpreter] =
     interpreters.getOrCreate(language) {
@@ -296,14 +315,14 @@ class LocalKernel private[kernel] (
 class LocalKernelFactory extends Kernel.Factory.LocalService {
 
   def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
-    scalaDeps    <- CoursierFetcher.fetch("scala")
-    (main, transitive) = scalaDeps.partition(_._1)
-    compiler     <- ScalaCompiler(main.map(_._3), transitive.map(_._3), Nil)
-    busyState    <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
-    interpreters <- RefMap.empty[String, Interpreter]
-    _            <- interpreters.getOrCreate("scala")(ScalaInterpreter().provideSomeLayer[Blocking](ZLayer.succeed(compiler)))
-    interpState  <- InterpreterState.access
-    closed       <- Promise.make[Throwable, Unit]
+    scalaDeps         <- CoursierFetcher.fetch("scala")
+    compiler          <- ScalaCompiler(scalaDeps, Nil)
+    busyState         <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
+    interpreters      <- RefMap.empty[String, Interpreter]
+    mkScala            = ScalaInterpreter().provideSomeLayer[BaseEnv with TaskManager](ZLayer.succeed(compiler))
+    _                 <- interpreters.getOrCreate("scala")(mkScala)
+    interpState       <- InterpreterState.access
+    closed            <- Promise.make[Throwable, Unit]
   } yield new LocalKernel(compiler, interpState, interpreters, busyState, closed)
 
 }

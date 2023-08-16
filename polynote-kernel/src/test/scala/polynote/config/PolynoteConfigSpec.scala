@@ -12,7 +12,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
   "PolynoteConfig" should "Ser/De" in {
 
     val cfg = PolynoteConfig(
-      Listen(), KernelConfig(), Storage(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), Some(SparkConfig(Map("key" -> "val")))
+      Listen(), KernelConfig(), Storage(), List(maven("foo")), List("exclude!"), Map("foo" -> List("bar", "baz")), true, Some(SparkConfig(Map("key" -> "val")))
     )
     val js = cfg.asJson
     val cfgString = cfg.asJson.spaces2
@@ -103,6 +103,7 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       ),
       List("org.typelevel", "com.mycompany"),
       Map("scala" -> List("org.typelevel:cats-core_2.11:1.6.0", "com.mycompany:my-library:jar:all:1.0.0")),
+      true,
       Some(SparkConfig(Map("spark.driver.userClasspathFirst" -> "true", "spark.executor.userClasspathFirst" -> "true"), Some("testing"))),
       credentials = Credentials(
         coursier = Some(Credentials.Coursier("~/.config/coursier/credentials.properties"))

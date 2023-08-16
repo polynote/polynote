@@ -139,6 +139,11 @@ class RemoteKernel[ServerAddress](
       case ParametersAtResponse(reqId, result) => done(reqId, result)
     }
 
+  override def goToDefinition(idOrPath: Either[String, CellID], pos: Int): TaskC[(List[DefinitionLocation], Option[String])] =
+    request(RemoteGoToDefinitionRequest(nextReq, idOrPath, pos)) {
+      case RemoteGoToDefinitionResponse(reqId, locations, source) => done(reqId, (locations, source))
+    }
+
   def shutdown(): TaskB[Unit] = closing.withPermit {
     ZIO.whenM(ZIO.mapN(closed.isDone, transport.isConnected)(!_ && _)) {
       request(ShutdownRequest(nextReq)) {
@@ -297,7 +302,10 @@ class RemoteKernelClient(
         case KernelInfoRequest(reqId)                     => kernel.info().map(KernelInfoResponse(reqId, _))
         case KeepAliveRequest(reqId)                      => handleKeepAlive(reqId)
         // TODO: Kernel needs an API to release all streaming handles (then we could let go of elements from sessionHandles map; right now they will just accumulate forever)
-        case req => ZIO.succeed(UnitResponse(req.reqId))
+        case RemoteGoToDefinitionRequest(reqId, cellId, pos) => kernel.goToDefinition(cellId, pos).map {
+          case (locations, source) => RemoteGoToDefinitionResponse(reqId, locations, source)
+        }
+        case req                                             => ZIO.succeed(UnitResponse(req.reqId))
       }
 
       response.interruptible.provideSomeLayer[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse](RemoteKernelClient.mkResultPublisher(req.reqId))

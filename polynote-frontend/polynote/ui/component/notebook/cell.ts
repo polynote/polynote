@@ -1,6 +1,7 @@
 import {blockquote, button, div, dropdown, h4, icon, iconButton, img, span, tag, TagElement} from "../../tags";
 import {NotebookMessageDispatcher,} from "../../../messaging/dispatcher";
 import {
+    append,
     clearArray,
     Disposable,
     EditString,
@@ -8,7 +9,7 @@ import {
     IDisposable,
     ImmediateDisposable,
     moveArrayValue,
-    removeFromArray,
+    removeFromArray, setProperty,
     SetValue,
     setValue,
     StateHandler,
@@ -26,7 +27,7 @@ import {
     languages,
     MarkerSeverity,
     Range,
-    SelectionDirection
+    SelectionDirection, Uri
 } from "monaco-editor";
 // @ts-ignore (ignore use of non-public monaco api)
 import {StandardKeyboardEvent} from 'monaco-editor/esm/vs/base/browser/keyboardEvent.js';
@@ -65,7 +66,7 @@ import {NotificationHandler} from "../../../notification/notifications";
 import {VimStatus} from "./vim_status";
 import {cellContext, ClientInterpreters} from "../../../interpreter/client_interpreter";
 import {ErrorEl, getErrorLine} from "../../display/error";
-import {Error, TaskInfo, TaskStatus} from "../../../data/messages";
+import {Error, GoToDefinitionResponse, ParamInfo, TaskInfo, TaskStatus} from "../../../data/messages";
 import {collect, collectInstances, deepCopy, deepEquals, findInstance, linePosAt} from "../../../util/helpers";
 import {
     availableResultValues,
@@ -89,11 +90,16 @@ import IMarkerData = editor.IMarkerData;
 import {UserPreferences, UserPreferencesHandler} from "../../../state/preferences";
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
 import {MarkdownIt} from "../../input/markdown-it";
+import Definition = languages.Definition;
+import {goToDefinition} from "./common";
+import {Either} from "../../../data/codec_types";
 
 
 export type CodeCellModel = editor.ITextModel & {
+    isCell: true,
     requestCompletion(pos: number): Promise<CompletionList>,
-    requestSignatureHelp(pos: number): Promise<SignatureHelpResult>
+    requestSignatureHelp(pos: number): Promise<SignatureHelpResult>,
+    goToDefinition(pos: number): Promise<Definition>
 };
 
 class CellDragHandle extends ImmediateDisposable {
@@ -1127,8 +1133,10 @@ export class CodeCell extends MonacoCell {
         );
 
         // we need to do this hack in order for completions to work :(
+        (this.editor.getModel() as CodeCellModel).isCell = true;
         (this.editor.getModel() as CodeCellModel).requestCompletion = this.requestCompletion.bind(this);
         (this.editor.getModel() as CodeCellModel).requestSignatureHelp = this.requestSignatureHelp.bind(this);
+        (this.editor.getModel() as CodeCellModel).goToDefinition = this.goToDefinition.bind(this);
 
         const compileErrorsState = cellState.view("compileErrors");
         compileErrorsState.addObserver(errors => {
@@ -1419,11 +1427,20 @@ export class CodeCell extends MonacoCell {
         this.commentHandler.triggerCommentUpdate()
     }
 
+    static formatParam(param: ParamInfo): string {
+        if (param.type === "")
+            return param.name;
+        return `${param.name}: ${param.type}`;
+    }
+
     requestCompletion(offset: number): Promise<CompletionList> {
-        return new Promise<CompletionHint>((resolve, reject) => {
-            this.notebookState.state.activeCompletion?.reject() // remove previously active completion if present
+        return new Promise<void>((resolve, reject) => {
+            this.notebookState.state.activeCompletion?.reject("cancelled") // remove previously active completion if present
+            setTimeout(resolve, 40);
+        }).then(() => new Promise<CompletionHint>((resolve, reject) => {
+            this.notebookState.state.activeCompletion?.reject("cancelled") // remove previously active completion if present
             return this.notebookState.updateField("activeCompletion", () => setValue({cellId: this.id, offset, resolve, reject}))
-        }).then(({cell, offset, completions}) => {
+        })).then(({cell, offset, completions}) => {
             const len = completions.length;
             const indexStrLen = ("" + len).length;
             const completionResults = completions.map((candidate, index) => {
@@ -1432,7 +1449,7 @@ export class CodeCell extends MonacoCell {
                 const typeParams = candidate.typeParams.length ? `[${candidate.typeParams.join(', ')}]`
                     : '';
 
-                const params = isMethod ? candidate.params.map(pl => `(${pl.map(param => `${param.name}: ${param.type}`).join(', ')})`).join('')
+                const params = isMethod ? candidate.params.map(pl => `(${pl.map(CodeCell.formatParam).join(', ')})`).join('')
                     : '';
 
                 const label = `${candidate.name}${typeParams}${params}`;
@@ -1457,12 +1474,12 @@ export class CodeCell extends MonacoCell {
                 };
             });
             return {suggestions: completionResults}
-        })
+        }).catch(() => ({suggestions: [], incomplete: true}))
     }
 
     requestSignatureHelp(offset: number): Promise<SignatureHelpResult> {
         return new Promise<SignatureHint>((resolve, reject) => {
-            this.notebookState.state.activeSignature?.reject() // remove previous active signature if present.
+            this.notebookState.state.activeSignature?.reject("cancelled") // remove previous active signature if present.
             return this.notebookState.updateField("activeSignature", () => setValue({cellId: this.id, offset, resolve, reject}))
         }).then(({cell, offset, signatures}) => {
             let sigHelp: SignatureHelp;
@@ -1494,6 +1511,10 @@ export class CodeCell extends MonacoCell {
                 dispose(): void {}
             }
         })
+    }
+
+    goToDefinition(offset: number): Promise<Definition> {
+        return goToDefinition(this.notebookState, Either.right(this.id), offset);
     }
 
     private setErrorMarkers(error: RuntimeError | CompileErrors, markers: IMarkerData[]) {

@@ -16,7 +16,7 @@ import {Home} from "./ui/component/home";
 import {CodeCellModel} from "./ui/component/notebook/cell";
 import {collect, nameFromPath} from "./util/helpers";
 import {SocketStateHandler} from "./state/socket_state";
-import {ServerStateHandler} from "./state/server_state";
+import {onlyNotebooks, ServerStateHandler} from "./state/server_state";
 import {
     DismissedNotificationsHandler,
     OpenNotebooksHandler,
@@ -115,18 +115,19 @@ export class Main {
             if (path.startsWith(notebookBase)) {
                 const nbPath = path.substring(notebookBase.length)
                 ServerStateHandler.loadNotebook(nbPath, true).then(() => {
-                    ServerStateHandler.selectNotebook(nbPath)
+                    ServerStateHandler.selectFile(nbPath)
                 })
             }
         })
 
-        ServerStateHandler.get.observeKey("openNotebooks", (nbs, upd) => {
+        ServerStateHandler.get.observeKey("openFiles", (ofs, upd) => {
+            const nbs = onlyNotebooks(ofs);
             // update open notebooks preference
             OpenNotebooksHandler.update(() => setValue([...nbs]))
 
             // add newly opened notebooks to recent notebooks
             if (upd.addedValues && upd.update instanceof InsertValue) {
-                const addedValues = Object.values(upd.addedValues);
+                const addedValues = onlyNotebooks(Object.values(upd.addedValues));
                 RecentNotebooksHandler.update(recents => {
                     const newNotebooks = collect(addedValues, path => {
                         if (recents.find(nb => nb.path === path) === undefined) {
@@ -179,26 +180,29 @@ export class Main {
 
     private static handlePath(path?: string) {
         if (path && path !== "home") {
-            const tabUrl = new URL(`notebook/${encodeURIComponent(path)}`, document.baseURI);
+            const openFile = ServerStateHandler.state.openFiles.find(of => of.path === path);
+            if (openFile && openFile.type === 'notebook') {
+                const tabUrl = new URL(`notebook/${encodeURIComponent(path)}`, document.baseURI);
 
-            const href = window.location.href;
-            const hash = window.location.hash;
-            const title = `${nameFromPath(path)} | Polynote`;
-            document.title = title; // looks like chrome ignores history title so we need to be explicit here.
+                const href = window.location.href;
+                const hash = window.location.hash;
+                const title = `${nameFromPath(path)} | Polynote`;
+                document.title = title; // looks like chrome ignores history title so we need to be explicit here.
 
-            if (hash && window.location.href === (tabUrl.href + hash)) {
-                window.history.pushState({notebook: path}, title, href);
-            } else {
-                window.history.pushState({notebook: path}, title, tabUrl.href);
+                if (hash && window.location.href === (tabUrl.href + hash)) {
+                    window.history.pushState({notebook: path}, title, href);
+                } else {
+                    window.history.pushState({notebook: path}, title, tabUrl.href);
+                }
+
+                RecentNotebooksHandler.update(recents => {
+                    // update recent notebooks order
+                    const currentIndex = recents.findIndex(r => r && r.path === path);
+                    if (currentIndex >= 0) {
+                        return moveArrayValue(currentIndex, 0);
+                    } else return NoUpdate
+                })
             }
-
-            RecentNotebooksHandler.update(recents => {
-                // update recent notebooks order
-                const currentIndex = recents.findIndex(r => r && r.path === path);
-                if (currentIndex >= 0) {
-                    return moveArrayValue(currentIndex, 0);
-                } else return NoUpdate
-            })
         } else {
             const title = 'Polynote';
             window.history.pushState({notebook: name}, title, document.baseURI);
@@ -266,6 +270,18 @@ monaco.languages.registerSignatureHelpProvider('python', {
     signatureHelpTriggerCharacters: ['(', ','],
     provideSignatureHelp: (doc, pos, cancelToken, context) => {
         return (doc as CodeCellModel).requestSignatureHelp(doc.getOffsetAt(pos));
+    }
+});
+
+monaco.languages.registerDefinitionProvider("scala", {
+    provideDefinition: (doc, pos, cancelToken) => {
+        return (doc as CodeCellModel).goToDefinition(doc.getOffsetAt(pos));
+    }
+});
+
+monaco.languages.registerDefinitionProvider("python", {
+    provideDefinition: (doc, pos, cancelToken) => {
+        return (doc as CodeCellModel).goToDefinition(doc.getOffsetAt(pos));
     }
 });
 
