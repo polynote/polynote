@@ -1069,20 +1069,6 @@ export class GoToDefinitionResponse extends Message {
     }
 }
 
-export class DependencySource extends Message {
-    static codec = combined(str, str).to(DependencySource);
-    static get msgTypeId() { return 38; }
-
-    static unapply(inst: DependencySource): ConstructorParameters<typeof DependencySource> {
-        return [inst.uri, inst.content];
-    }
-
-    constructor(readonly uri: string, readonly content: string) {
-        super();
-        Object.freeze(this);
-    }
-}
-
 
 Message.codecs = [
     Error,            // 0
@@ -1123,7 +1109,6 @@ Message.codecs = [
     NotebookSaved,    // 35
     GoToDefinitionRequest,  // 36
     GoToDefinitionResponse, // 37
-    DependencySource  // 38
 ];
 
 

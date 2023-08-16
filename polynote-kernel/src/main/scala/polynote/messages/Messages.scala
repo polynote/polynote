@@ -469,11 +469,6 @@ final case class DefinitionLocation(uri: String, line: Int, column: Int)
 final case class GoToDefinitionResponse(reqId: Int, location: TinyList[DefinitionLocation], source: Option[String]) extends Message
 object GoToDefinitionResponse extends MessageCompanion[GoToDefinitionResponse](37)
 
-final case class DependencySource(uri: String, content: String) extends Message
-object DependencySource extends MessageCompanion[DependencySource](38)
-
-
-
 
 /*****************************************
  ** Stuff for stream-ish value handling **

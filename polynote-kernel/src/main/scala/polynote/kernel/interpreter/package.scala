@@ -42,6 +42,11 @@ package object interpreter {
     def access: URIO[InterpreterState, Service] = ZIO.service[Service]
   }
 
+  /**
+    * @param code A code string
+    * @param pos  An offset into the code string
+    * @return A tuple containing the (1-based) line number and (0-based) column number that corresponds to the given offset.
+    */
   def posToLineAndColumn(code: String, pos: Int): (Int, Int) = {
     var line = 1
     var currentPos = 0
@@ -53,7 +58,7 @@ package object interpreter {
       line += 1
       currentPos = nextCR + 1
     }
-    (line, 1)
+    (line, 0)
   }
 
   def readFile(path: Path): RIO[Blocking, String] = effectBlocking {
