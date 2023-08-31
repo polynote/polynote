@@ -25,11 +25,12 @@ class SemanticDbScan (compiler: ScalaCompiler) {
   private val sources = compiler.dependencies.flatMap(_.source)
   val semanticdbGlobal: interactive.Global = InteractiveSemanticdb.newCompiler(classpath, List())
   private val compileUnits = new ConcurrentHashMap[AbstractFile, semanticdbGlobal.RichCompilationUnit]
+  private val javaMapping = new ConcurrentHashMap[String, semanticdbGlobal.RichCompilationUnit]
   semanticdbGlobal.settings.stopAfter.value = List("namer")
 
   // TODO: this should be a ref
   private var run = new semanticdbGlobal.Run()
-  
+
   private val importer = semanticdbGlobal.mkImporter(compiler.global)
 
   def init: RIO[BaseEnv with TaskManager, Unit] = TaskManager.run("semanticdb", "Scanning sources")(scanSources).flatMap {
@@ -38,7 +39,24 @@ class SemanticDbScan (compiler: ScalaCompiler) {
 
   def lookupPosition(sym: Global#Symbol): semanticdbGlobal.Position = {
     val imported = importer.importSymbol(sym.asInstanceOf[compiler.global.Symbol])
-    imported.pos
+    if (!imported.pos.isDefined && sym.isJava) {
+      var s = sym
+      while (!s.isTopLevel) {
+        s = s.owner
+      }
+      // find position of the symbol
+      val tree = javaMapping.get(s.fullName).body
+
+      if (tree == null) {
+        semanticdbGlobal.NoPosition
+      } else {
+        val defnCandidates = tree.collect {
+          case tree: semanticdbGlobal.DefTree if tree.name.decoded == sym.name.decoded => tree
+        }
+        val withPos = defnCandidates.find(_.pos.isDefined)
+        withPos.map(_.pos).getOrElse(semanticdbGlobal.NoPosition)
+      }
+    } else imported.pos
   }
 
   def treeAt(file: AbstractFile, offset: Int): RIO[Blocking with Clock, semanticdbGlobal.Tree] = {
@@ -49,13 +67,13 @@ class SemanticDbScan (compiler: ScalaCompiler) {
     if (unit == null)
       return ZIO.succeed(EmptyTree)
 
-//    run.compileLate(unit)
-    if (!unit.isTypeChecked) {
+//    run.compileLate(unit) // doesn't seem to work
+    val check = ZIO.when(!unit.isTypeChecked)(ZIO {
       run.typerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
       unit.status = PartiallyChecked
-    }
+    })
 
-    ZIO.succeed(exitingTyper(unit.body)).map {
+    check *> ZIO(exitingTyper(unit.body)).map {
       tree =>
         val results = tree.collect {
           case tree: Import if tree.pos.properlyIncludes(position)  => tree
@@ -64,7 +82,6 @@ class SemanticDbScan (compiler: ScalaCompiler) {
         }.sortBy {
           tree => math.abs(position.start - tree.pos.start)
         }
-        println(results)
         results.headOption.getOrElse(EmptyTree)
     }
   }
@@ -100,38 +117,42 @@ class SemanticDbScan (compiler: ScalaCompiler) {
   }
 
   private def indexSources(sources: List[SourceFile]) = ZIO {
-    // TODO: can use the profiler: scala.tools.nsc.profile.Profiler to track progress here.
-    val javaAndScala = sources.filter {
+    // TODO: can use the profiler: scala.tools.nsc.profile.Profiler to track detailed progress here.
+    val units = sources.filter {
       sourceFile => sourceFile.path.split('.').last match {
         case "java" | "scala" => true
-        case _ => false
+        case _                => false
       }
-    }
-    val units = javaAndScala.map {
+    }.map {
       file =>
         val unit = new semanticdbGlobal.RichCompilationUnit(file)
         compileUnits.put(file.file, unit)
+        if (file.isJava)
+          javaMapping.put(file.path.split("!").last.stripSuffix(".java").replace('/', '.'), unit)
         unit
     }
+    // do an initial namer run of all the sources together
     run.compileUnits(units, run.parserPhase)
-    semanticdbGlobal.settings.stopAfter.value = List("typer")
-    run = new semanticdbGlobal.Run()
-  }
-  /*
-    for {
-      completed <- Ref.make(0)
-      _         <- ZIO.foreachPar_(sources) {
-        sourceFile => for {
-          _            <- indexSource(sourceFile).retryN(3).unit.catchAll {
-            cause =>
-              Logging.error(s"Error indexing ${sourceFile.file.name}", cause)
+    units
+  }.flatMap {
+    units =>
+      // if there were errors doing that, it could result in some sources getting skipped because of other bad sources.
+      // so now loop through them all again, running parser and namer on each one individually.
+      Ref.make(0).flatMap {
+        completed =>
+          ZIO.foreach_(units) {
+            unit => ZIO {
+              run.parserPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
+              run.namerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
+            } *> completed.updateAndGet(_ + 1).flatMap {
+              numCompleted => CurrentTask.setProgress(numCompleted.toDouble / sources.size)
+            }
           }
-          numCompleted <- completed.updateAndGet(_ + 1)
-          _            <- CurrentTask.setProgress(numCompleted.toDouble / sources.size)
-        } yield ()
-      }
-    } yield ()
-  */
+      }.zipLeft(ZIO {
+        semanticdbGlobal.settings.stopAfter.value = List("typer")
+        run = new semanticdbGlobal.Run()
+      })
+  }
 
 }
 

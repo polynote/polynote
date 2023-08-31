@@ -789,7 +789,7 @@ abstract class MonacoCell extends Cell {
         // None of the official ways to do this seem to work
 
         (this.editor as any)._codeEditorService.openCodeEditor = (input: IOpenInput, source: any, sideBySide: any) => {
-            return openDefinition(notebookState, this.state.language, {
+            return openDefinition(notebookState, source.getModel().getLanguageId(), {
                 uri: input.resource,
                 range: input.options?.selection || new Range(1, 0, 1, 0)
             })

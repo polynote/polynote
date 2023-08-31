@@ -31,7 +31,7 @@ export function findDefinitionLocation(
 }
 
 export function openDefinition(notebookState: NotebookStateHandler, lang: string, location: Location): Promise<void> {
-    const uriString = location.uri.toString()
+    const uriString = location.uri.toString(true);  // true means "don't render this URI incorrect by mangling its characters"
 
     // even a relative "#X" URI gets turned into a file:///#X URI by the Microsoft thing. So really just have to
     // assume that any fragment is a cell link
@@ -40,6 +40,11 @@ export function openDefinition(notebookState: NotebookStateHandler, lang: string
         notebookState.selectCellAt(cellId, Range.getStartPosition(location.range));
         return Promise.resolve();
     }
+
+    const params = new URLSearchParams(location.uri.query);
+    const filename = params.get("dependency");
+    const filePieces = filename?.split('.')
+    const fileLanguage = filePieces?.[filePieces.length - 1] || lang;
 
     if (uriString in ServerStateHandler.state.dependencySources) {
         return ServerStateHandler.get.updateAsync(state => {
@@ -58,7 +63,7 @@ export function openDefinition(notebookState: NotebookStateHandler, lang: string
                 dependencySources: updateProperty(
                     uriString,
                     setValue({
-                        language: lang,
+                        language: fileLanguage,
                         content: source,
                         position: Range.getStartPosition(location.range),
                         sourceNotebook: notebookState
