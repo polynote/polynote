@@ -26,7 +26,10 @@ class SemanticDbScan (compiler: ScalaCompiler) {
   val semanticdbGlobal: interactive.Global = InteractiveSemanticdb.newCompiler(classpath, List())
   private val compileUnits = new ConcurrentHashMap[AbstractFile, semanticdbGlobal.RichCompilationUnit]
   semanticdbGlobal.settings.stopAfter.value = List("namer")
-  var run = new semanticdbGlobal.Run()
+
+  // TODO: this should be a ref
+  private var run = new semanticdbGlobal.Run()
+  
   private val importer = semanticdbGlobal.mkImporter(compiler.global)
 
   def init: RIO[BaseEnv with TaskManager, Unit] = TaskManager.run("semanticdb", "Scanning sources")(scanSources).flatMap {
@@ -34,8 +37,8 @@ class SemanticDbScan (compiler: ScalaCompiler) {
   }
 
   def lookupPosition(sym: Global#Symbol): semanticdbGlobal.Position = {
-    val pos = importer.importSymbol(sym.asInstanceOf[compiler.global.Symbol]).pos
-    pos
+    val imported = importer.importSymbol(sym.asInstanceOf[compiler.global.Symbol])
+    imported.pos
   }
 
   def treeAt(file: AbstractFile, offset: Int): RIO[Blocking with Clock, semanticdbGlobal.Tree] = {
