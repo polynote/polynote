@@ -117,24 +117,38 @@ class LocalKernel private[kernel] (
     } yield signatures
   }.catchAll(_ => ZIO.succeed(None))
 
-  override def goToDefinition(source: Either[String, CellID], pos: Int): TaskC[(List[DefinitionLocation], Option[String])] =
-    source match {
-      case Right(id) =>
-        val lookup = for {
-          (cell, interp, state) <- cellInterpreter(id, forceStart = true).onError(cause => Logging.error(cause))
-          locations             <- interp.goToDefinition(cell.content.toString, pos, state)
-        } yield locations
-        lookup.onError(Logging.error).catchAll(_ => ZIO.succeed((Nil, None)))
+  override def goToDefinition(source: Either[String, CellID], pos: Int): TaskC[List[DefinitionLocation]] =
+    CurrentNotebook.path.flatMap {
+      notebookPath =>
+        def asDepURL(lang: String)(location: DefinitionLocation): DefinitionLocation = location.uri match {
+          case uri if uri startsWith "#" => location
+          case uri => location.copy(uri = s"/dependency/$notebookPath?lang=$lang&dependency=$uri")
+        }
 
-      case Left(uri) =>
-        val ext = uri.split('.').last
-        val lookup = for {
-          interps   <- interpreters.values
-          interp    <- ZIO.succeed(interps.find(_.fileExtensions.contains(ext))).someOrFailException
-          locations <- interp.goToDependencyDefinition(uri, pos)
-        } yield locations
-        lookup.onError(Logging.error).catchAll(_ => ZIO.succeed((Nil, None)))
+
+        source match {
+          case Right(id) =>
+            val lookup = for {
+              (cell, interp, state) <- cellInterpreter(id, forceStart = true).onError(cause => Logging.error(cause))
+              locations             <- interp.goToDefinition(cell.content.toString, pos, state)
+            } yield locations.map(asDepURL(cell.language))
+            lookup.onError(Logging.error).catchAll(_ => ZIO.succeed(Nil))
+
+          case Left(uri) =>
+            val ext = uri.split('.').last
+            val lookup = for {
+              interps   <- interpreters.values
+              interp    <- ZIO.succeed(interps.find(_.fileExtensions.contains(ext))).someOrFailException
+              locations <- interp.goToDependencyDefinition(uri, pos)
+            } yield locations.map(asDepURL(ext))
+            lookup.onError(Logging.error).catchAll(_ => ZIO.succeed(Nil))
+        }
     }
+
+  override def dependencySource(language: String, dependency: String): RIO[BaseEnv with GlobalEnv, String] = for {
+    interpreter <- interpreters.get(language).someOrFailException
+    source      <- interpreter.getDependencyContent(dependency)
+  } yield source
 
   override def init(): RIO[BaseEnv with GlobalEnv with CellEnv, Unit] = TaskManager.run("Predef", "Predef") {
     for {
@@ -319,7 +333,7 @@ class LocalKernelFactory extends Kernel.Factory.LocalService {
     compiler          <- ScalaCompiler(scalaDeps, Nil)
     busyState         <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
     interpreters      <- RefMap.empty[String, Interpreter]
-    mkScala            = ScalaInterpreter().provideSomeLayer[BaseEnv with TaskManager](ZLayer.succeed(compiler))
+    mkScala            = ScalaInterpreter().provideSomeLayer[BaseEnv with Config with TaskManager](ZLayer.succeed(compiler))
     _                 <- interpreters.getOrCreate("scala")(mkScala)
     interpState       <- InterpreterState.access
     closed            <- Promise.make[Throwable, Unit]

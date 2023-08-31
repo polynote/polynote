@@ -49,9 +49,9 @@ trait Interpreter {
   def parametersAt(code: String, pos: Int, state: State): RIO[Blocking, Option[Signatures]]
 
   // TODO: probably remove Logging capability from these after initial spike
-  def goToDefinition(code: String, pos: Int, state: State): RIO[Blocking with Logging, (List[DefinitionLocation], Option[String])]
+  def goToDefinition(code: String, pos: Int, state: State): RIO[BaseEnv with CellEnv, List[DefinitionLocation]]
 
-  def goToDependencyDefinition(uri: String, pos: Int): RIO[BaseEnv, (List[DefinitionLocation], Option[String])]
+  def goToDependencyDefinition(uri: String, pos: Int): RIO[BaseEnv with CellEnv, List[DefinitionLocation]]
 
   def getDependencyContent(uri: String): RIO[Blocking, String]
 

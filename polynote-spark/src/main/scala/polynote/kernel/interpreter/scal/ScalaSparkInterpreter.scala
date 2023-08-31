@@ -1,6 +1,6 @@
 package polynote.kernel.interpreter.scal
 
-import polynote.kernel.environment.{CurrentNotebook, CurrentTask}
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask}
 import polynote.kernel.{BaseEnv, CellEnv, GlobalEnv, InterpreterEnv, ScalaCompiler}
 import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.task.TaskManager
@@ -11,7 +11,7 @@ import zio.{RIO, ZIO}
 class ScalaSparkInterpreter private[scal] (
   compiler: ScalaCompiler,
   indexer: ClassIndexer,
-  scan: SemanticDbScan
+  scan: Option[SemanticDbScan]
 ) extends ScalaInterpreter(compiler, indexer, scan) {
   import scalaCompiler.global._
   override protected def transformCode(code: List[Tree]): List[Tree] =
@@ -36,11 +36,10 @@ object ScalaSparkInterpreter {
        |import org.apache.spark.sql.functions._
        |""".stripMargin
 
-  def apply(): RIO[ScalaCompiler.Provider with BaseEnv with TaskManager, ScalaSparkInterpreter] = for {
+  def apply(): RIO[ScalaCompiler.Provider with BaseEnv with Config with TaskManager, ScalaSparkInterpreter] = for {
     compiler <- ScalaCompiler.access
     index    <- ClassIndexer.default
-    scan      = new SemanticDbScan(compiler)
-    _        <- scan.init.forkDaemon
+    scan     <- ScalaInterpreter.maybeScan(compiler)
   } yield new ScalaSparkInterpreter(compiler, index, scan)
 
   object Factory extends ScalaInterpreter.Factory {

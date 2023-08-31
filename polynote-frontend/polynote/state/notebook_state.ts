@@ -36,7 +36,7 @@ import {deepEquals, Deferred} from "../util/helpers";
 import {notReceiver} from "../messaging/receiver";
 import {ConstView, ProxyStateView} from "./state_handler";
 import {ServerStateHandler} from "./server_state";
-import {languages} from "monaco-editor";
+import {IPosition, languages} from "monaco-editor";
 import Definition = languages.Definition;
 import {Either, Left, Right} from "../data/codec_types";
 
@@ -97,6 +97,7 @@ export interface NotebookState {
     kernel: KernelState,
     // ephemeral states
     activeCellId: number | undefined,
+    requestedCellPosition: [number, IPosition] | undefined,
     activeCompletion: { cellId: number, offset: number, resolve: (completion: CompletionHint) => void, reject: (reason?: any) => void } | undefined,
     activeSignature: { cellId: number, offset: number, resolve: (signature: SignatureHint) => void, reject: (reason?: any) => void } | undefined,
     requestedDefinition: { cellOrFile: Left<string> | Right<number>, offset: number, resolve: (definition: GoToDefinitionResponse) => void, reject: (reason?: any) => void } | undefined,
@@ -189,6 +190,7 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
             },
             activePresence: {},
             activeCellId: undefined,
+            requestedCellPosition: undefined,
             activeCompletion: undefined,
             activeSignature: undefined,
             requestedDefinition: undefined,
@@ -279,6 +281,12 @@ export class NotebookStateHandler extends BaseHandler<NotebookState> {
         })
 
         return id
+    }
+
+    selectCellAt(cell: number, position: IPosition) {
+        this.selectCell(cell);
+        const value: [number, IPosition] = [cell, position];
+        this.updateField("requestedCellPosition", () => value)
     }
 
     /**

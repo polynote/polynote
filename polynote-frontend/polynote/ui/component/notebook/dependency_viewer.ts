@@ -12,7 +12,7 @@ import {
 import {div, TagElement} from "../../tags";
 import IStandaloneCodeEditor = editor.IStandaloneCodeEditor;
 import {CodeCellModel} from "./cell";
-import {goToDefinition} from "./common";
+import {findDefinitionLocation, IOpenInput, openDefinition} from "./common";
 import {NotebookStateHandler} from "../../../state/notebook_state";
 import {Either} from "../../../data/codec_types";
 import {ServerStateHandler} from "../../../state/server_state";
@@ -24,6 +24,9 @@ export class DependencyViewer extends Disposable {
     readonly editor: IStandaloneCodeEditor;
     constructor(readonly uri: string, readonly content: string, readonly language: string, initialPos: IPosition, sourceNotebook: NotebookStateHandler) {
         super();
+
+        const depId = new URL(uri).searchParams.get("dependency")!
+
         let lastLineNumber = initialPos.lineNumber;
         this.editorEl = div([], []);
         this.editor = monaco.editor.create(this.editorEl, {
@@ -35,13 +38,20 @@ export class DependencyViewer extends Disposable {
             fontLigatures: true,
             lineNumbers: "on",
             automaticLayout: true,
-        })
+        });
+
+        (this.editor as any)._codeEditorService.openCodeEditor = (input: IOpenInput, source: any, sideBySide: any) => {
+            return openDefinition(sourceNotebook, language, {
+                uri: input.resource,
+                range: input.options?.selection || new Range(1, 0, 1, 0)
+            })
+        };
 
         this.editor.setPosition(initialPos);
         this.editor.revealLineNearTop(initialPos.lineNumber);
 
         (this.editor.getModel() as CodeCellModel).goToDefinition =
-            (offset: number) => goToDefinition(sourceNotebook, Either.left(uri), offset);
+            (offset: number) => findDefinitionLocation(sourceNotebook, Either.left(depId), offset);
 
         this.el = div(['dependency-viewer', language], [this.editorEl]);
         this.disposeWith(sourceNotebook).onDispose.then(() => {
@@ -57,7 +67,7 @@ export class DependencyViewer extends Disposable {
         ServerStateHandler.get.view("dependencySources").observeKey(uri, (value, update) => {
            if (!value) {
                this.tryDispose();
-           } else if (value.position.lineNumber !== lastLineNumber) {
+           } else {
                lastLineNumber = value.position.lineNumber;
                this.editor.setPosition(value.position);
                this.editor.revealLineNearTop(value.position.lineNumber);

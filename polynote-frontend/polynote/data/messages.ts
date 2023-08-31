@@ -1057,13 +1057,13 @@ export class Location {
 }
 
 export class GoToDefinitionResponse extends Message {
-    static codec = combined(int32, arrayCodec(uint8, Location.codec), optional(str)).to(GoToDefinitionResponse);
+    static codec = combined(int32, arrayCodec(uint8, Location.codec)).to(GoToDefinitionResponse);
     static get msgTypeId() { return 37; }
     static unapply(inst: GoToDefinitionResponse): ConstructorParameters<typeof GoToDefinitionResponse> {
-        return [inst.reqId, inst.location, inst.source];
+        return [inst.reqId, inst.location];
     }
 
-    constructor(readonly reqId: number, readonly location: Location[], readonly source?: string) {
+    constructor(readonly reqId: number, readonly location: Location[]) {
         super();
         Object.freeze(this);
     }

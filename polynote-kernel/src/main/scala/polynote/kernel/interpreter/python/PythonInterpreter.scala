@@ -240,7 +240,7 @@ class PythonInterpreter private[python] (
         val line = jediName.getAttr("line", classOf[Integer])
         val column = jediName.getAttr("column", classOf[Integer])
         if (path != null)
-          Some(DefinitionLocation(s"python://$path", line, column))
+          Some(DefinitionLocation(path, line, column))
         else None
     }
   }
@@ -255,29 +255,29 @@ class PythonInterpreter private[python] (
 
   // TODO: we probably need to write out prior code cells, and use the jedi Project (https://jedi.readthedocs.io/en/latest/docs/api.html#jedi.Project)
   //        to allow finding references to other cells. This will only find references that are external.
-  override def goToDefinition(code: String, pos: Int, state: State): RIO[Blocking with Logging, (List[DefinitionLocation], Option[String])] = {
+  override def goToDefinition(code: String, pos: Int, state: State): RIO[Blocking with Logging, List[DefinitionLocation]] = {
     for {
       globals     <- populateGlobals(state)
       (line, col)  = posToLineAndColumn(code, pos)
       jedi        <- jep(_.getValue("jedi.Interpreter", classOf[PyCallable]).callAs(classOf[PyObject], code, Array(globals)))
       locations   <- definitionLocations(jedi, line, col)
-      source      <- definitionSource(locations)
-    } yield (locations, source)
-  }.catchAllCause(cause => Logging.error(cause).as((Nil, None)))
+    } yield locations
+  }.catchAllCause(cause => Logging.error(cause).as(Nil))
 
-  override def goToDependencyDefinition(uri: String, pos: Int): RIO[Blocking, (List[DefinitionLocation], Option[String])] = for {
+  override def goToDependencyDefinition(uri: String, pos: Int): RIO[Blocking, List[DefinitionLocation]] = for {
     path        <- effect(new URI(uri).getPath)
     // need this just for line/column. Probably should have just used that for position so it could come from front-end
     codeStr     <- readFile(Paths.get(path))
     (line, col)  = posToLineAndColumn(codeStr, pos)
     script      <- jep(_.getValue("jedi.Script", classOf[PyCallable]).callAs(classOf[PyObject], Map[String, Object]("path" -> path).asJava))
     locations   <- definitionLocations(script, line, col)
-    source      <- definitionSource(locations)
-  } yield (locations, source)
+  } yield locations
 
-  override def getDependencyContent(uri: String): RIO[Blocking, String] = ZIO {
-    val parsed = new URI(uri)
-    Files.readAllLines(Paths.get(parsed.getPath)).asScala.mkString("\n")
+  override def getDependencyContent(uri: String): RIO[Blocking, String] = ZIO(new URI(uri)).flatMap {
+    // TODO: some better checking that it's OK to read this path. Maybe goToDefinition should keep track of
+    //        which locations it's reported, so we can restrict them? For now, at least check that it's a .py file
+    case uri if !uri.getPath.endsWith(".py") => ZIO.fail(new SecurityException(s""))
+    case uri => effectBlocking(Files.readAllLines(Paths.get(uri.getPath)).asScala.mkString("\n"))
   }
 
   def init(state: State): RIO[InterpreterEnv, State] = for {

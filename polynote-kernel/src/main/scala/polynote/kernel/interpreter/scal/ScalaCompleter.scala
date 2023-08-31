@@ -26,7 +26,7 @@ import scala.util.control.NonFatal
 class ScalaCompleter[Compiler <: ScalaCompiler](
   val compiler: Compiler,
   val index: ClassIndexer,
-  semanticDbScan: SemanticDbScan
+  semanticDbScan: Option[SemanticDbScan]
 ) {
 
   import compiler.global._
@@ -248,19 +248,20 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     Some("#" + n)
   } else source match {
     case inJar: ZipArchive#Entry =>
-      val lang = inJar.name.split('.').last
-      Some(s"$lang:///${inJar.getArchive.getName.split(File.separatorChar).last}!${inJar.path}")
+      inJar.underlyingSource.flatMap(Option.apply).map {
+        archive => s"${archive.name.split(File.separatorChar).last}!${inJar.path}"
+      }
     case _ => None
   }
 
   private def symbolLocation(global: Global)(sym: global.Symbol): Option[(DefinitionLocation, SourceFile)] = for {
-    pos    <- Option(sym.pos).filter(_.isDefined).orElse(Option(semanticDbScan.lookupPosition(sym))) if pos.isDefined
+    pos    <- Option(sym.pos).filter(_.isDefined).orElse(semanticDbScan.flatMap(s => Option(s.lookupPosition(sym)))) if pos.isDefined
     source <- Option(pos.source)
     file   <- Option(source.file)
     url    <- urlOf(file)
   } yield (DefinitionLocation(url, pos.line, pos.column), source)
 
-  private def treePos(global: Global)(tree: global.Tree, pos: Int): RIO[Blocking, (List[DefinitionLocation], Option[String])]  = {
+  private def findSymbolOfTree(global: Global)(tree: global.Tree, pos: Int): RIO[Blocking, List[DefinitionLocation]]  = {
     import global._
     val alts = tree match {
       case Import(expr, selectors) =>
@@ -269,29 +270,36 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
             expr.tpe.members.lookup(selector.name).alternatives
         }
       case tree: RefTree => tree.symbol.alternatives
+      case tree: TypeTree => tree.symbol.alternatives
       case tree => Nil
     }
     effectBlocking(alts.flatMap(sym => symbolLocation(global)(sym).toList)).map {
-      altSyms => altSyms.map(_._1) -> altSyms.headOption.map(_._2.content).map(String.valueOf)
+      altSyms => altSyms.map(_._1)
     }
   }
 
-  def locateDefinitions(cellCode: compiler.CellCode, pos: Int): RIO[Blocking, (List[DefinitionLocation], Option[String])] =
-    cellCode.typedTreeAt(pos).flatMap(treePos(compiler.global)(_, pos))
+  def locateDefinitions(cellCode: compiler.CellCode, pos: Int): RIO[Blocking, List[DefinitionLocation]] =
+    cellCode.typedTreeAt(pos).flatMap(findSymbolOfTree(compiler.global)(_, pos))
 
-  def locateDefinitionsFromDependency(uri: String, pos: Int): RIO[Blocking with Clock, (List[DefinitionLocation], Option[String])] = effectBlocking {
-    val parsed = new URI(uri)
-    val Seq(jarName, filePath) = parsed.getPath.stripPrefix("/").split('!').toSeq
-    val fileDirParts :+ fileName = filePath.split('/').toSeq
-    for {
-      artifact  <- compiler.dependencies.find(_.source.exists(_.getName == jarName))
-      source    <- artifact.source
-      insidePath = fileDirParts.mkString("/") + "/"
-      dirEntry  <- new FileZipArchive(source).allDirs.getOpt(insidePath)
-      fileEntry <- dirEntry.entries.get(fileName)
-    } yield fileEntry
-  }.someOrFailException.flatMap {
-    fileEntry => semanticDbScan.lookupTypedTree(fileEntry, pos).flatMap(treePos(semanticDbScan.semanticdbGlobal)(_, pos))
+  def locateDefinitionsFromDependency(dependency: String, pos: Int): RIO[Blocking with Clock, List[DefinitionLocation]] = semanticDbScan match {
+    case None => ZIO.succeed(Nil)
+    case Some(semanticDbScan) =>
+      effectBlocking {
+        val Seq(jarName, filePath) = dependency.split('!').toSeq
+        val fileDirParts :+ fileName = filePath.split('/').toSeq
+        for {
+          artifact  <- compiler.dependencies.find(_.source.exists(_.getName == jarName))
+          source    <- artifact.source
+          insidePath = fileDirParts.mkString("/") + "/"
+          dirEntry  <- new FileZipArchive(source).allDirs.getOpt(insidePath)
+          fileEntry <- dirEntry.entries.get(fileName)
+        } yield fileEntry
+      }.someOrFailException.flatMap {
+        fileEntry => semanticDbScan.treeAt(fileEntry, pos).flatMap {
+          tree =>
+            findSymbolOfTree(semanticDbScan.semanticdbGlobal)(tree, pos)
+        }
+      }
   }
 
   @tailrec
@@ -438,5 +446,5 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 
 object ScalaCompleter {
   object NoTree extends Throwable("No typed tree found")
-  def apply(compiler: ScalaCompiler, indexer: ClassIndexer, scan: SemanticDbScan): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler, indexer, scan)
+  def apply(compiler: ScalaCompiler, indexer: ClassIndexer, scan: Option[SemanticDbScan]): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler, indexer, scan)
 }

@@ -137,13 +137,13 @@ export class NotebookMessageReceiver extends MessageReceiver<NotebookState> {
                 return NoUpdate
             }
         });
-        this.receive(messages.GoToDefinitionResponse, (s, reqId, location, source) => {
+        this.receive(messages.GoToDefinitionResponse, (s, reqId, location) => {
             if (s.requestedDefinition) {
                 const definition: Definition = location.map(location => {
                     const loc: languages.Location = {uri: Uri.parse(location.uri), range: posToRange(location)};
                     return loc
                 })
-                s.requestedDefinition.resolve(new GoToDefinitionResponse(reqId, location, source));
+                s.requestedDefinition.resolve(new GoToDefinitionResponse(reqId, location));
                 return {
                     requestedDefinition: destroy()
                 }

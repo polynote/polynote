@@ -4,7 +4,7 @@ import polynote.app.MainArgs
 import polynote.kernel.environment.{BroadcastAll, Config, PublishMessage}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.{RefMap, UPublish}
-import polynote.kernel.{BaseEnv, GlobalEnv, KernelBusyState}
+import polynote.kernel.{BaseEnv, GlobalEnv, Kernel, KernelBusyState}
 import polynote.messages.{CreateNotebook, DeleteNotebook, Message, NotebookCell, NotebookSearchResult, RenameNotebook, ShortString, fsNotebook}
 import polynote.server.auth.{IdentityProvider, UserIdentity}
 import polynote.server.repository.format.NotebookFormat
@@ -109,6 +109,7 @@ package object server {
 
     def access: URIO[NotebookManager, Service] = ZIO.access[NotebookManager](_.get)
     def open(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv with BroadcastAll, KernelPublisher] = access.flatMap(_.open(path))
+    def getKernel(path: String): URIO[NotebookManager, Option[Kernel]] = access.flatMap(_.getKernel(path))
     def subscribe(path: String): RManaged[NotebookManager with BaseEnv with GlobalEnv with PublishMessage with BroadcastAll with UserIdentity, KernelSubscriber] = open(path).toManaged_.flatMap(_.subscribe())
     def fetchIfOpen(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[(String, String)]] = access.flatMap(_.fetchIfOpen(path))
     def location(path: String): RIO[NotebookManager with BaseEnv with GlobalEnv, Option[URI]] = access.flatMap(_.location(path))
@@ -123,6 +124,7 @@ package object server {
 
     trait Service {
       def open(path: String): RIO[BaseEnv with GlobalEnv with BroadcastAll, KernelPublisher]
+      def getKernel(path: String): UIO[Option[Kernel]]
       def fetchIfOpen(path: String): RIO[BaseEnv with GlobalEnv, Option[(String, String)]]
       def location(path: String): RIO[BaseEnv with GlobalEnv, Option[URI]]
       def list(): RIO[BaseEnv with GlobalEnv, List[fsNotebook]]
@@ -159,6 +161,7 @@ package object server {
 
         private val maxRetryDelay = Duration(8, TimeUnit.SECONDS)
 
+        def getKernel(path: String): UIO[Option[Kernel]] = openNotebooks.get(path).some.flatMap(_.kernelIfStarted.some).asSome.orElse(ZIO.none)
 
         override def open(path: String): RIO[BaseEnv with GlobalEnv with BroadcastAll, KernelPublisher] = openNotebooks.getOrCreate(path) {
           for {

@@ -62,9 +62,9 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
 
   def parametersAt(code: String, pos: Int, state: State): Task[Option[Signatures]] = ZIO.succeed(None)
 
-  override def goToDefinition(code: String, pos: RunId, state: State): RIO[Blocking, (List[DefinitionLocation], Option[String])] = ZIO.succeed(Nil -> None)
+  override def goToDefinition(code: String, pos: RunId, state: State): RIO[Blocking, List[DefinitionLocation]] = ZIO.succeed(Nil)
 
-  override def goToDependencyDefinition(uri: String, pos: RunId): RIO[Blocking with Logging, (List[DefinitionLocation], Option[String])] = ZIO.succeed(Nil -> None)
+  override def goToDependencyDefinition(uri: String, pos: RunId): RIO[Blocking with Logging, List[DefinitionLocation]] = ZIO.succeed(Nil)
 
   override def getDependencyContent(uri: String): RIO[Blocking, String] = ZIO.succeed("")
 
