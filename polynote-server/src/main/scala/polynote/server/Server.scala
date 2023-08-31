@@ -276,5 +276,5 @@ object Server {
       case -1 => ("", param)
       case n  => (param.substring(0, n), if (n < param.length - 1) param.substring(n + 1) else "")
     }
-  }.groupBy(_._1).mapValues(_.map(_._2))
+  }.groupBy(_._1).mapValues(_.map(_._2)).toMap
 }
