@@ -557,6 +557,7 @@ class KernelConf extends Disposable {
             }
         }
         setEnv(envHandler.state);
+        scalaVersionHandler.addObserver(version => this.scalaVersionInput.setSelectedValue(version || ""));
         envHandler.addObserver(env => setEnv(env));
         jvmArgsHandler.addObserver(strs => this.jvmArgsInput.value = joinQuotedArgs(strs) || "");
 
