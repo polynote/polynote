@@ -127,7 +127,7 @@ class SemanticDbScan (compiler: ScalaCompiler) {
       file =>
         val unit = new semanticdbGlobal.RichCompilationUnit(file)
         compileUnits.put(file.file, unit)
-        if (file.isJava)
+        if (file.file.name.endsWith(".java"))
           javaMapping.put(file.path.split("!").last.stripSuffix(".java").replace('/', '.'), unit)
         unit
     }
