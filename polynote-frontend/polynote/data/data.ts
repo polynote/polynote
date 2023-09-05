@@ -84,6 +84,19 @@ export class IvyRepository extends RepositoryConfig {
         return 0;
     }
 
+    // enable parsing when copy-pasting configurations
+    toJSON(): any {
+        return {
+            type: "ivy",
+            resolver: {
+                url: this.url,
+                artifactPattern: this.artifactPattern,
+                metadataPattern: this.metadataPattern,
+                changing: this.changing
+            }
+        }
+    }
+
     constructor(readonly url: string, readonly artifactPattern?: string, readonly metadataPattern?: string, readonly changing?: boolean) {
         super();
         Object.freeze(this);
@@ -104,6 +117,17 @@ export class MavenRepository extends RepositoryConfig {
         super();
         Object.freeze(this);
     }
+
+    // enable parsing when copy-pasting configurations
+    toJSON(): any {
+        return {
+            type: "maven",
+            resolver: {
+                url: this.url,
+                changing: this.changing
+            }
+        }
+    }
 }
 
 export class PipRepository extends RepositoryConfig {
@@ -119,6 +143,16 @@ export class PipRepository extends RepositoryConfig {
     constructor(readonly url: string) {
         super();
         Object.freeze(this);
+    }
+
+    // enable parsing when copy-pasting configurations
+    toJSON(): any {
+        return {
+            type: "pip",
+            resolver: {
+                url: this.url
+            }
+        }
     }
 }
 

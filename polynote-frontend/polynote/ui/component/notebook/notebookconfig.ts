@@ -28,6 +28,7 @@ import {NBConfig} from "../../../state/notebook_state";
 import {joinQuotedArgs, parseQuotedArgs} from "../../../util/helpers";
 import {ServerStateHandler} from "../../../state/server_state";
 import {copyToClipboard} from "./cell";
+import {wrap} from "vega-lite/build/src/log";
 
 export class NotebookConfigEl extends Disposable {
     readonly el: TagElement<"div">;
@@ -119,7 +120,8 @@ export class NotebookConfigEl extends Disposable {
 
             try {
                 paste = JSON.parse(clipText);
-                conf = new NotebookConfig(paste.dependencies, paste.exclusions, paste.repositories, paste.sparkConfig, paste.sparkTemplate, paste.env, paste.scalaVersion, paste.jvmArgs);
+                let resolvers = Resolvers.parseWrappedResolvers(paste.repositories);
+                conf = new NotebookConfig(paste.dependencies, paste.exclusions, resolvers, paste.sparkConfig, paste.sparkTemplate, paste.env, paste.scalaVersion, paste.jvmArgs);
                 this.saveConfig(conf);
                 this.pasteErrorMessage.classList.add('hide');
             } catch (e) {
@@ -349,6 +351,24 @@ class Resolvers extends Disposable {
                 }
                 return [repo]
             } else { return [] }
+        });
+    }
+
+    static parseWrappedResolvers(wrappedResolvers: any): RepositoryConfig[] {
+        return wrappedResolvers.map((wrappedResolver: any) => {
+            let resolver = wrappedResolver.resolver;
+            if (wrappedResolver.type === "ivy") {
+                return new IvyRepository(resolver.url, resolver.artifactPattern, resolver.metadataPattern, resolver.changing);
+            }
+            else if (wrappedResolver.type === "maven") {
+                return new MavenRepository(resolver.url, resolver.changing);
+            }
+            else if (wrappedResolver.type == "pip") {
+                return new PipRepository(resolver.url);
+            }
+            else {
+                throw new Error(`Unknown repository type! Don't know what to do with ${JSON.stringify(resolver)}`)
+            }
         });
     }
 }
