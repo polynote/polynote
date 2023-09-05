@@ -28,8 +28,6 @@ import {NBConfig} from "../../../state/notebook_state";
 import {joinQuotedArgs, parseQuotedArgs} from "../../../util/helpers";
 import {ServerStateHandler} from "../../../state/server_state";
 import {copyToClipboard} from "./cell";
-import {wrap} from "vega-lite/build/src/log";
-
 export class NotebookConfigEl extends Disposable {
     readonly el: TagElement<"div">;
     private readonly stateHandler: StateHandler<NBConfig>;
