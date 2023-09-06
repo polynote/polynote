@@ -118,7 +118,7 @@ export class NotebookConfigEl extends Disposable {
 
             try {
                 paste = JSON.parse(clipText);
-                let resolvers = Resolvers.parseWrappedResolvers(paste.repositories);
+                let resolvers = Resolvers.parseWrappedResolvers((paste.repositories as unknown) as [{type: "ivy" | "maven" | "pip", resolver: RepositoryConfig}]);
                 conf = new NotebookConfig(paste.dependencies, paste.exclusions, resolvers, paste.sparkConfig, paste.sparkTemplate, paste.env, paste.scalaVersion, paste.jvmArgs);
                 this.saveConfig(conf);
                 this.pasteErrorMessage.classList.add('hide');
@@ -352,16 +352,19 @@ class Resolvers extends Disposable {
         });
     }
 
-    static parseWrappedResolvers(wrappedResolvers: any): RepositoryConfig[] {
-        return wrappedResolvers.map((wrappedResolver: any) => {
-            let resolver = wrappedResolver.resolver;
+    static parseWrappedResolvers(wrappedResolvers: [{type: "ivy" | "maven" | "pip", resolver: RepositoryConfig}]): RepositoryConfig[] {
+        return wrappedResolvers.map((wrappedResolver: {type: "ivy" | "maven" | "pip", resolver: RepositoryConfig}) => {
+            let resolver;
             if (wrappedResolver.type === "ivy") {
+                resolver = wrappedResolver.resolver as IvyRepository;
                 return new IvyRepository(resolver.url, resolver.artifactPattern, resolver.metadataPattern, resolver.changing);
             }
             else if (wrappedResolver.type === "maven") {
+                resolver = wrappedResolver.resolver as MavenRepository;
                 return new MavenRepository(resolver.url, resolver.changing);
             }
             else if (wrappedResolver.type == "pip") {
+                resolver = wrappedResolver.resolver as PipRepository;
                 return new PipRepository(resolver.url);
             }
             else {

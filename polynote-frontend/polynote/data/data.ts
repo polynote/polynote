@@ -74,6 +74,7 @@ export abstract class RepositoryConfig extends CodecContainer {
     abstract url: string;
     abstract repositoryTypeName: "ivy" | "maven" | "pip";
 
+    // enable parsing when copy-pasting configurations
     toJSON():{ type: "ivy" | "maven" | "pip",  resolver: RepositoryConfig } {
         return {
             type: this.repositoryTypeName,
