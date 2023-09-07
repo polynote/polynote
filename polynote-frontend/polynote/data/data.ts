@@ -72,10 +72,10 @@ export abstract class RepositoryConfig extends CodecContainer {
     static msgTypeId: number;
 
     abstract url: string;
-    abstract repositoryTypeName: "ivy" | "maven" | "pip";
+    abstract repositoryTypeName: RepositoryTypeNames;
 
     // enable parsing when copy-pasting configurations
-    toJSON():{ type: "ivy" | "maven" | "pip",  resolver: RepositoryConfig } {
+    toJSON(): WrappedResolver {
         return {
             type: this.repositoryTypeName,
             resolver: {...this}
@@ -93,7 +93,7 @@ export class IvyRepository extends RepositoryConfig {
         return 0;
     }
 
-    get repositoryTypeName(): "ivy" | "maven" | "pip" {
+    get repositoryTypeName(): RepositoryTypeNames {
         return "ivy";
     }
 
@@ -113,7 +113,7 @@ export class MavenRepository extends RepositoryConfig {
         return 1;
     }
 
-    get repositoryTypeName(): "ivy" | "maven" | "pip" {
+    get repositoryTypeName(): RepositoryTypeNames {
         return "maven";
     }
 
@@ -133,7 +133,7 @@ export class PipRepository extends RepositoryConfig {
         return 2;
     }
 
-    get repositoryTypeName(): "ivy" | "maven" | "pip" {
+    get repositoryTypeName(): RepositoryTypeNames {
         return "pip";
     }
 
@@ -142,6 +142,13 @@ export class PipRepository extends RepositoryConfig {
         Object.freeze(this);
     }
 }
+
+export type RepositoryTypeNames = "ivy" | "maven" | "pip";
+
+export type WrappedResolver = {
+    type: RepositoryTypeNames,
+    resolver: RepositoryConfig
+};
 
 RepositoryConfig.codecs = [
     IvyRepository,   // 0

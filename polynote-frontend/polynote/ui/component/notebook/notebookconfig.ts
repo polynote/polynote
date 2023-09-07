@@ -21,7 +21,7 @@ import {
     NotebookConfig,
     PipRepository,
     RepositoryConfig,
-    SparkPropertySet
+    SparkPropertySet, WrappedResolver
 } from "../../../data/data";
 import {KernelStatusString} from "../../../data/messages";
 import {NBConfig} from "../../../state/notebook_state";
@@ -113,12 +113,12 @@ export class NotebookConfigEl extends Disposable {
 
     private pasteConfig() {
         navigator.clipboard.readText().then(clipText => {
-            let paste: NotebookConfig;
+            let paste: Omit<NotebookConfig, "repositories"> & { repositories: [WrappedResolver] };
             let conf: NotebookConfig | undefined = undefined;
 
             try {
                 paste = JSON.parse(clipText);
-                let resolvers = Resolvers.parseWrappedResolvers((paste.repositories as unknown) as [{type: "ivy" | "maven" | "pip", resolver: RepositoryConfig}]);
+                let resolvers = Resolvers.parseWrappedResolvers(paste.repositories);
                 conf = new NotebookConfig(paste.dependencies, paste.exclusions, resolvers, paste.sparkConfig, paste.sparkTemplate, paste.env, paste.scalaVersion, paste.jvmArgs);
                 this.saveConfig(conf);
                 this.pasteErrorMessage.classList.add('hide');
@@ -352,8 +352,8 @@ class Resolvers extends Disposable {
         });
     }
 
-    static parseWrappedResolvers(wrappedResolvers: [{type: "ivy" | "maven" | "pip", resolver: RepositoryConfig}]): RepositoryConfig[] {
-        return wrappedResolvers.map((wrappedResolver: {type: "ivy" | "maven" | "pip", resolver: RepositoryConfig}) => {
+    static parseWrappedResolvers(wrappedResolvers: WrappedResolver[]): RepositoryConfig[] {
+        return wrappedResolvers.map((wrappedResolver: WrappedResolver) => {
             let resolver;
             if (wrappedResolver.type === "ivy") {
                 resolver = wrappedResolver.resolver as IvyRepository;
@@ -368,7 +368,7 @@ class Resolvers extends Disposable {
                 return new PipRepository(resolver.url);
             }
             else {
-                throw new Error(`Unknown repository type! Don't know what to do with ${JSON.stringify(resolver)}`)
+                throw new Error(`Unknown repository type! Don't know what to do with ${JSON.stringify(wrappedResolver)}`)
             }
         });
     }
