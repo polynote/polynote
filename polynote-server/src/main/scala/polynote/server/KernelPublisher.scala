@@ -89,6 +89,8 @@ class KernelPublisher private (
       kernelRef.set(None) *>
       closeIfNoSubscribers
 
+  val kernelIfStarted: UIO[Option[Kernel]] = kernelRef.get
+
   val kernel: RIO[BaseEnv with GlobalEnv, Kernel] = kernelRef.get.flatMap {
     case Some(kernel) =>
       ZIO.succeed(kernel)
@@ -146,7 +148,7 @@ class KernelPublisher private (
     signatures  <- kernel.parametersAt(cellID, pos).provideSomeLayer[BaseEnv with GlobalEnv](cellEnv(cellID))
   } yield signatures
 
-  def goToDefinition(cellID: Either[String, CellID], pos: Int): RIO[BaseEnv with GlobalEnv, (List[DefinitionLocation], Option[String])] = for {
+  def goToDefinition(cellID: Either[String, CellID], pos: Int): RIO[BaseEnv with GlobalEnv, List[DefinitionLocation]] = for {
     kernel <- kernel
     env     = cellID.fold(_ => depEnv, id => cellEnv(id))
     result <- kernel.goToDefinition(cellID, pos).provideSomeLayer[BaseEnv with GlobalEnv](env)

@@ -57,7 +57,7 @@ class NotebookSession(
     case GoToDefinitionRequest(source, pos, reqId) =>
       for {
         definitions <- subscriber.publisher.goToDefinition(source, pos)
-        _           <- PublishMessage(GoToDefinitionResponse(reqId, definitions._1, definitions._2))
+        _           <- PublishMessage(GoToDefinitionResponse(reqId, definitions))
       } yield ()
 
     case KernelStatus( _) => for {

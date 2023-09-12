@@ -130,7 +130,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     session          <- startSparkSession(sparkJars, classLoader)
     busyState        <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
-    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[BaseEnv with TaskManager](ZLayer.succeed(compiler)))
+    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[BaseEnv with Config with TaskManager](ZLayer.succeed(compiler)))
     interpState      <- InterpreterState.access
     closed           <- Promise.make[Throwable, Unit]
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)

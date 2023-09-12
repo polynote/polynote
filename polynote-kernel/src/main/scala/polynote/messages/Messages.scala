@@ -466,7 +466,7 @@ object GoToDefinitionRequest extends MessageCompanion[GoToDefinitionRequest](36)
   */
 final case class DefinitionLocation(uri: String, line: Int, column: Int)
 
-final case class GoToDefinitionResponse(reqId: Int, location: TinyList[DefinitionLocation], source: Option[String]) extends Message
+final case class GoToDefinitionResponse(reqId: Int, location: TinyList[DefinitionLocation]) extends Message
 object GoToDefinitionResponse extends MessageCompanion[GoToDefinitionResponse](37)
 
 

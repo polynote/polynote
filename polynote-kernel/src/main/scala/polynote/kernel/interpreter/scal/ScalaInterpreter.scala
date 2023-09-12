@@ -9,8 +9,9 @@ import polynote.messages.{CellID, DefinitionLocation}
 import zio.blocking.{Blocking, effectBlockingInterrupt}
 import zio.{RIO, Task, ZIO}
 import ScalaInterpreter.{addPositionUpdates, captureLastExpression}
+import polynote.config.PolynoteConfig
 import polynote.kernel.dependency.Artifact
-import polynote.kernel.environment.{CurrentNotebook, CurrentRuntime, CurrentTask}
+import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import zio.clock.Clock
@@ -21,7 +22,7 @@ import scala.reflect.io.FileZipArchive
 class ScalaInterpreter private[scal] (
   val scalaCompiler: ScalaCompiler,
   indexer: ClassIndexer,
-  scan: SemanticDbScan
+  scan: Option[SemanticDbScan]
 ) extends Interpreter {
   import scalaCompiler.{CellCode, global, Imports}
   import global.{Tree, ValDef, TermName, Modifiers, EmptyTree, TypeTree, Import, Name, Type, Quasiquote, typeOf, atPos, NoType}
@@ -68,14 +69,14 @@ class ScalaInterpreter private[scal] (
     hints          <- completer.paramHints(cellCode, pos + 2)
   } yield hints
 
-  override def goToDefinition(code: String, pos: Int, state: State): RIO[Blocking, (List[DefinitionLocation], Option[String])] = for {
+  override def goToDefinition(code: String, pos: Int, state: State): RIO[BaseEnv with CellEnv, List[DefinitionLocation]] = for {
     collectedState <- injectState(collectState(state)).provideLayer(CurrentRuntime.noRuntime)
     valDefs         = collectedState.values.mapValues(_._1).values.toList
     cellCode       <- scalaCompiler.cellCode(s"Cell${state.id.toString}", s"\n\n$code  ", collectedState.prevCells, valDefs, collectedState.imports, strictParse = false)
     locations      <- completer.locateDefinitions(cellCode, pos)
   } yield locations
 
-  override def goToDependencyDefinition(uri: String, pos: Int): RIO[BaseEnv, (List[DefinitionLocation], Option[String])] =
+  override def goToDependencyDefinition(uri: String, pos: Int): RIO[BaseEnv, List[DefinitionLocation]] =
     completer.locateDefinitionsFromDependency(uri, pos)
 
   override def init(state: State): RIO[InterpreterEnv, State] = ZIO.succeed(state)
@@ -256,11 +257,20 @@ class ScalaInterpreter private[scal] (
 
 object ScalaInterpreter {
 
-  def apply(): RIO[BaseEnv with TaskManager with ScalaCompiler.Provider, ScalaInterpreter] = for {
+  def maybeScan(compiler: ScalaCompiler): RIO[BaseEnv with Config with TaskManager, Option[SemanticDbScan]] =
+    Config.access.flatMap {
+      case config if config.downloadSources =>
+        for {
+          scan <- ZIO(new SemanticDbScan(compiler))
+          _    <- scan.init.forkDaemon
+        } yield Some(scan)
+      case _ => ZIO.none
+    }
+
+  def apply(): RIO[BaseEnv with Config with TaskManager with ScalaCompiler.Provider, ScalaInterpreter] = for {
     compiler <- ScalaCompiler.access
     index    <- ClassIndexer.default
-    scan      = new SemanticDbScan(compiler)
-    _        <- scan.init.forkDaemon
+    scan     <- maybeScan(compiler)
   } yield new ScalaInterpreter(compiler, index, scan)
 
   // capture the last statement in a value Out, if it's a free expression

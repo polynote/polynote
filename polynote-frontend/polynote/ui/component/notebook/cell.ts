@@ -91,7 +91,7 @@ import {UserPreferences, UserPreferencesHandler} from "../../../state/preference
 import {plotToVegaCode, validatePlot} from "../../input/plot_selector";
 import {MarkdownIt} from "../../input/markdown-it";
 import Definition = languages.Definition;
-import {goToDefinition} from "./common";
+import {findDefinitionLocation, IOpenInput, openDefinition} from "./common";
 import {Either} from "../../../data/codec_types";
 
 
@@ -786,6 +786,15 @@ abstract class MonacoCell extends Cell {
             // overflowWidgetsDomNode: this.overflowDomNode
         });
 
+        // None of the official ways to do this seem to work
+
+        (this.editor as any)._codeEditorService.openCodeEditor = (input: IOpenInput, source: any, sideBySide: any) => {
+            return openDefinition(notebookState, source.getModel().getLanguageId(), {
+                uri: input.resource,
+                range: input.options?.selection || new Range(1, 0, 1, 0)
+            })
+        }
+
         this.editor.onDidChangeCursorSelection(evt => {
             if (this.applyingServerEdits) return // ignore when applying server edits.
 
@@ -810,6 +819,13 @@ abstract class MonacoCell extends Cell {
         // NOTE: this uses some private monaco APIs. If this ever ends up breaking after we update monaco it's a signal
         //       we'll need to rethink this stuff.
         this.editor.onKeyDown((evt: IKeyboardEvent | KeyboardEvent) => this.onKeyDown(evt))
+
+        notebookState.observeKey("requestedCellPosition", pos => {
+            if (pos && pos[0] === this.id) {
+                this.editor.focus();
+                this.editor.setPosition(pos[1]);
+            }
+        }).disposeWith(this)
 
         this.el = div(['cell-container', this.state.language, 'code-cell'], [
             div(['cell-input'], [
@@ -1514,7 +1530,7 @@ export class CodeCell extends MonacoCell {
     }
 
     goToDefinition(offset: number): Promise<Definition> {
-        return goToDefinition(this.notebookState, Either.right(this.id), offset);
+        return findDefinitionLocation(this.notebookState, Either.right(this.id), offset);
     }
 
     private setErrorMarkers(error: RuntimeError | CompileErrors, markers: IMarkerData[]) {
@@ -1991,8 +2007,17 @@ class CodeCellOutput extends Disposable {
                             ]);
 
                             if (report.position) {
-                                const lineNumber = linePosAt(this.cellState.state.content, report.position.point)
-                                el.appendChild(span(['error-link'], [`(Line ${lineNumber})`]))
+                                // TODO: this is really discombobulated. Why does this have to call this function
+                                //        when the cell uses the editor model to translate the position? It's not
+                                //        "cleaner". I guess the cell should have a mapped view of the compile errors
+                                //        and pass that to the output component instead?
+                                const linePos = linePosAt(this.cellState.state.content, report.position.point)
+                                const lineNumber = linePos[0] + 1 // linePosAt is 0-based, humans are 1-based
+                                const column = linePos[1] + 1
+                                el.appendChild(
+                                    span(['error-link'], [`(Line ${lineNumber})`])
+                                        .click(() => this.notebookState.selectCellAt(this.cellState.state.id, { lineNumber, column }))
+                                )
                             }
 
                             return el;

@@ -215,6 +215,20 @@ class Server {
               case "download=true" => downloadFile(req.uri.getPath.stripPrefix("/notebook/"), req)
               case _ => getIndex.map(Response.html(_))
             }
+          case req if req.uri.getPath startsWith "/dependency/" =>
+            val queryParams = Option(req.uri.getQuery).map(Server.parseQuery).getOrElse(Map.empty)
+            val result = for {
+              lang <- ZIO.fromOption(queryParams.get("lang").flatMap(_.headOption))
+              dep  <- ZIO.fromOption(queryParams.get("dependency").flatMap(_.headOption))
+              kernel <- NotebookManager.getKernel(req.uri.getPath.stripPrefix("/dependency/")).some
+              source <- kernel.dependencySource(lang, dep).catchAll {
+                err => Logging.error(err) *> ZIO.fail(None)
+              }
+            } yield Response.plain(source)
+
+            result.catchAll {
+              none => Logging.error(s"Request for a dependency source at ${req.uri} failed") *> ZIO.fail(NotFound(req.uri.toString))
+            }
         } .handleSome(staticHandler)
           .handleSome(authRoutes)
           .logRequests(ServerLogger.noLogRequests)
@@ -251,4 +265,16 @@ object Server {
       }
     }
   }
+
+  /**
+    * Very simply (and not very robustly) parse a query string like "foo=wizzle&bar=wozzle". Returns a map of key to list
+    * of all values that appeared with that key. Parameters that aren't key/value (e.g. "foo&bar&baz") are treated as
+    * values of the empty key "".
+    */
+  def parseQuery(query: String): Map[String, List[String]] = query.split('&').toList.map {
+    param => param.indexOf('=') match {
+      case -1 => ("", param)
+      case n  => (param.substring(0, n), if (n < param.length - 1) param.substring(n + 1) else "")
+    }
+  }.groupBy(_._1).mapValues(_.map(_._2)).toMap
 }

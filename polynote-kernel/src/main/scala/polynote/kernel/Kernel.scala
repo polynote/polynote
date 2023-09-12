@@ -32,7 +32,12 @@ trait Kernel {
   /**
     * Provide a location for the definition of whatever is at the given position in the given cell
     */
-  def goToDefinition(fileOrCell: Either[String, CellID], pos: Int): TaskC[(List[DefinitionLocation], Option[String])]
+  def goToDefinition(fileOrCell: Either[String, CellID], pos: Int): TaskC[List[DefinitionLocation]]
+
+  /**
+    * Retrieve the source of the given dependency identifier from the given language
+    */
+  def dependencySource(language: String, dependency: String): RIO[BaseEnv with GlobalEnv, String]
 
   /**
     * Perform any initialization for the kernel

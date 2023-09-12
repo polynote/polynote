@@ -240,7 +240,8 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                         ServerStateHandler.updateState(state => {
                             if (!of) return NoUpdate;
                             return {
-                                notebooks: updateProperty(path, false)
+                                notebooks: updateProperty(path, false),
+                                openFiles: removeFromArray(state.openFiles, of)
                             }
                         });
 

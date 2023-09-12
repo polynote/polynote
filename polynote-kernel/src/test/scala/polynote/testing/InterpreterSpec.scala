@@ -25,7 +25,7 @@ import scala.reflect.io.VirtualDirectory
 import scala.tools.nsc.Settings
 import scala.tools.nsc.io.AbstractFile
 
-trait InterpreterSpec extends ZIOSpec {
+trait InterpreterSpec extends ConfiguredZIOSpec { this: Suite =>
   import runtime.{unsafeRun, unsafeRunSync}
   val classpath: List[File] = sys.props("java.class.path").split(File.pathSeparator).toList.map(new File(_))
   val settings: Settings = ScalaCompiler.defaultSettings(new Settings(), classpath)
@@ -58,7 +58,7 @@ trait InterpreterSpec extends ZIOSpec {
 
   def interpreter: Interpreter
 
-  lazy val initialState: State = unsafeRun(interpreter.init(State.Root).provideSomeLayer[Environment](MockEnv.layer(State.Root.id + 1)))
+  lazy val initialState: State = interpreter.init(State.Root).provideSomeLayer[Environment](MockEnv.layer(State.Root.id + 1)).runIO()
   def cellState: State = State.id(1, initialState)
 
   def assertOutput(code: String)(assertion: (Map[String, Any], Seq[Result]) => Unit): Unit =
@@ -94,7 +94,7 @@ trait InterpreterSpec extends ZIOSpec {
 
   case class InterpResult(state: State, env: MockEnv)
 
-  type ITask[A] = RIO[Clock with Console with System with Random with Blocking with Logging, A]
+  type ITask[A] = RIO[Environment, A]
 
   def interp(code: String, interpreter: Interpreter = interpreter): StateT[ITask, State, InterpResult] = StateT[ITask, State, InterpResult] {
     state => MockEnv(state.id).flatMap {

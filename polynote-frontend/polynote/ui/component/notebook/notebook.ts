@@ -10,6 +10,7 @@ import {CellState, NotebookStateHandler} from "../../../state/notebook_state";
 import {NotebookScrollLocationsHandler} from "../../../state/preferences";
 import {ServerStateHandler} from "../../../state/server_state";
 import {Main} from "../../../main";
+import {cellIdFromHash} from "./common";
 
 type CellInfo = {cell: CellContainer, handler: StateHandler<CellState>, el: TagElement<"div">};
 
@@ -207,7 +208,7 @@ export class Notebook extends Disposable {
         // the hash can (potentially) have two parts: the selected cell and selected position.
         // for example: #Cell2,6-12 would mean Cell2, positions at offset 6 to 12
         const [hashId, pos] = hash.slice(1).split(",");
-        const cellId = parseInt(hashId.slice("Cell".length))
+        const cellId = cellIdFromHash(hashId)
         // cell might not yet be loaded, so be sure to wait for it
         this.waitForCell(cellId).then(() => {
             this.notebookState.selectCell(cellId)

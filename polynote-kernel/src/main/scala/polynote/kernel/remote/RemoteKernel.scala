@@ -139,9 +139,14 @@ class RemoteKernel[ServerAddress](
       case ParametersAtResponse(reqId, result) => done(reqId, result)
     }
 
-  override def goToDefinition(idOrPath: Either[String, CellID], pos: Int): TaskC[(List[DefinitionLocation], Option[String])] =
+  override def goToDefinition(idOrPath: Either[String, CellID], pos: Int): TaskC[List[DefinitionLocation]] =
     request(RemoteGoToDefinitionRequest(nextReq, idOrPath, pos)) {
-      case RemoteGoToDefinitionResponse(reqId, locations, source) => done(reqId, (locations, source))
+      case RemoteGoToDefinitionResponse(reqId, locations) => done(reqId, locations)
+    }
+
+  override def dependencySource(language: String, dependency: String): RIO[BaseEnv with GlobalEnv, String] =
+    request(RemoteDependencySourceRequest(nextReq, language, dependency)) {
+      case RemoteDependencySourceResponse(reqId, source) => done(reqId, source)
     }
 
   def shutdown(): TaskB[Unit] = closing.withPermit {
@@ -301,11 +306,10 @@ class RemoteKernelClient(
         case ReleaseHandleRequest(reqId, sid,  ht, hid)   => kernel.releaseHandle(ht, hid).as(UnitResponse(reqId)).provideSomeLayer(streamingHandles(sid))
         case KernelInfoRequest(reqId)                     => kernel.info().map(KernelInfoResponse(reqId, _))
         case KeepAliveRequest(reqId)                      => handleKeepAlive(reqId)
+        case RemoteDependencySourceRequest(reqId, l, d)   => kernel.dependencySource(l, d).map(RemoteDependencySourceResponse(reqId, _))
         // TODO: Kernel needs an API to release all streaming handles (then we could let go of elements from sessionHandles map; right now they will just accumulate forever)
-        case RemoteGoToDefinitionRequest(reqId, cellId, pos) => kernel.goToDefinition(cellId, pos).map {
-          case (locations, source) => RemoteGoToDefinitionResponse(reqId, locations, source)
-        }
-        case req                                             => ZIO.succeed(UnitResponse(req.reqId))
+        case RemoteGoToDefinitionRequest(reqId, id, pos)  => kernel.goToDefinition(id, pos).map(RemoteGoToDefinitionResponse(reqId, _))
+        case req                                          => ZIO.succeed(UnitResponse(req.reqId))
       }
 
       response.interruptible.provideSomeLayer[BaseEnv with GlobalEnv with CellEnv with PublishRemoteResponse](RemoteKernelClient.mkResultPublisher(req.reqId))

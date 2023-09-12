@@ -43,7 +43,9 @@ export class Tabs extends Disposable {
                                     depSrc.position,
                                     depSrc.sourceNotebook).el
                             }).otherwise(undefined);
-                        this.add(path, this.mkTitle(path), newTabEl);
+                        const title: TagElement<"span"> = of.type == "dependency_source" ? this.mkDependencyTitle(path)
+                                                                                         : this.mkTitle(path)
+                        this.add(path, title, newTabEl);
                     }
                 })
             } else {
@@ -166,5 +168,10 @@ export class Tabs extends Disposable {
 
     private mkTitle(path: string): TagElement<"span"> {
        return span(['notebook-tab-title'], [nameFromPath(path)]);
+    }
+
+    private mkDependencyTitle(uri: string): TagElement<"span"> {
+        const dep = new URLSearchParams(new URL(uri).search).get("dependency") || ""
+        return span(['notebook-tab-title', 'dependency-source-tab-title'], [dep]);
     }
 }
