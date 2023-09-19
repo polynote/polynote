@@ -230,7 +230,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         this.rootState.addPreObserver(prev => {
             const prevId = prev.uuid;
             return currentRoot => {
-                if (currentRoot.uuid !== prevId) {
+                if (currentRoot && currentRoot.uuid !== prevId) {
                     // console.log(currentRoot.uuid, "updating to new root!", currentRoot, previousRoot)
                     const newRoot = new Comment(currentRoot.uuid, allCommentsState);
                     this.rootComment.el.replaceWith(newRoot.el);
