@@ -87,7 +87,7 @@ export class CommentHandler extends Disposable {
                    if (maybeRoot && maybeRoot.uuid === commentId) {
                        // If this is a root comment, we delete it and it's children
                        // First, the children
-                       Object.keys(maybeRoot.rootChildren(currentComments)).forEach(commentId => allCommentsState.update(() => removeKey(commentId)))
+                       maybeRoot.rootChildren(currentComments).forEach(childComment => allCommentsState.update(() => removeKey(childComment.uuid)))
 
                        // then the root itself.
                        maybeRoot.dispose();
@@ -205,6 +205,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
     private children: Record<string, Comment> = {};
     private rootState: StateHandler<CellComment>;
     private rootComment: Comment;
+    range: PosRange;
     private readonly allCommentsState: StateHandler<Record<string, CellComment>>;
     private readonly currentSelection: StateView<PosRange | undefined>
 
@@ -217,6 +218,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         const currentSelection = this.currentSelection = selectionState.fork(this);
 
         this.rootState = allCommentsState.lens(uuid);
+        this.range = this.rootState.state.range;
         this.disposeWith(this.rootState);
 
         this.handleSelection();
@@ -228,7 +230,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         const commentList = div(['comments-list'], [this.rootComment.el]);
         this.el.appendChild(commentList);
         this.rootState.addPreObserver(prev => {
-            const prevId = prev.uuid;
+            const prevId = prev?.uuid ;
             return currentRoot => {
                 if (currentRoot && currentRoot.uuid !== prevId) {
                     // console.log(currentRoot.uuid, "updating to new root!", currentRoot, previousRoot)
@@ -279,6 +281,10 @@ class CommentRoot extends MonacoRightGutterOverlay {
         handledChangedComments(this.allCommentsState.state)
         allCommentsState.addObserver((curr, updateResult) => handledChangedComments(curr, updateResult))
 
+        this.rootState.addObserver((curr: CellComment, updateResult: UpdateResult<CellComment>) => {
+            this.range = curr.range;
+        });
+
         if (this.visible) {
             newComment.text.focus()
         }
@@ -290,12 +296,9 @@ class CommentRoot extends MonacoRightGutterOverlay {
     }
 
     rootChildren(allComments = this.allCommentsState.state) {
-        return Object.values(allComments).filter(comment => comment.uuid !== this.uuid && comment.range.rangeStr === this.range.rangeStr)
+        return Object.values(allComments).filter(comment => comment.uuid !== this.uuid && comment.range.rangeStr === this.range.rangeStr);
     }
 
-    get range() {
-        return this.rootState.state.range;
-    }
 
     get createdAt() {
         return this.rootState.state.createdAt;
