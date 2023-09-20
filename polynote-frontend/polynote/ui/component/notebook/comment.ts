@@ -199,6 +199,8 @@ abstract class MonacoRightGutterOverlay extends Disposable {
     }
 }
 
+// a CommentRoot is the base comment at a given selection in a cell, defined as the oldest comment at that selection
+// range. all other comments at that selection will be its children
 class CommentRoot extends MonacoRightGutterOverlay {
     readonly el: TagElement<"div">;
     private highlights: string[] = [];
@@ -218,7 +220,12 @@ class CommentRoot extends MonacoRightGutterOverlay {
         const currentSelection = this.currentSelection = selectionState.fork(this);
 
         this.rootState = allCommentsState.lens(uuid);
+
         this.range = this.rootState.state.range;
+        this.rootState.addObserver((curr: CellComment, updateResult: UpdateResult<CellComment>) => {
+            this.range = curr.range;
+        });
+
         this.disposeWith(this.rootState);
 
         this.handleSelection();
@@ -281,9 +288,6 @@ class CommentRoot extends MonacoRightGutterOverlay {
         handledChangedComments(this.allCommentsState.state)
         allCommentsState.addObserver((curr, updateResult) => handledChangedComments(curr, updateResult))
 
-        this.rootState.addObserver((curr: CellComment, updateResult: UpdateResult<CellComment>) => {
-            this.range = curr.range;
-        });
 
         if (this.visible) {
             newComment.text.focus()
@@ -295,6 +299,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
         })
     }
 
+    // locate the children of a CommentRoot by comparing ranges of text (there can only be one root at a given range)
     rootChildren(allComments = this.allCommentsState.state) {
         return Object.values(allComments).filter(comment => comment.uuid !== this.uuid && comment.range.rangeStr === this.range.rangeStr);
     }
