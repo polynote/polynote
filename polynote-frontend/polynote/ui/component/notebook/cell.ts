@@ -806,11 +806,9 @@ abstract class MonacoCell extends Cell {
             const model = this.editor.getModel();
             if (model) {
                 const range = new PosRange(model.getOffsetAt(evt.selection.getStartPosition()), model.getOffsetAt(evt.selection.getEndPosition()));
-                if (evt.selection.getDirection() === SelectionDirection.RTL) {
-                    this.cellState.updateField("currentSelection", () => range.reversed)
-                } else {
-                    this.cellState.updateField("currentSelection", () => range)
-                }
+                // Monaco guarantees that the position from Selection.getStartPosition() will be before or
+                // equal to Selection.getEndPosition(), so we don't need to worry about selection direction
+                this.cellState.updateField("currentSelection", () => range)
             }
         });
 
