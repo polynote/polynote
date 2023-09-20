@@ -287,8 +287,7 @@ class CommentRoot extends MonacoRightGutterOverlay {
 
         handledChangedComments(this.allCommentsState.state)
         allCommentsState.addObserver((curr, updateResult) => handledChangedComments(curr, updateResult))
-
-
+        
         if (this.visible) {
             newComment.text.focus()
         }
