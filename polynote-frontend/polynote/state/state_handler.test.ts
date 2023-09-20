@@ -1,4 +1,4 @@
-import {noUpdate, ObjectStateHandler, setProperty, setValue} from ".";
+import {noUpdate, ObjectStateHandler, removeKey, setValue} from ".";
 import {ProxyStateView} from "./state_handler";
 import {deepCopy} from "../util/helpers";
 
@@ -279,9 +279,11 @@ describe("ObjectStateHandler", () => {
             let preObserver = extraObjFieldLens.addPreObserver(preListener);
 
             handler.update((oldState) => {
-                let stateToUpdate = {...oldState};
-                delete stateToUpdate["extraField"]["extraObj"]
-                return stateToUpdate;
+                return {
+                    extraField: {
+                        extraObj: removeKey<any, any>("extraObjField")
+                    }
+                };
             });
 
             expect(preListener).toHaveBeenCalledTimes(1);

@@ -117,7 +117,7 @@ function keyPreObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn:
         const obs = fn(preS[key as keyof S] as V);
         return (value, result, updateSource) => {
             const down = childResult(result, key);
-            if (down && down.update !== NoUpdate) {
+            if (!(down.update instanceof Destroy) && down.update !== NoUpdate) {
                 if (!filter || filter(updateSource)) {
                     obs(value[key] as V, down as UpdateResult<V>, updateSource)
                 }
