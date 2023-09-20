@@ -78,6 +78,7 @@ export interface OptionalStateHandler<S> extends OptionalStateView<S>, Updatable
     fork(disposeContext?: IDisposable): OptionalStateHandler<S>
 }
 
+// wraps an Observer such that it will only be called if the updateSource passes the filter
 function filterObserver<S>(fn: Observer<S>, filter?: (src: any) => boolean): Observer<S> {
     if (!filter)
         return fn;
@@ -88,6 +89,7 @@ function filterObserver<S>(fn: Observer<S>, filter?: (src: any) => boolean): Obs
     }
 }
 
+// wraps a PreObserver such that its inner Observer will only be called if updateSource passes the filter
 function filterPreObserver<S>(fn: PreObserver<S>, filter?: (src: any) => boolean): PreObserver<S> {
     if (!filter)
         return fn;
@@ -101,10 +103,11 @@ function filterPreObserver<S>(fn: PreObserver<S>, filter?: (src: any) => boolean
     }
 }
 
+// returns an Observer that recursively calls child Observers upon receiving an update
 function keyObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: Observer<V>, filter?: (src: any) => boolean): Observer<S> {
     return (value, result, updateSource) => {
         const down = childResult(result, key);
-        if (!(down.update instanceof Destroy) && down.update !== NoUpdate) {
+        if (!(down.update instanceof Destroy) && down.update !== NoUpdate) { // stop propagating updates to child observers if a key is deleted
             if (!filter || filter(updateSource)) {
                 fn(value[key as keyof S] as V, down as UpdateResult<V>, updateSource)
             }
@@ -117,7 +120,7 @@ function keyPreObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn:
         const obs = fn(preS[key as keyof S] as V);
         return (value, result, updateSource) => {
             const down = childResult(result, key);
-            if (down && down.update !== NoUpdate) {
+            if (!(down.update instanceof Destroy) && down.update !== NoUpdate) { // stop propagating updates to child observers if a key is deleted
                 if (!filter || filter(updateSource)) {
                     obs(value[key] as V, down as UpdateResult<V>, updateSource)
                 }
@@ -156,6 +159,7 @@ class ObserverDict<T> {
         return this.addAt(observer, cleanPath(path))
     }
 
+    // recursively add ObserverDicts at each level of a path (e.g. cells -> index of cell -> comments -> comment uuid)
     private addAt(observer: T, path: string[]): IDisposable {
         if (path.length === 0) {
             const disposable = mkDisposable(observer, () => {
@@ -267,6 +271,8 @@ export class ObjectStateHandler<S extends object> extends Disposable implements 
             return;
         }
 
+        // pass each preObserver the current state (before applying the update) and push the observers that they return
+        //      into a list
         const preObservers = this.preObservers.collect(updatePath, obs => obs(this.state));
 
         const updateResult = update.applyMutate(this.mutableState);
@@ -279,6 +285,7 @@ export class ObjectStateHandler<S extends object> extends Disposable implements 
         if (updateResult.update !== NoUpdate) {
             if (this.sourceFilter(updateSource)) {
                 const src = updateSource ?? this;
+                // pass the new state to both the observers and the functions returned from collecting preObservers
                 preObservers.forEach(observer => observer(this.state, updateResult, src));
                 this.observers.forEach(updatePath, observer => observer(this.state, updateResult, src));
             }
@@ -321,10 +328,12 @@ export class ObjectStateHandler<S extends object> extends Disposable implements 
         this.update(keyUpdater(key, updateFn), updateSource, `${key.toString()}.` + (updateSubPath ?? ''))
     }
 
+    // returns a Disposable that will remove itself from the ObserverDict when disposed
     private addObserverAt(fn: Observer<S>, path: string): IDisposable {
         return this.observers.add(fn, path).disposeWith(this);
     }
 
+    // returns a Disposable that will remove itself from the PreObservers ObserverDict when disposed
     private addPreObserverAt(fn: PreObserver<S>, path: string): IDisposable {
         return this.preObservers.add(fn, path).disposeWith(this);
     }
