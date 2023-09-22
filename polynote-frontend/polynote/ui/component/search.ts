@@ -3,6 +3,7 @@ import {div, iconButton, label, para, table, TableElement, TagElement, textbox} 
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {Modal} from "../layout/modal";
+import {ErrorStateHandler} from "../../state/error_state";
 
 export class SearchModal extends Modal implements IDisposable {
     private queryInput: TagElement<"input">;
@@ -76,6 +77,15 @@ export class SearchModal extends Modal implements IDisposable {
                 })
             })
 
+        }).disposeWith(this);
+
+        // in case something goes wrong while searching, display an error message and update the "searching..." message
+        ErrorStateHandler.get.view("serverErrors").addObserver((errors) => {
+            let message = "";
+            errors.forEach(err => {
+                message += err.err.message;
+            });
+            this.searchStatus.innerText = "Something went wrong while searching: \n" + message;
         }).disposeWith(this);
     }
 
