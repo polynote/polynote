@@ -1,7 +1,8 @@
 package polynote.server.repository
 
+import io.circe.ParsingFailure
 import polynote.kernel.NotebookRef.AlreadyClosed
-import polynote.kernel.environment.{Config, BroadcastAll}
+import polynote.kernel.environment.{BroadcastAll, Config}
 import polynote.kernel.logging.Logging
 import polynote.kernel.util.LongRef
 import polynote.kernel.{BaseEnv, GlobalEnv, NotebookRef, Result}
@@ -265,7 +266,10 @@ class FileBasedRepository(
     fmt            <- NotebookFormat.getFormat(pathOf(path))
     content        <- fs.readPathAsString(pathOf(path))
     (noExtPath, _)  = extractExtension(path)
-    nb             <- fmt.decodeNotebook(noExtPath, content)
+    nb             <- fmt.decodeNotebook(noExtPath, content).catchSome {
+      case err: io.circe.ParsingFailure =>
+        ZIO.fail(new ParsingFailure("Unable to parse file at " + path + ", " + err.toString, err))
+    }
   } yield nb
 
   override def openNotebook(path: String): RIO[BaseEnv with GlobalEnv with BroadcastAll, NotebookRef] = for {
