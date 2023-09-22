@@ -81,11 +81,11 @@ export class SearchModal extends Modal implements IDisposable {
 
         // in case something goes wrong while searching, display an error message and update the "searching..." message
         ErrorStateHandler.get.view("serverErrors").addObserver((errors) => {
-            let message = "";
+            let message = "Something went wrong while searching" + (errors.length > 0 ? ":\n\n" : ".");
             errors.forEach(err => {
-                message += err.err.message;
+                message += err.err.message + "\n";
             });
-            this.searchStatus.innerText = "Something went wrong while searching: \n" + message;
+            this.searchStatus.innerText = message;
         }).disposeWith(this);
     }
 
