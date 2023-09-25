@@ -103,7 +103,7 @@ function filterPreObserver<S>(fn: PreObserver<S>, filter?: (src: any) => boolean
     }
 }
 
-// returns an Observer that recursively calls child Observers upon receiving an update
+// returns an Observer that calls down to child Observers upon receiving an update
 function keyObserver<S, K extends keyof S, V extends S[K] = S[K]>(key: K, fn: Observer<V>, filter?: (src: any) => boolean): Observer<S> {
     return (value, result, updateSource) => {
         const down = childResult(result, key);
@@ -328,7 +328,8 @@ export class ObjectStateHandler<S extends object> extends Disposable implements 
         this.update(keyUpdater(key, updateFn), updateSource, `${key.toString()}.` + (updateSubPath ?? ''))
     }
 
-    // returns a Disposable that will remove itself from the ObserverDict when disposed
+    // adds an Observer at a given path that is disposed when this handler is disposed
+    // returns a Disposable so callers can add introduce additional disposal criteria
     private addObserverAt(fn: Observer<S>, path: string): IDisposable {
         return this.observers.add(fn, path).disposeWith(this);
     }
