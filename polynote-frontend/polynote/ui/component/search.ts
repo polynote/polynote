@@ -81,12 +81,17 @@ export class SearchModal extends Modal implements IDisposable {
 
         // in case something goes wrong while searching, display an error message and update the "searching..." message
         ErrorStateHandler.get.view("serverErrors").addObserver((errors) => {
-            let message = "Something went wrong while searching" + (errors.length > 0 ? ":\n\n" : ".");
-            errors.forEach(err => {
-                message += err.err.message + "\n";
+            let message = "Something went wrong while searching" + (errors.length > 0 ? ":\n\n" : ", but we're unable to display the error.");
+            errors.forEach(dispError => {
+                let serverErrorWithCause = dispError.err;
+                if (serverErrorWithCause.className.includes("ParsingFailure")) {
+                    message += serverErrorWithCause.message + "\n";
+                }
             });
             this.searchStatus.innerText = message;
+            this.searchStatus.classList.add("limit-width");
         }).disposeWith(this);
+
     }
 
     show() {
@@ -111,6 +116,7 @@ export class SearchModal extends Modal implements IDisposable {
 
         // Start the actual search
         this.searchStatus.innerText = "Searching...";
+        this.searchStatus.classList.remove("limit-width");
         this.serverMessageDispatcher?.searchNotebooks(this.queryInput.value);
     }
 
