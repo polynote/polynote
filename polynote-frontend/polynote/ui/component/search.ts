@@ -88,9 +88,8 @@ export class SearchModal extends Modal implements IDisposable {
                 dispError.err.className.includes("ParsingFailure") ? dispError.err.message : undefined
             );
             if (parsingErrors.length > 0) {
-                let message = "Something went wrong while searching:\n" + parsingErrors.join("\n");
                 this.resultsEl.clearAllRows();
-                this.searchStatus.innerText = message;
+                this.searchStatus.innerText = "Something went wrong while searching:\n" + parsingErrors.join("\n");
                 this.searchStatus.classList.add("limit-width"); // in case the error message is long
             }
         }).disposeWith(this);
