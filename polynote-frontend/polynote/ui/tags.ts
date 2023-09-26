@@ -502,6 +502,7 @@ export interface TableElement extends TagElement<"table"> {
     findRows(props: Record<string, string>, tbody?: TagElement<"tbody">): TableRowElement[]
     findRowsBy(fn: (row: TableRow) => boolean, tbody?: TagElement<"tbody">): TableRowElement[]
     addBody(rows?: TableRow[]): TagElement<"tbody">
+    clearAllRows(): void
 }
 
 /**
@@ -604,6 +605,11 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
                 rows.forEach(row => table.addRow(row, newBody));
             }
             return newBody;
+        },
+        clearAllRows() {
+            while (table.rows.length > 0) {
+                table.deleteRow(0);
+            }
         }
     });
 }

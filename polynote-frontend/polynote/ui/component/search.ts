@@ -4,6 +4,7 @@ import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {Modal} from "../layout/modal";
 import {ErrorStateHandler} from "../../state/error_state";
+import {collect} from "../../util/helpers";
 
 export class SearchModal extends Modal implements IDisposable {
     private queryInput: TagElement<"input">;
@@ -42,7 +43,7 @@ export class SearchModal extends Modal implements IDisposable {
         ServerStateHandler.view("searchResults").addObserver(results => {
             // On a new query's results being received, reset the table and searchStatus
             this.searchStatus.innerText = "";
-            this.clearResults();
+            this.resultsEl.clearAllRows();
 
             if (results.length == 0) {
                 this.searchStatus.innerText = "No results found";
@@ -83,17 +84,12 @@ export class SearchModal extends Modal implements IDisposable {
                 this.searchStatus.classList.remove("limit-width");
                 return;
             }
-            let message = "Something went wrong while searching:\n";
-            let hasParsingFailure = false;
-            errors.forEach(dispError => {
-                let serverErrorWithCause = dispError.err;
-                if (serverErrorWithCause.className.includes("ParsingFailure")) { // don't display unrelated ServerErrors
-                    message += serverErrorWithCause.message + "\n";
-                    hasParsingFailure = true;
-                }
-            });
-            if (hasParsingFailure) { // only show message if there was a search error
-                this.clearResults();
+            let parsingErrors = collect(errors, dispError =>
+                dispError.err.className.includes("ParsingFailure") ? dispError.err.message : undefined
+            );
+            if (parsingErrors.length > 0) {
+                let message = "Something went wrong while searching:\n" + parsingErrors.join("\n");
+                this.resultsEl.clearAllRows();
                 this.searchStatus.innerText = message;
                 this.searchStatus.classList.add("limit-width"); // in case the error message is long
             }
@@ -125,12 +121,6 @@ export class SearchModal extends Modal implements IDisposable {
         this.searchStatus.innerText = "Searching...";
         this.searchStatus.classList.remove("limit-width");
         this.serverMessageDispatcher?.searchNotebooks(this.queryInput.value);
-    }
-
-    private clearResults() {
-        while (this.resultsEl.rows.length > 0) {
-            this.resultsEl.deleteRow(0);
-        }
     }
 
     // implement IDisposable

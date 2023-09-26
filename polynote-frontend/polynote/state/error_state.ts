@@ -78,13 +78,4 @@ export class ErrorStateHandler extends ObjectStateHandler<ErrorState> {
     static notebookRenamed(oldPath: string, newPath: string) {
         ErrorStateHandler.get.update(() => renameKey(oldPath, newPath));
     }
-
-    // if search was able to succeed, should remove ParsingFailures
-    static searchSucceeded() {
-        ErrorStateHandler.get.state.serverErrors.forEach(serverError => {
-            if (serverError.err.className.includes("ParsingFailure")) {
-                this.removeError(serverError);
-            }
-        });
-    }
 }
