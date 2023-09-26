@@ -55,10 +55,15 @@ module.exports = {
     {
       apply: (compiler) => {
         compiler.hooks.watchRun.tap('HtmlWebpackPlugin', (compilation) => {
-          exec('./build_style', (err, stdout, stderr) => {
-            if (stdout) process.stdout.write(stdout);
-            if (stderr) process.stderr.write(stderr);
-          });
+          if (compilation.modifiedFiles) {
+            let changedFiles = Array.from(compilation.modifiedFiles);
+            if (changedFiles.some(path => path.includes(".less"))) {
+              exec('./build_style', (err, stdout, stderr) => {
+                if (stdout) process.stdout.write(stdout);
+                if (stderr) process.stderr.write(stderr);
+              });
+            }
+          }
         });
       }
     }
