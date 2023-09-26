@@ -268,7 +268,7 @@ class FileBasedRepository(
     (noExtPath, _)  = extractExtension(path)
     nb             <- fmt.decodeNotebook(noExtPath, content).catchSome {
       case err: io.circe.ParsingFailure =>
-        ZIO.fail(new ParsingFailure("Unable to parse file at " + path + ", " + err.toString, err))
+        ZIO.fail(new ParsingFailure(s"Unable to parse file at $path: $err", err))
     }
   } yield nb
 
