@@ -646,12 +646,6 @@ export class ServerMessageReceiver extends MessageReceiver<ServerState> {
             return { serverOpenNotebooks: notebooks }
         })
         this.receive(messages.SearchNotebooks, (s, query, notebookSearchResults) => {
-            // if search returns successfully, then remove ParsingFailures
-            ErrorStateHandler.get.state.serverErrors.forEach(serverError => {
-                if (serverError.err.className.includes("ParsingFailure")) {
-                    ErrorStateHandler.removeError(serverError);
-                }
-            });
             return { searchResults: notebookSearchResults }
         })
         this.receive(messages.NotebookSaved, (s, path, timestamp) => {
