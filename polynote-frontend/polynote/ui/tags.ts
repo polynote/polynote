@@ -502,7 +502,7 @@ export interface TableElement extends TagElement<"table"> {
     findRows(props: Record<string, string>, tbody?: TagElement<"tbody">): TableRowElement[]
     findRowsBy(fn: (row: TableRow) => boolean, tbody?: TagElement<"tbody">): TableRowElement[]
     addBody(rows?: TableRow[]): TagElement<"tbody">
-    clearAllRows(): void
+    clear(whichBody? : TagElement<"tbody">): TagElement<"tbody">
 }
 
 /**
@@ -606,10 +606,16 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
             }
             return newBody;
         },
-        clearAllRows() {
-            while (table.rows.length > 0) {
-                table.deleteRow(0);
+        clear(whichBody? : TagElement<"tbody">) {
+            if (whichBody) { // clear rows in this tbody element
+                whichBody.innerHTML = "";
             }
+            else { // do a clean reset of the table
+                body.innerHTML = "";
+                table.innerHTML = "";
+                table.appendChild(body);
+            }
+            return whichBody ?? body; // return the cleared element
         }
     });
 }

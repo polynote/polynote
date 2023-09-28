@@ -45,7 +45,7 @@ export class SearchModal extends Modal implements IDisposable {
         ServerStateHandler.view("searchResults").addObserver(results => {
             // On a new query's results being received, reset the table and searchStatus
             this.searchStatus.innerText = "";
-            this.resultsEl.clearAllRows();
+            this.resultsEl.clear();
 
             this.searchStatus.classList.remove("limit-width");
             // if a search returned successfully, then remove ParsingFailures
@@ -90,7 +90,7 @@ export class SearchModal extends Modal implements IDisposable {
         ErrorStateHandler.get.view("serverErrors").addObserver((errors) => {
             const parsingErrors = errors.filter(dispError => dispError.err.className.includes("ParsingFailure"));
             if (parsingErrors.length > 0) {
-                this.resultsEl.clearAllRows();
+                this.resultsEl.clear();
                 this.searchErrors.push(...parsingErrors);
                 this.searchStatus.innerText = "Something went wrong while searching:\n" + parsingErrors.map(err => err.err.message).join("\n");
                 this.searchStatus.classList.add("limit-width"); // in case the error message is long
