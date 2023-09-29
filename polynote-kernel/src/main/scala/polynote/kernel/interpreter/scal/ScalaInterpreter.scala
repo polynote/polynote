@@ -83,7 +83,7 @@ class ScalaInterpreter private[scal] (
 
   override def shutdown(): Task[Unit] = ZIO.unit
 
-  override def fileExtensions: Set[String] = Set("scala")
+  override def fileExtensions: Set[String] = Set("scala", "java")
 
   override def getDependencyContent(uri: String): RIO[Blocking, String] = ZIO {
     val parsed = new URI(uri)

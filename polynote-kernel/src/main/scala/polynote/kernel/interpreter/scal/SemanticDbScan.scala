@@ -1,6 +1,7 @@
 package polynote.kernel.interpreter
 package scal
 
+import com.github.javaparser.ParseProblemException
 import polynote.kernel.{BaseEnv, ScalaCompiler}
 import polynote.kernel.dependency.Artifact
 import polynote.kernel.environment.CurrentTask
@@ -12,9 +13,10 @@ import zio.clock.Clock
 import zio.duration.Duration
 import zio.{RIO, Ref, Task, ZIO}
 
+
 import java.util.concurrent.ConcurrentHashMap
 import scala.meta.interactive.InteractiveSemanticdb
-import scala.reflect.internal.util.{BatchSourceFile, SourceFile}
+import scala.reflect.internal.util.{BatchSourceFile, Position, SourceFile}
 import scala.reflect.io.{AbstractFile, FileZipArchive}
 import scala.tools.nsc.{Global, interactive}
 import scala.tools.nsc.interactive.{NscThief, Response}
@@ -26,6 +28,7 @@ class SemanticDbScan (compiler: ScalaCompiler) {
   val semanticdbGlobal: interactive.Global = InteractiveSemanticdb.newCompiler(classpath, List())
   private val compileUnits = new ConcurrentHashMap[AbstractFile, semanticdbGlobal.RichCompilationUnit]
   private val javaMapping = new ConcurrentHashMap[String, semanticdbGlobal.RichCompilationUnit]
+
   semanticdbGlobal.settings.stopAfter.value = List("namer")
 
   // TODO: this should be a ref
@@ -45,45 +48,50 @@ class SemanticDbScan (compiler: ScalaCompiler) {
         s = s.owner
       }
       // find position of the symbol
-      val tree = javaMapping.get(s.fullName).body
+      val unit = javaMapping.get(s.fullName)
+      if (unit != null && unit.body != null) {
+        val tree = unit.body
 
-      if (tree == null) {
-        semanticdbGlobal.NoPosition
-      } else {
         val defnCandidates = tree.collect {
           case tree: semanticdbGlobal.DefTree if tree.name.decoded == sym.name.decoded => tree
         }
         val withPos = defnCandidates.find(_.pos.isDefined)
         withPos.map(_.pos).getOrElse(semanticdbGlobal.NoPosition)
-      }
+
+      } else semanticdbGlobal.NoPosition
     } else imported.pos
   }
 
-  def treeAt(file: AbstractFile, offset: Int): RIO[Blocking with Clock, semanticdbGlobal.Tree] = {
-    import semanticdbGlobal._
-    val sourceFile = new BatchSourceFile(file)
-    val position = scala.reflect.internal.util.Position.offset(sourceFile, offset)
-    val unit = compileUnits.get(file)
-    if (unit == null)
-      return ZIO.succeed(EmptyTree)
+  def treeAt(file: AbstractFile, offset: Int): RIO[Blocking with Clock, semanticdbGlobal.Tree] =
+    if (file.name.endsWith(".java")) treeAtJava(file, offset) else {
+      import semanticdbGlobal._
+      val sourceFile = new BatchSourceFile(file)
+      val position = scala.reflect.internal.util.Position.offset(sourceFile, offset)
+      val unit = compileUnits.get(file)
+      if (unit == null)
+        return ZIO.succeed(EmptyTree)
 
-//    run.compileLate(unit) // doesn't seem to work
-    val check = ZIO.when(!unit.isTypeChecked)(ZIO {
-      run.typerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
-      unit.status = PartiallyChecked
-    })
+      // run.compileLate(unit) // doesn't seem to work
+      val check = ZIO.when(!unit.isTypeChecked)(ZIO {
+        run.typerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
+        unit.status = PartiallyChecked
+      })
 
-    check *> ZIO(exitingTyper(unit.body)).map {
-      tree =>
-        val results = tree.collect {
-          case tree: Import if tree.pos.properlyIncludes(position)  => tree
-          case tree: RefTree if tree.pos.properlyIncludes(position) => tree
-          case tree: TypeTree if tree.pos.properlyIncludes(position) => tree
-        }.sortBy {
-          tree => math.abs(position.start - tree.pos.start)
-        }
-        results.headOption.getOrElse(EmptyTree)
+      check *> ZIO(exitingTyper(unit.body)).map {
+        tree =>
+          val results = tree.collect {
+            case tree: Import if tree.pos.properlyIncludes(position)  => tree
+            case tree: RefTree if tree.pos.properlyIncludes(position) => tree
+            case tree: TypeTree if tree.pos.properlyIncludes(position) => tree
+          }.sortBy {
+            tree => math.abs(position.start - tree.pos.start)
+          }
+          results.headOption.getOrElse(EmptyTree)
+      }
     }
+
+  private def treeAtJava(file: AbstractFile, offset: Int): RIO[Blocking with Clock, semanticdbGlobal.Tree] = {
+
   }
 
 
@@ -144,6 +152,11 @@ class SemanticDbScan (compiler: ScalaCompiler) {
             unit => ZIO {
               run.parserPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
               run.namerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
+
+              if (unit.isJava) {
+
+              }
+
             } *> completed.updateAndGet(_ + 1).flatMap {
               numCompleted => CurrentTask.setProgress(numCompleted.toDouble / sources.size)
             }
