@@ -15,36 +15,8 @@ import java.util.Optional
 import scala.reflect.io.AbstractFile
 
 class JavaTreeFinder extends GenericVisitorAdapter[AbstractFile, JPosition] {
-  // See https://scalameta.org/docs/semanticdb/specification.html#signature-2 for how to represent symbols in Strings
-  /*override def visit(n: TypeParameter, arg: JPosition): String = ???
-
-  override def visit(n: LineComment, arg: JPosition): String = ???
-
-  override def visit(n: BlockComment, arg: JPosition): String = ???
-
-  override def visit(n: ClassOrInterfaceDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: RecordDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: CompactConstructorDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: EnumDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: EnumConstantDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: AnnotationDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: AnnotationMemberDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: FieldDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: VariableDeclarator, arg: JPosition): String = ???
-
-  override def visit(n: ConstructorDeclaration, arg: JPosition): String = ???
-
-  override def visit(n: MethodDeclaration, arg: JPosition): String = n.resolve()*/
-
-  // unfortunately this has to return null instead of option for the super methods to function.
+  // unfortunately this has to return null instead of option in order for the super methods to function – they rely on
+  // non-null to signal success
 
   override def visit(n: Parameter, arg: JPosition): AbstractFile =
     Option(super.visit(n, arg)).orElse(associable(n, arg)).orNull
