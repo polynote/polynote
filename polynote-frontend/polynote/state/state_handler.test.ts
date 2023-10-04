@@ -1,4 +1,4 @@
-import {noUpdate, ObjectStateHandler, setProperty, setValue} from ".";
+import {noUpdate, ObjectStateHandler, removeKey, setValue} from ".";
 import {ProxyStateView} from "./state_handler";
 import {deepCopy} from "../util/helpers";
 
@@ -15,7 +15,8 @@ interface TestState {
         objStr: string
         objNum: number
         maybeObjStr?: string
-    }
+    },
+    extraField: Record<string, any>
 }
 
 const initialState: TestState = {
@@ -30,6 +31,11 @@ const initialState: TestState = {
         },
         objStr: "yup",
         objNum: 4
+    },
+    extraField: {
+        extraObj: {
+            extraObjField: "hello"
+        }
     }
 }
 
@@ -232,6 +238,56 @@ describe("ObjectStateHandler", () => {
                     expect(objListener).toHaveBeenCalledWith({...initialState.obj, objStr: "nope"}, expect.anything(), expect.anything())
                 })
             })
+        })
+    })
+
+    describe("preobserver", () => {
+        it("receives the state before updates are applied",() => {
+            let objLens = handler.lens("obj");
+            let objNumLens = objLens.lens("objNum");
+
+            let innerCallback = jest.fn();
+            let preListener = jest.fn(() => innerCallback);
+            let preObs = objNumLens.addPreObserver(preListener);
+
+            let oldValue = initialState.obj.objNum;
+            let newValue = 5;
+
+            handler.update(() => ({
+                obj: {
+                    objNum: newValue
+                }
+            }));
+
+            expect(preListener).toHaveBeenCalledTimes(1);
+            expect(preListener).toHaveBeenCalledWith(oldValue);
+
+            expect(innerCallback).toHaveBeenCalledTimes(1);
+            expect(innerCallback).toHaveBeenCalledWith(newValue, expect.anything(), expect.anything());
+            preObs.dispose();
+        })
+
+        it ("disposes when its parent key is deleted", () => {
+
+            let innerCallback = jest.fn();
+            let preListener = jest.fn(() => innerCallback);
+
+            let extraFieldLens = handler.lens("extraField");
+            let extraObjLens = extraFieldLens.lens("extraObj");
+            let extraObjFieldLens = extraObjLens.lens("extraObjField");
+
+            let preObserver = extraObjFieldLens.addPreObserver(preListener);
+
+            handler.update((oldState) => {
+                return {
+                    extraField: {
+                        extraObj: removeKey<any, any>("extraObjField")
+                    }
+                };
+            });
+
+            expect(preListener).toHaveBeenCalledTimes(1);
+
         })
     })
 
