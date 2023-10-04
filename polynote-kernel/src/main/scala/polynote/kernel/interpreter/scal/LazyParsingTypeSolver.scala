@@ -1,22 +1,16 @@
 package polynote.kernel.interpreter.scal
 
-import com.github.javaparser.{JavaParser, StaticJavaParser}
-import com.github.javaparser.resolution.{Navigator, TypeSolver}
-import com.github.javaparser.resolution.declarations.{ResolvedReferenceTypeDeclaration, ResolvedTypeDeclaration}
+import com.github.javaparser.ast.CompilationUnit
+import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration
 import com.github.javaparser.resolution.model.SymbolReference
+import com.github.javaparser.resolution.{Navigator, TypeSolver}
 import com.github.javaparser.symbolsolver.javaparsermodel.JavaParserFacade
 
-import java.io.File
-import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
-import scala.reflect.io.ZipArchive
 import scala.tools.nsc.interactive
-import scala.collection.JavaConverters._
 
-class LazyParsingTypeSolver[Global <: interactive.Global](
-  val global: Global,
+class LazyParsingTypeSolver(
   semanticDbScan: SemanticDbScan,
-  units: ConcurrentHashMap[String, Global#RichCompilationUnit],
   underlying: TypeSolver
 ) extends TypeSolver {
 
@@ -45,9 +39,9 @@ class LazyParsingTypeSolver[Global <: interactive.Global](
       case -1 => name
       case n => name.substring(0, n)
     }
-    if (units.containsKey(outerClassName)) {
+    if (semanticDbScan.javaMapping.containsKey(outerClassName)) {
       try {
-        val unit = units.get(outerClassName)
+        val unit = semanticDbScan.javaMapping.get(outerClassName)
         val content = new String(unit.source.content)
         val parseResult = semanticDbScan.javaParser.parse(content)
         val parsed = parseResult.getResult.get
@@ -58,7 +52,7 @@ class LazyParsingTypeSolver[Global <: interactive.Global](
           SymbolReference.solved(JavaParserFacade.get(this).getTypeDeclaration(foundType.get()))
         } else SymbolReference.unsolved()
       } catch {
-        case err: Throwable => SymbolReference.unsolved()
+        case _: Throwable => SymbolReference.unsolved()
       }
     } else {
       underlying.tryToSolveType(name)

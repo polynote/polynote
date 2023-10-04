@@ -171,7 +171,8 @@ export class Tabs extends Disposable {
     }
 
     private mkDependencyTitle(uri: string): TagElement<"span"> {
-        const dep = new URLSearchParams(new URL(uri).search).get("dependency") || ""
-        return span(['notebook-tab-title', 'dependency-source-tab-title'], [dep]);
+        const dep = new URLSearchParams(new URL(uri).search).get("dependency") || "";
+        const pathParts = dep.split('/');
+        return span(['notebook-tab-title', 'dependency-source-tab-title'], [pathParts[pathParts.length - 1]]).attr('title', dep);
     }
 }

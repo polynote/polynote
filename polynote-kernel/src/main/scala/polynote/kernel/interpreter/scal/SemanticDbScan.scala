@@ -30,9 +30,9 @@ class SemanticDbScan (compiler: ScalaCompiler) {
   private val sources = compiler.dependencies.flatMap(_.source)
   val semanticdbGlobal: Global = InteractiveSemanticdb.newCompiler(classpath, List())
   private val compileUnits = new ConcurrentHashMap[AbstractFile, semanticdbGlobal.RichCompilationUnit]
-  private val javaMapping = new ConcurrentHashMap[String, semanticdbGlobal.RichCompilationUnit]
+  val javaMapping = new ConcurrentHashMap[String, semanticdbGlobal.RichCompilationUnit]
   private val binariesTypeSolver = new ClassLoaderTypeSolver(compiler.classLoader)
-  private val sourcesTypeSolver = new LazyParsingTypeSolver[semanticdbGlobal.type](semanticdbGlobal, this, javaMapping, binariesTypeSolver)
+  private val sourcesTypeSolver = new LazyParsingTypeSolver(this, binariesTypeSolver)
   private val symbolSolver = new JavaSymbolSolver(sourcesTypeSolver)
   val javaParser = new JavaParser(
     new ParserConfiguration()
@@ -122,16 +122,6 @@ class SemanticDbScan (compiler: ScalaCompiler) {
     }
   }
 
-
-  def index(sourceFile: SourceFile): Task[semanticdbGlobal.Tree] = for {
-    response     <- ZIO(new Response[semanticdbGlobal.Tree])
-    _            <- ZIO(semanticdbGlobal.askLoadedTyped(sourceFile, false, response))
-    _            <- {
-      ZIO.sleep(Duration.fromMillis(100)).provideLayer(Clock.live) *> effectTotal(response.isComplete)
-    }.repeatUntilEquals(true)
-    result       <- ZIO.fromEither(response.get.swap)
-  } yield result
-
   private def scanSources = Ref.make(0).flatMap {
     completed => ZIO.foreach(sources) {
       file =>
@@ -170,7 +160,7 @@ class SemanticDbScan (compiler: ScalaCompiler) {
     // do an initial namer run of all the sources together
     run.compileUnits(units, run.parserPhase)
     units
-  }.flatMap {
+  }.zipLeft(CurrentTask.setProgress(0.5)).flatMap {
     units =>
       // if there were errors doing that, it could result in some sources getting skipped because of other bad sources.
       // so now loop through them all again, running parser and namer on each one individually.
@@ -180,16 +170,14 @@ class SemanticDbScan (compiler: ScalaCompiler) {
             unit => ZIO {
               run.parserPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
               run.namerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
-
-              if (unit.isJava) {
-
-              }
-
             } *> completed.updateAndGet(_ + 1).flatMap {
-              numCompleted => CurrentTask.setProgress(numCompleted.toDouble / sources.size)
+              numCompleted => CurrentTask.setProgress(0.5 + (numCompleted.toDouble / sources.size * 0.5))
             }
           }
       }.zipLeft(ZIO {
+        // namer is enough to figure out which files define which symbols. But to be able to figure out the symbol of
+        // what they're clicking on, we'll need to run the typer on that file. So from now on, we'll need to go all the
+        // way through the typer.
         semanticdbGlobal.settings.stopAfter.value = List("typer")
         run = new semanticdbGlobal.Run()
       })
@@ -199,6 +187,7 @@ class SemanticDbScan (compiler: ScalaCompiler) {
 
 object SemanticDbScan {
 
+  // Used to attach the source file to the JavaParser CompilationUnit, so we can retrieve it after using SymbolResolver.
   val OriginalSource: DataKey[AbstractFile] = new DataKey[AbstractFile] {}
 
 }
