@@ -25,7 +25,8 @@ test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     const leaf = {
         fullPath: "foo/bar/baz",
         value: "baz",
-        lastSaved: 0
+        lastSaved: 0,
+        isOrHasCurrentNotebook: false
     };
     const leafState = StateHandler.from(leaf);
     const comp = new LeafEl(dispatcher, leafState);
@@ -54,6 +55,7 @@ describe("BranchComponent", () => {
         fullPath: "foo",
         value: "foo",
         lastSaved: 0,
+        isOrHasCurrentNotebook: false,
         children: {}
     });
     const branch = new BranchEl(dispatcher, branchState);
@@ -62,7 +64,8 @@ describe("BranchComponent", () => {
     const leaf = {
         fullPath: "bar",
         value: "bar",
-        lastSaved: 0
+        lastSaved: 0,
+        isOrHasCurrentNotebook: false
     };
     branchState.updateField("children", () => setProperty(leaf.fullPath, leaf))
     test('is updated when its state changes', done => {
@@ -72,7 +75,8 @@ describe("BranchComponent", () => {
         const newLeaf = {
             fullPath: "baz",
             value: "baz",
-            lastSaved: 0
+            lastSaved: 0,
+            isOrHasCurrentNotebook: true
         };
         branchState.updateField("children", () => setProperty(leaf.fullPath, newLeaf))
         expect(branch.childrenEl).toHaveTextContent(newLeaf.value);
@@ -132,6 +136,7 @@ test("A BranchHandler should build a tree out of paths", () => {
         fullPath: "",
         value: "",
         lastSaved: 0,
+        isOrHasCurrentNotebook: false,
         children: {}
     };
     const branchHandler = new BranchHandler(root);
@@ -139,7 +144,7 @@ test("A BranchHandler should build a tree out of paths", () => {
 
     // first add some notebooks at root, easy peasy.
     const simpleNBs = ["foo.ipynb", "bar.ipynb", "baz.ipynb"];
-    simpleNBs.forEach(nb => branchHandler.addPath(nb, 0));
+    simpleNBs.forEach(nb => branchHandler.addPath(nb, 0, currentNotebookPath));
     expect(Object.values(branchHandler.state.children)).toEqual([
         {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
         {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
@@ -149,7 +154,7 @@ test("A BranchHandler should build a tree out of paths", () => {
 
     // next we will add a few directories
     const dirNBs = ["dir/one.ipynb", "dir/two.ipynb", "dir2/three.ipynb", "dir/four.ipynb"];
-    dirNBs.forEach(nb => branchHandler.addPath(nb, 0));
+    dirNBs.forEach(nb => branchHandler.addPath(nb, 0, currentNotebookPath));
     expect(Object.values(branchHandler.state.children)).toEqual([
         {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
         {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
@@ -172,13 +177,15 @@ test("A BranchHandler should build a tree out of paths", () => {
     expect(dir.children).toHaveLength(3);
     expect(dir2.children).toHaveLength(1);
 
+    const currentNotebookPath = "dir/1/2/3/4/surprisinglydeep.ipynb";
+
     // next let's go nuts with some nested notebooks!
-    branchHandler.addPath("dir/another.ipynb", 0);
-    branchHandler.addPath("dir/newdir/more.ipynb", 0);
-    branchHandler.addPath("dir/newdir/newer/even_more.ipynb", 0);
-    branchHandler.addPath("dir/1/2/3/4/surprisinglydeep.ipynb", 0);
-    branchHandler.addPath("dir/1/2/oh_my.ipynb", 0);
-    branchHandler.addPath("path/to/my/notebook.ipynb", 0);
+    branchHandler.addPath("dir/another.ipynb", 0, currentNotebookPath);
+    branchHandler.addPath("dir/newdir/more.ipynb", 0, currentNotebookPath);
+    branchHandler.addPath("dir/newdir/newer/even_more.ipynb", 0, currentNotebookPath);
+    branchHandler.addPath("dir/1/2/3/4/surprisinglydeep.ipynb", 0, currentNotebookPath);
+    branchHandler.addPath("dir/1/2/oh_my.ipynb", 0, currentNotebookPath);
+    branchHandler.addPath("path/to/my/notebook.ipynb", 0, currentNotebookPath);
     expect(branchHandler.state.children).toEqual({
         "foo.ipynb": {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
         "bar.ipynb": {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
@@ -225,10 +232,12 @@ test("stress test", () => {
         fullPath: "",
         value: "",
         lastSaved: 0,
+        isOrHasCurrentNotebook: false,
         children: {}
     };
     const branchHandler = new BranchHandler(root);
     const comp = new BranchEl(dispatcher, branchHandler);
+    const currentNotebookPath = "root/foo.ipynb";
     expect(branchHandler.state).toMatchSnapshot();
 
     const max = 300;
@@ -242,7 +251,7 @@ test("stress test", () => {
         }
         return path
     }).forEach(p => {
-        branchHandler.addPath(p, 0)
+        branchHandler.addPath(p, 0, currentNotebookPath);
     });
     expect(branchHandler.state).toMatchSnapshot();
 });

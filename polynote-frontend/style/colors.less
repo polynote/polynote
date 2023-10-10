@@ -693,6 +693,12 @@ button {
       color: @ui-selected-fg;
     }
 
+    li.leaf {
+      .current-notebook {
+        background-color: @ui-highlighted;
+      }
+    }
+
     li.leaf > span, li.leaf a {
       .placeholder-content {
         background-color: @ui-background-dark;
@@ -709,6 +715,12 @@ button {
             outline-color: black;
           }
         }
+      }
+    }
+
+    :not(li.branch.expanded) {
+      &.has-current-notebook {
+        background-color: @ui-highlighted;
       }
     }
   }

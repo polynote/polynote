@@ -353,6 +353,29 @@ export function positionIn(str: string, line: number, column: number): number {
     return pos;
 }
 
+/**
+ * Helper method for grabbing everything in a string up to the (n + 1)th occurrence of the pattern.
+ * Zero-indexed - n = 0 will return everything up to the first occurrence, n = 1 will return everything up to
+ * the second, including the first occurrence in the return string
+ */
+export function getUpToNthOccurrence(str: string, n: number, pattern: string): string {
+    let count = 0;
+    let i = 0;
+    while (i < str.length) {
+        if (str[i] === pattern) {
+            count++;
+            i += pattern.length;
+        }
+        else {
+            i++;
+        }
+        if (n < count) {
+            return str.slice(0, i - 1);
+        }
+    }
+    return str;
+}
+
 //****************
 //* String Helpers
 //****************
