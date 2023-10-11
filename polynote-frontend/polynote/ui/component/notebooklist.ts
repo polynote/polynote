@@ -238,14 +238,14 @@ export class NotebookList extends Disposable {
                 helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
             ]),
             span(['right-buttons'], [
-                iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
-                    evt.stopPropagation();
-                    dispatcher.createNotebook()
-                }),
-                iconButton(['highlight-notebook'], 'Highlight opened notebook', 'plus-circle', 'Highlight').click(evt => {
+                iconButton(['highlight-notebook'], 'Find opened notebook', 'crosshairs', 'Highlight').click(evt => {
                     evt.stopPropagation();
                     this.tree.highlightPath(this.currentNotebook, 0);
                 }),
+                iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
+                    evt.stopPropagation();
+                    dispatcher.createNotebook()
+                })
             ])
         ]);
 
@@ -254,7 +254,7 @@ export class NotebookList extends Disposable {
             value: "",
             lastSaved: 0,
             children: {},
-            isOrHasCurrentNotebook: false
+            isOrHasCurrentNotebook: true
         });
         this.tree = new BranchEl(dispatcher, treeState);
 
@@ -408,6 +408,7 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
                 if (!currentState || !isBranch(currentState) || !currentState.children[piece]) {
                     currentUpdate.fullPath = currentPath;
                     currentUpdate.value = piece;
+                    currentUpdate.isOrHasCurrentNotebook = currentNotebook === path;
                     currentState = undefined;
                 } else {
                     currentState = currentState.children[piece];
@@ -449,16 +450,18 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
         this.update(state => go(path, state))
     }
 
+    // traverses the tree to update isOrHasCurrentNotebook for each Node so that elements
+    // can display the proper styling to highlight themselves
     updateCurrentNotebook(currentNotebookPath: string) {
         function go(fullPath: string, sliceIndex: number, parent: Branch): UpdatePartial<Branch> {
             return {
                 children: Object.keys(parent.children).reduce((acc, key)  => {
                     const branchOrLeaf = parent.children[key];
-                    const currPath = getUpToNthOccurrence(fullPath, sliceIndex, "/");
+                    const currPath = getUpToNthOccurrence(fullPath, sliceIndex + 1, "/");
                     if ("children" in branchOrLeaf) {
                         acc[key] = {
                             ...go(fullPath, sliceIndex + 1, branchOrLeaf),
-                            isOrHasCurrentNotebook: setValue(branchOrLeaf["fullPath"] === currPath)
+                            isOrHasCurrentNotebook: setValue(branchOrLeaf["fullPath"] === currPath) // is this branch part of the path to the current notebook?
                         } // 'tis a branch
                     } else {
                         acc[key] = {
@@ -655,17 +658,17 @@ export class BranchEl extends Disposable {
      * Recursively expand folders until the leaf node at the desired path is reached
      */
     highlightPath(path: string, index: number) {
-        const currPath = getUpToNthOccurrence(path, index, "/");
+        const currPath = getUpToNthOccurrence(path, index + 1, "/");
         const child = this.children.find(c => c.path === currPath);
         if (child === null) {
             return
         }
-        this.expanded = true; // expand the current folder
+        this.expanded = index != 0; // expand the current folder, but not at the root level
         if (child instanceof BranchEl) {
             child.highlightPath(path, index + 1);
         }
-        else if (child instanceof LeafEl) { // scroll to this notebook
-            child.focus();
+        else if (child instanceof LeafEl) {
+            child.focus(); // scroll to this notebook
         }
     }
 

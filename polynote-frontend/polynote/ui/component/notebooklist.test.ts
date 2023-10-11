@@ -19,7 +19,7 @@ const socketHandler = SocketStateHandler.create(mockSocket);
 const dispatcher = new ServerMessageDispatcher(socketHandler);
 const receiver = new ServerMessageReceiver();
 
-
+let currentNotebookPath = "";
 
 test('A LeafComponent should dispatch a LoadNotebook when clicked', done => {
     const leaf = {
@@ -58,6 +58,8 @@ describe("BranchComponent", () => {
         isOrHasCurrentNotebook: false,
         children: {}
     });
+    currentNotebookPath = "nonsense.ipynb";
+
     const branch = new BranchEl(dispatcher, branchState);
     expect(branch.childrenEl).toBeEmptyDOMElement();
 
@@ -144,11 +146,12 @@ test("A BranchHandler should build a tree out of paths", () => {
 
     // first add some notebooks at root, easy peasy.
     const simpleNBs = ["foo.ipynb", "bar.ipynb", "baz.ipynb"];
+    currentNotebookPath = "foo.ipynb";
     simpleNBs.forEach(nb => branchHandler.addPath(nb, 0, currentNotebookPath));
     expect(Object.values(branchHandler.state.children)).toEqual([
-        {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
-        {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
-        {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb"},
+        {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb", isOrHasCurrentNotebook: true},
+        {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb", isOrHasCurrentNotebook: false},
+        {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb", isOrHasCurrentNotebook: false},
     ]);
     expect(tree.el.children).toHaveLength(3);
 
@@ -156,16 +159,16 @@ test("A BranchHandler should build a tree out of paths", () => {
     const dirNBs = ["dir/one.ipynb", "dir/two.ipynb", "dir2/three.ipynb", "dir/four.ipynb"];
     dirNBs.forEach(nb => branchHandler.addPath(nb, 0, currentNotebookPath));
     expect(Object.values(branchHandler.state.children)).toEqual([
-        {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
-        {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
-        {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb"},
-        {fullPath: "dir", value: "dir", children: {
-            "dir/one.ipynb": {fullPath: "dir/one.ipynb", lastSaved: 0, value: "one.ipynb"},
-            "dir/two.ipynb": {fullPath: "dir/two.ipynb", lastSaved: 0, value: "two.ipynb"},
-            "dir/four.ipynb": {fullPath: "dir/four.ipynb", lastSaved: 0, value: "four.ipynb"},
+        {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb", isOrHasCurrentNotebook: true},
+        {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb", isOrHasCurrentNotebook: false},
+        {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb", isOrHasCurrentNotebook: false},
+        {fullPath: "dir", value: "dir", isOrHasCurrentNotebook: false, children: {
+            "dir/one.ipynb": {fullPath: "dir/one.ipynb", lastSaved: 0, value: "one.ipynb", isOrHasCurrentNotebook: false},
+            "dir/two.ipynb": {fullPath: "dir/two.ipynb", lastSaved: 0, value: "two.ipynb", isOrHasCurrentNotebook: false},
+            "dir/four.ipynb": {fullPath: "dir/four.ipynb", lastSaved: 0, value: "four.ipynb", isOrHasCurrentNotebook: false},
         }},
-        {fullPath: "dir2", value: "dir2", children: {
-            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", lastSaved: 0, value: "three.ipynb"},
+        {fullPath: "dir2", value: "dir2", isOrHasCurrentNotebook: false, children: {
+            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", lastSaved: 0, value: "three.ipynb", isOrHasCurrentNotebook: false},
         }}
     ]);
     expect(tree.el.children).toHaveLength(5);
@@ -176,9 +179,6 @@ test("A BranchHandler should build a tree out of paths", () => {
     const dir2 = [...branches].find((b: HTMLElement) => queryByText(b, "dir2"))!.querySelector("ul")!;
     expect(dir.children).toHaveLength(3);
     expect(dir2.children).toHaveLength(1);
-
-    const currentNotebookPath = "dir/1/2/3/4/surprisinglydeep.ipynb";
-
     // next let's go nuts with some nested notebooks!
     branchHandler.addPath("dir/another.ipynb", 0, currentNotebookPath);
     branchHandler.addPath("dir/newdir/more.ipynb", 0, currentNotebookPath);
@@ -187,44 +187,100 @@ test("A BranchHandler should build a tree out of paths", () => {
     branchHandler.addPath("dir/1/2/oh_my.ipynb", 0, currentNotebookPath);
     branchHandler.addPath("path/to/my/notebook.ipynb", 0, currentNotebookPath);
     expect(branchHandler.state.children).toEqual({
-        "foo.ipynb": {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb"},
-        "bar.ipynb": {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb"},
-        "baz.ipynb": {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb"},
-        "dir": {fullPath: "dir", value: "dir", children: {
-                "dir/one.ipynb": {fullPath: "dir/one.ipynb", lastSaved: 0, value: "one.ipynb"},
-                "dir/two.ipynb": {fullPath: "dir/two.ipynb", lastSaved: 0, value: "two.ipynb"},
-                "dir/four.ipynb": {fullPath: "dir/four.ipynb", lastSaved: 0, value: "four.ipynb"},
-                "dir/another.ipynb": {fullPath: "dir/another.ipynb", lastSaved: 0, value: "another.ipynb"},
-                "dir/newdir": {fullPath: "dir/newdir", value: "newdir", children: {
-                    "dir/newdir/more.ipynb": {fullPath: "dir/newdir/more.ipynb", lastSaved: 0, value: "more.ipynb"},
-                    "dir/newdir/newer": {fullPath: "dir/newdir/newer", value: "newer", children: {
-                        "dir/newdir/newer/even_more.ipynb": {fullPath: "dir/newdir/newer/even_more.ipynb", lastSaved: 0, value: "even_more.ipynb"},
+        "foo.ipynb": {fullPath: "foo.ipynb", lastSaved: 0, value: "foo.ipynb", isOrHasCurrentNotebook: true},
+        "bar.ipynb": {fullPath: "bar.ipynb", lastSaved: 0, value: "bar.ipynb", isOrHasCurrentNotebook: false},
+        "baz.ipynb": {fullPath: "baz.ipynb", lastSaved: 0, value: "baz.ipynb", isOrHasCurrentNotebook: false},
+        "dir": {fullPath: "dir", value: "dir", isOrHasCurrentNotebook: false, children: {
+                "dir/one.ipynb": {fullPath: "dir/one.ipynb", lastSaved: 0, value: "one.ipynb", isOrHasCurrentNotebook: false},
+                "dir/two.ipynb": {fullPath: "dir/two.ipynb", lastSaved: 0, value: "two.ipynb", isOrHasCurrentNotebook: false},
+                "dir/four.ipynb": {fullPath: "dir/four.ipynb", lastSaved: 0, value: "four.ipynb", isOrHasCurrentNotebook: false},
+                "dir/another.ipynb": {fullPath: "dir/another.ipynb", lastSaved: 0, value: "another.ipynb", isOrHasCurrentNotebook: false},
+                "dir/newdir": {fullPath: "dir/newdir", value: "newdir", isOrHasCurrentNotebook: false, children: {
+                    "dir/newdir/more.ipynb": {fullPath: "dir/newdir/more.ipynb", lastSaved: 0, value: "more.ipynb", isOrHasCurrentNotebook: false},
+                    "dir/newdir/newer": {fullPath: "dir/newdir/newer", value: "newer", isOrHasCurrentNotebook: false, children: {
+                        "dir/newdir/newer/even_more.ipynb": {fullPath: "dir/newdir/newer/even_more.ipynb", lastSaved: 0, value: "even_more.ipynb", isOrHasCurrentNotebook: false},
                     }},
                 }},
-                "dir/1": {fullPath: "dir/1", value: "1", children: {
-                    "dir/1/2": {fullPath: "dir/1/2", value: "2", children: {
-                        "dir/1/2/3": {fullPath: "dir/1/2/3", value: "3", children: {
-                            "dir/1/2/3/4": {fullPath: "dir/1/2/3/4", value: "4", children: {
-                                "dir/1/2/3/4/surprisinglydeep.ipynb": {fullPath: "dir/1/2/3/4/surprisinglydeep.ipynb", lastSaved: 0, value: "surprisinglydeep.ipynb"},
+                "dir/1": {fullPath: "dir/1", value: "1", isOrHasCurrentNotebook: false, children: {
+                    "dir/1/2": {fullPath: "dir/1/2", value: "2", isOrHasCurrentNotebook: false, children: {
+                        "dir/1/2/3": {fullPath: "dir/1/2/3", value: "3", isOrHasCurrentNotebook: false, children: {
+                            "dir/1/2/3/4": {fullPath: "dir/1/2/3/4", value: "4", isOrHasCurrentNotebook: false, children: {
+                                "dir/1/2/3/4/surprisinglydeep.ipynb": {fullPath: "dir/1/2/3/4/surprisinglydeep.ipynb", lastSaved: 0, value: "surprisinglydeep.ipynb", isOrHasCurrentNotebook: false},
                             }},
                         }},
-                        "dir/1/2/oh_my.ipynb": {fullPath: "dir/1/2/oh_my.ipynb", lastSaved: 0, value: "oh_my.ipynb"},
+                        "dir/1/2/oh_my.ipynb": {fullPath: "dir/1/2/oh_my.ipynb", lastSaved: 0, value: "oh_my.ipynb", isOrHasCurrentNotebook: false},
                     }},
                 }},
             }},
-        "dir2": {fullPath: "dir2", value: "dir2", children: {
-            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", lastSaved: 0, value: "three.ipynb"},
+        "dir2": {fullPath: "dir2", value: "dir2", isOrHasCurrentNotebook: false, children: {
+            "dir2/three.ipynb": {fullPath: "dir2/three.ipynb", lastSaved: 0, value: "three.ipynb", isOrHasCurrentNotebook: false},
         }},
-        "path": {fullPath: "path", value: "path", children: {
-            "path/to": {fullPath: "path/to", value: "to", children: {
-                "path/to/my": {fullPath: "path/to/my", value: "my", children: {
-                    "path/to/my/notebook.ipynb": {fullPath: "path/to/my/notebook.ipynb", lastSaved: 0, value: "notebook.ipynb"},
+        "path": {fullPath: "path", value: "path", isOrHasCurrentNotebook: false, children: {
+            "path/to": {fullPath: "path/to", value: "to", isOrHasCurrentNotebook: false, children: {
+                "path/to/my": {fullPath: "path/to/my", value: "my", isOrHasCurrentNotebook: false, children: {
+                    "path/to/my/notebook.ipynb": {fullPath: "path/to/my/notebook.ipynb", lastSaved: 0, value: "notebook.ipynb", isOrHasCurrentNotebook: false},
                 }},
             }},
         }},
     });
 
     expect(tree.el.outerHTML).toMatchSnapshot()
+});
+
+describe("highlighting the current notebook and folder", () => {
+    const root = {
+        fullPath: "",
+        value: "",
+        lastSaved: 0,
+        isOrHasCurrentNotebook: true,
+        children: {}
+    };
+    const branchHandler = new BranchHandler(root);
+    const tree = new BranchEl(dispatcher, branchHandler);
+    currentNotebookPath = "foo.ipynb";
+
+    branchHandler.addPath(currentNotebookPath, 0, currentNotebookPath);
+    branchHandler.addPath("folder/bar.ipynb", 0, currentNotebookPath);
+
+    test("Current notebook is highlighted correctly", () => {
+        const notebookListEl = tree.el.querySelector(`a[href="notebooks/${currentNotebookPath}"]`);
+        expect(notebookListEl).not.toBeNull();
+        expect(notebookListEl?.classList).toContain("current-notebook");
+
+        // now switch to a nested notebook
+        currentNotebookPath = "folder/bar.ipynb";
+        branchHandler.updateCurrentNotebook(`${currentNotebookPath}`);
+        const nestedNotebookListEl = tree.el.querySelector(`a[href="notebooks/${currentNotebookPath}"]`);
+        if (nestedNotebookListEl == null) {
+            fail("the highlighted notebook was not found");
+        }
+
+        waitFor(() => {
+            // now, this element should be highlighted
+            expect(nestedNotebookListEl.classList).toContain("current-notebook")
+        })
+            .then(() => {
+                // the folder should also be highlighted because it is not expanded
+                const folderEl = tree.el.getElementsByClassName("has-current-notebook")[0];
+                if (folderEl == null) {
+                    fail("the highlighting class was not set correctly");
+                }
+                // this folder should be the one that holds our current notebook
+                expect(folderEl.innerHTML).toContain("notebooks/folder/bar.ipynb");
+            });
+    });
+
+    test("Highlighting the path expands recursively to current notebook", () => {
+        branchHandler.addPath("folder/nested/baz.ipynb", 0, currentNotebookPath);
+        tree.highlightPath("folder/nested/baz.ipynb",0);
+
+        const expandedEls = tree.el.getElementsByClassName("expanded");
+        expect(expandedEls.length).toBe(2);
+        const outerFolderEl = expandedEls[0];
+        const nestedFolderEl = expandedEls[1];
+        expect(outerFolderEl).toContainHTML("<span class=\"name\">folder</span>");
+        expect(nestedFolderEl).toContainHTML("<span class=\"name\">nested</span>");
+    });
 });
 
 test("stress test", () => {
@@ -237,10 +293,10 @@ test("stress test", () => {
     };
     const branchHandler = new BranchHandler(root);
     const comp = new BranchEl(dispatcher, branchHandler);
-    const currentNotebookPath = "root/foo.ipynb";
+    const currentNotebookPath = "nonsensenonexistent.ipynb";
     expect(branchHandler.state).toMatchSnapshot();
 
-    const max = 300;
+    const max = 600;
     [...Array(max).keys()].map(x => {
         let path = `root/${x}`;
         if (x % 10) {
