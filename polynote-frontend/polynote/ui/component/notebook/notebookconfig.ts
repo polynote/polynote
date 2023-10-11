@@ -154,6 +154,9 @@ class Dependencies extends Disposable {
 
             if (deps && Object.keys(deps).length > 0) {
                 Object.entries(deps).forEach(([lang, deps]) => {
+                    if (deps.length === 0) {
+                        this.addDep({lang, dep: "", cache: true}); // add an empty dependency for this language
+                    }
                     deps.forEach(dep => {
                         if (dep.endsWith(noCacheSentinel)) {
                             this.addDep({lang, dep: dep.substr(0, dep.length - noCacheSentinel.length), cache: false})
