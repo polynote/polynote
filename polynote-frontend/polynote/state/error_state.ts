@@ -1,6 +1,6 @@
 import {append, clearArray, destroy, ObjectStateHandler, removeIndex, renameKey, UpdateOf} from ".";
 import {ServerErrorWithCause} from "../data/result";
-import {deepEquals, removeKeys} from "../util/helpers";
+import {deepEquals} from "../util/helpers";
 
 export type DisplayError = {err: ServerErrorWithCause, id: string}
 
