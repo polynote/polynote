@@ -3,6 +3,8 @@ import {div, iconButton, label, para, table, TableElement, TagElement, textbox} 
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {ServerStateHandler} from "../../state/server_state";
 import {Modal} from "../layout/modal";
+import {DisplayError, ErrorStateHandler} from "../../state/error_state";
+import {collect} from "../../util/helpers";
 
 export class SearchModal extends Modal implements IDisposable {
     private queryInput: TagElement<"input">;
@@ -10,6 +12,7 @@ export class SearchModal extends Modal implements IDisposable {
     private disposable: Disposable;
     private searchStatus: HTMLParagraphElement;
     private resultsEl: TableElement;
+    private searchErrors: DisplayError[];
 
     constructor(serverMessageDispatcher: ServerMessageDispatcher) {
         const input = textbox(['create-notebook-section'], "Search Term", "")
@@ -37,13 +40,18 @@ export class SearchModal extends Modal implements IDisposable {
         this.queryInput = input;
         this.searchStatus = searchStatus;
         this.resultsEl = resultsEl;
+        this.searchErrors = [];
 
         ServerStateHandler.view("searchResults").addObserver(results => {
             // On a new query's results being received, reset the table and searchStatus
             this.searchStatus.innerText = "";
-            while (this.resultsEl.rows.length > 0) {
-                this.resultsEl.deleteRow(0);
-            }
+            this.resultsEl.clear();
+
+            this.searchStatus.classList.remove("limit-width");
+            // if a search returned successfully, then remove ParsingFailures
+            this.searchErrors.forEach(error => {
+                ErrorStateHandler.removeError(error);
+            });
 
             if (results.length == 0) {
                 this.searchStatus.innerText = "No results found";
@@ -77,6 +85,18 @@ export class SearchModal extends Modal implements IDisposable {
             })
 
         }).disposeWith(this);
+
+        // in case something goes wrong while searching, display an error message and update the "searching..." message
+        ErrorStateHandler.get.view("serverErrors").addObserver((errors) => {
+            const parsingErrors = errors.filter(dispError => dispError.err.className.includes("ParsingFailure"));
+            if (parsingErrors.length > 0) {
+                this.resultsEl.clear();
+                this.searchErrors.push(...parsingErrors);
+                this.searchStatus.innerText = "Something went wrong while searching:\n" + parsingErrors.map(err => err.err.message).join("\n");
+                this.searchStatus.classList.add("limit-width"); // in case the error message is long
+            }
+        }).disposeWith(this);
+
     }
 
     show() {
