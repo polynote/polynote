@@ -353,26 +353,6 @@ export function positionIn(str: string, line: number, column: number): number {
     return pos;
 }
 
-/**
- * Helper method for grabbing everything in a string up to the nth occurrence of the pattern.
- * Will only return a nonempty string for n >= 1.
- * E.g. if called with "hello/world" where n = 1 and pattern = "/", will return "hello"
- */
-export function getUpToNthOccurrence(str: string, n: number, pattern: string): string {
-    const pieces = str.split(pattern);
-    if (n > pieces.length) {
-        return str;
-    }
-    let i = 0;
-    let res = "";
-    while (i < pieces.length && i < n) {
-        res += pieces[i];
-        res += i < n - 1 ? pattern : "";
-        i++;
-    }
-    return res;
-}
-
 //****************
 //* String Helpers
 //****************

@@ -13,7 +13,7 @@ import {
     TagElement
 } from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
-import {deepCopy, diffArray, getHumanishDate, getUpToNthOccurrence} from "../../util/helpers";
+import {deepCopy, diffArray, getHumanishDate} from "../../util/helpers";
 import {
     Disposable, noUpdate,
     ObjectStateHandler,
@@ -457,7 +457,7 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
             return {
                 children: Object.keys(parent.children).reduce((acc, key)  => {
                     const branchOrLeaf = parent.children[key];
-                    const currPath = getUpToNthOccurrence(fullPath, sliceIndex + 1, "/");
+                    const currPath = fullPath.split("/", sliceIndex + 1).join("/");
                     if ("children" in branchOrLeaf) {
                         acc[key] = {
                             ...go(fullPath, sliceIndex + 1, branchOrLeaf),
@@ -658,7 +658,7 @@ export class BranchEl extends Disposable {
      * Recursively expand folders until the leaf node at the desired path is reached
      */
     highlightPath(path: string, index: number) {
-        const currPath = getUpToNthOccurrence(path, index + 1, "/");
+        const currPath = path.split("/", index + 1).join("/");
         const child = this.children.find(c => c.path === currPath);
         if (child === null) {
             return
@@ -668,7 +668,7 @@ export class BranchEl extends Disposable {
             child.highlightPath(path, index + 1);
         }
         else if (child instanceof LeafEl) {
-            child.focus(); // scroll to this notebook
+            child.scrollTo(); // scroll to this notebook
         }
     }
 
@@ -802,6 +802,10 @@ export class LeafEl extends Disposable {
 
     focus() {
         this.leafEl.focus()
+    }
+
+    scrollTo() {
+        this.leafEl.scrollIntoView();
     }
 
     private getEl(leaf: Leaf) {

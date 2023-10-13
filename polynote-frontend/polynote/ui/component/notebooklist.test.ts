@@ -271,6 +271,8 @@ describe("highlighting the current notebook and folder", () => {
     });
 
     test("Highlighting the path expands recursively to current notebook", () => {
+        window.HTMLElement.prototype.scrollIntoView = jest.fn(); // mock the scrolling function
+
         branchHandler.addPath("folder/nested/baz.ipynb", 0, currentNotebookPath);
         tree.highlightPath("folder/nested/baz.ipynb",0);
 

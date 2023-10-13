@@ -12,7 +12,6 @@ import {
     Deferred,
     diffArray,
     equalsByKey,
-    getUpToNthOccurrence,
     isEmpty,
     isObject,
     linePosAt,
@@ -475,21 +474,6 @@ describe("arrayStartsWith", () => {
         )
     })
 })
-
-describe("getUpToNthOccurrence", () => {
-    it("returns a substring up to the nth occurrence of a pattern", () => {
-        expect(getUpToNthOccurrence("hello!world!extra", 1, "!")).toEqual("hello");
-        expect(getUpToNthOccurrence("hello!world!extra", 2, "!")).toEqual("hello!world");
-    });
-    it("returns the correct substring for longer patterns", () => {
-        expect(getUpToNthOccurrence("hello##world##extra", 2, "##")).toEqual("hello##world");
-    });
-    it("handles edge case parameters gracefully", () => {
-        expect(getUpToNthOccurrence("string", 1, "nonexistent")).toEqual("string");
-        expect(getUpToNthOccurrence("string", -1, "nonexistent")).toEqual("");
-        expect(getUpToNthOccurrence("string", 100, "nonexistent")).toEqual("string");
-    });
-});
 
 describe("parseQuotedArgs", () => {
     it ("parses simple space-separated arguments", () => {
