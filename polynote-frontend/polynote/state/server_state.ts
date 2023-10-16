@@ -7,7 +7,7 @@ import {
     removeFromArray,
     removeKey,
     renameKey,
-    replaceArrayValue,
+    replaceArrayValue, setValue,
     StateHandler,
     StateView,
     updateProperty
@@ -208,23 +208,29 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         const nbInfo = ServerStateHandler.notebooks[oldPath]
         if (nbInfo) {
             // update the path in the notebook's handler
-            nbInfo.handler.updateField("path", () => newPath);
-            // update our notebooks dictionary
-            ServerStateHandler.notebooks[newPath] = nbInfo
-            delete ServerStateHandler.notebooks[oldPath]
-
-            // perform state updates on server
-            ServerStateHandler.updateStateAsync(state =>  {
-                const pathIdx = state.openFiles.findIndex(of => of.type === 'notebook' && of.path === oldPath);
+            nbInfo.handler.updateAsync(state=> {
                 return {
-                    notebooks: renameKey(oldPath, newPath),
-                    openFiles: pathIdx >= 0 ? replaceArrayValue({type: 'notebook', path: newPath}, pathIdx) : NoUpdate,
-                    notebookTimestamps: renameKey(oldPath, newPath),
+                    path: setValue(newPath)
                 }
-            })
-                .then(() => {
-                    ServerStateHandler.selectFile(newPath); // now select the newly renamed notebook
-            })
+            }).then(() => {
+                // update our notebooks dictionary
+                ServerStateHandler.notebooks[newPath] = nbInfo
+                delete ServerStateHandler.notebooks[oldPath]
+
+                // perform state updates on server
+                ServerStateHandler.updateStateAsync(state =>  {
+                    const pathIdx = state.openFiles.findIndex(of => of.type === 'notebook' && of.path === oldPath);
+                    return {
+                        notebooks: renameKey(oldPath, newPath),
+                        openFiles: pathIdx >= 0 ? replaceArrayValue({type: 'notebook', path: newPath}, pathIdx) : NoUpdate,
+                        notebookTimestamps: renameKey(oldPath, newPath),
+                    }
+                })
+                    .then(() => {
+                        ServerStateHandler.selectFile(newPath); // now select the newly renamed notebook
+                    });
+            });
+
         }
     }
 
