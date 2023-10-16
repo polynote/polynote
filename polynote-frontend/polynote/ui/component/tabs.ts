@@ -110,7 +110,7 @@ export class Tabs extends Disposable {
                     this.tabContainer.replaceChild(newTab, tab.tab)
                     this.tabs[newPath] = {...tab, tab: newTab};
                     if (this.currentTab?.path === oldPath) {
-                        this.activate(newPath, true);
+                        this.activate(newPath, true); // should not update currentNotebook yet, other state changes not completed
                     }
                 }
             ).disposeWith(this);

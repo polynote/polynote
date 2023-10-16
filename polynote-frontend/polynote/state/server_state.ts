@@ -213,6 +213,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
             ServerStateHandler.notebooks[newPath] = nbInfo
             delete ServerStateHandler.notebooks[oldPath]
 
+            // perform state updates on server
             ServerStateHandler.updateStateAsync(state =>  {
                 const pathIdx = state.openFiles.findIndex(of => of.type === 'notebook' && of.path === oldPath);
                 return {
@@ -222,7 +223,7 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
                 }
             })
                 .then(() => {
-                    ServerStateHandler.selectFile(newPath);
+                    ServerStateHandler.selectFile(newPath); // now select the newly renamed notebook
             })
         }
     }
