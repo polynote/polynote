@@ -120,6 +120,10 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
         return ServerStateHandler.get.update(update, updateSource)
     }
 
+    static updateStateAsync(update: Updater<ServerState>, updateSource?: any) {
+        return ServerStateHandler.get.updateAsync(update, updateSource)
+    }
+
     // only for testing
     static clear() {
         if (ServerStateHandler.inst) {
@@ -209,13 +213,17 @@ export class ServerStateHandler extends BaseHandler<ServerState> {
             ServerStateHandler.notebooks[newPath] = nbInfo
             delete ServerStateHandler.notebooks[oldPath]
 
-            ServerStateHandler.updateState(state =>  {
+            // perform state updates on server
+            ServerStateHandler.updateStateAsync(state =>  {
                 const pathIdx = state.openFiles.findIndex(of => of.type === 'notebook' && of.path === oldPath);
                 return {
                     notebooks: renameKey(oldPath, newPath),
-                    openFiles: pathIdx >= 0 ? replaceArrayValue({type: 'notebook', newPath}, pathIdx) : NoUpdate,
+                    openFiles: pathIdx >= 0 ? replaceArrayValue({type: 'notebook', path: newPath}, pathIdx) : NoUpdate,
                     notebookTimestamps: renameKey(oldPath, newPath),
                 }
+            })
+                .then(() => {
+                    ServerStateHandler.selectFile(newPath); // now select the newly renamed notebook
             })
         }
     }

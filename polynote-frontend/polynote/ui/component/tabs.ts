@@ -110,7 +110,7 @@ export class Tabs extends Disposable {
                     this.tabContainer.replaceChild(newTab, tab.tab)
                     this.tabs[newPath] = {...tab, tab: newTab};
                     if (this.currentTab?.path === oldPath) {
-                        this.activate(newPath)
+                        this.activate(newPath, true); // should not update currentNotebook yet, other state changes not completed
                     }
                 }
             ).disposeWith(this);
@@ -119,7 +119,7 @@ export class Tabs extends Disposable {
         }
     }
 
-    activate(path: string) {
+    activate(path: string, skipSelectingFile?: boolean) {
         if (this.currentTab === undefined || this.currentTab.tab.classList.contains("active")) {
             const tab = this.tabs[path];
             const current = this.currentTab;
@@ -131,7 +131,9 @@ export class Tabs extends Disposable {
             }
             tab.tab.classList.add("active");
             this.currentTab = {path, tab: tab.tab, content: tab.content};
-            ServerStateHandler.selectFile(path)
+            if (!skipSelectingFile) {
+                ServerStateHandler.selectFile(path);
+            }
         }
     }
 
