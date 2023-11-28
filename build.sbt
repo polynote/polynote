@@ -256,10 +256,10 @@ val sparkSettings = Seq(
       if (!pkgFile.exists()) {
         pkgFile.createNewFile()
         println(s"Downloading $distUrl to $pkgFile...")
-        (distUrl #> (baseDir / filename)).!
+        (distUrl #> (baseDir / filename)).!!
       }
       println(s"Extracting $pkgFile to $baseDir")
-      Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
+      Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!!
     }
   },
   Test / envVars ++= {
