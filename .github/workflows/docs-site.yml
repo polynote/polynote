@@ -27,7 +27,7 @@ jobs:
           git config --global user.name "Polynote CI"
           pushd $GITHUB_WORKSPACE/docs-site
             pip install -r requirements.txt
-            mike deploy --push --update-aliases --no-redirect ${POLYNOTE_VERSION} latest
+            mike deploy --push --update-aliases --alias-type=copy ${POLYNOTE_VERSION} latest
             mike set-default --push latest
           popd
 
