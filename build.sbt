@@ -263,13 +263,22 @@ val sparkSettings = Seq(
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
-    // debugging
     // It seems that this Tests.Setup block gets run concurrently, which can sometimes cause weirdness to happen.
     // So we try to use a lockfile to ensure that it only ever runs once
     // (Yes there still the possibility of a race condition here, but I don't know how to properly synchronize SBT tasks...)
     val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup_is_running.lock"
     if (lockFile.exists()) {
-      println(s"Lock file $lockFile exists, test setup is already running.")
+      println(s"Lock file $lockFile exists, test setup is already running. Waiting for it to finish...")
+      val start = System.currentTimeMillis()
+      val timeout = 10 * 60 * 1000 // 10 minutes
+      val checkInterval = 30 * 1000 // 30 seconds
+      while (System.currentTimeMillis() < start + timeout && lockFile.exists()) {
+        println(s"Lock file $lockFile still exists after ${System.currentTimeMillis() - start}ms. Waiting...")
+        Thread.sleep(checkInterval)
+      }
+      if (lockFile.exists()) {
+        throw new Exception(s"Lock file $lockFile still exists after $timeout ms. Aborting.")
+      }
     } else {
       baseDir.mkdirs()
       lockFile.createNewFile()
@@ -300,6 +309,8 @@ val sparkSettings = Seq(
 
       lockFile.delete()
     }
+
+    println("Test setup completed")
   },
   Test / envVars ++= {
     Map(
