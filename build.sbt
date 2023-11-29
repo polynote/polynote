@@ -264,20 +264,15 @@ val sparkSettings = Seq(
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
     // debugging
-    println("**** START TEST SETUP ****")
     // It seems that this Tests.Setup block gets run concurrently, which can sometimes cause weirdness to happen.
     // So we try to use a lockfile to ensure that it only ever runs once
     // (Yes there still the possibility of a race condition here, but I don't know how to properly synchronize SBT tasks...)
     val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup_is_running.lock"
-    println(s"**** CHECKING LOCK FILE $lockFile ****")
     if (lockFile.exists()) {
       println(s"Lock file $lockFile exists, test setup is already running.")
     } else {
-      println(s"**** CREATING BASE DIR ${baseDir} ****")
       baseDir.mkdirs()
-      println(s"**** CREATING LOCK FILE $lockFile ****")
       lockFile.createNewFile()
-      println(s"**** CREATED LOCK FILE ${lockFile.exists()} ****")
 
       if (destDir.exists()) {
         println(s"$destDir already exists, skipping download and extract")
@@ -286,13 +281,9 @@ val sparkSettings = Seq(
         if (!pkgFile.exists()) {
           pkgFile.createNewFile()
           println(s"Downloading $distUrl to $pkgFile...")
-          //        (distUrl #> pkgFile).!! // this seems to be somehow unreliable...
-          println(Seq("curl", "-o", pkgFile.toString, distUrl.toString).!!)
+          (distUrl #> pkgFile).!! // this seems to be somehow unreliable...
+//          println(Seq("curl", "-o", pkgFile.toString, distUrl.toString).!!)
         }
-
-        // debugging
-        println("**** AFTER DOWNLOAD ****")
-        println(Seq("ls", "-la", baseDir.toString).!!)
 
         println(s"Verifying checksum for $pkgFile for $distVersion...")
         val expectedChecksum = sparkChecksums(distVersion)
@@ -304,14 +295,9 @@ val sparkSettings = Seq(
         }
 
         println(s"Extracting $pkgFile to $baseDir")
-        println("**** BEFORE EXTRACT ****")
-        println(Seq("ls", "-la", baseDir.toString).!!)
         println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
-        println("**** AFTER EXTRACT ****")
-        println(Seq("ls", "-la", baseDir.toString).!!)
       }
 
-      println(s"**** DELETING LOCK FILE $lockFile ****")
       lockFile.delete()
     }
   },
