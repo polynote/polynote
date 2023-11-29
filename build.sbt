@@ -271,13 +271,15 @@ val sparkSettings = Seq(
       println(s"Lock file $lockFile exists, test setup is already running. Waiting for it to finish...")
       val start = System.currentTimeMillis()
       val timeout = 10 * 60 * 1000 // 10 minutes
-      val checkInterval = 30 * 1000 // 30 seconds
+      val checkInterval = 10 * 1000 // 10 seconds
       while (System.currentTimeMillis() < start + timeout && lockFile.exists()) {
         println(s"Lock file $lockFile still exists after ${System.currentTimeMillis() - start}ms. Waiting...")
         Thread.sleep(checkInterval)
       }
       if (lockFile.exists()) {
         throw new Exception(s"Lock file $lockFile still exists after $timeout ms. Aborting.")
+      } else {
+        println("Lock file no longer exists, test setup must have finished")
       }
     } else {
       baseDir.mkdirs()
@@ -290,8 +292,7 @@ val sparkSettings = Seq(
         if (!pkgFile.exists()) {
           pkgFile.createNewFile()
           println(s"Downloading $distUrl to $pkgFile...")
-          (distUrl #> pkgFile).!! // this seems to be somehow unreliable...
-//          println(Seq("curl", "-o", pkgFile.toString, distUrl.toString).!!)
+          (distUrl #> pkgFile).!!
         }
 
         println(s"Verifying checksum for $pkgFile for $distVersion...")
