@@ -263,7 +263,6 @@ val sparkSettings = Seq(
     val destDir = baseDir / pkgName
     // debugging
     println("**** BEFORE DOWNLOAD ****")
-    println(Seq("ls", "-la", baseDir.toString).!!)
 
     if (!destDir.exists()) {
       baseDir.mkdirs()
