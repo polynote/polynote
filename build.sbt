@@ -1,4 +1,6 @@
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Try
 
 name := "polynote"
@@ -262,37 +264,49 @@ val sparkSettings = Seq(
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
     // debugging
-    println("**** BEFORE DOWNLOAD ****")
+    println("**** START TEST SETUP ****")
+    val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup_is_running.lock"
+    // Yes there's the possibility of a race condition here but I don't know how to properly synchronize SBT tasks...
+    if (lockFile.exists()) {
+      println(s"Lock file $lockFile exists, test setup is already running.")
+    } else {
+      println("**** CREATING LOCK FILE ****")
+      lockFile.createNewFile()
 
-    if (!destDir.exists()) {
-      baseDir.mkdirs()
-      val pkgFile = baseDir / filename
-      if (!pkgFile.exists()) {
-        pkgFile.createNewFile()
-        println(s"Downloading $distUrl to $pkgFile...")
-//        (distUrl #> pkgFile).!! // this seems to be somehow unreliable...
-        println(Seq("curl", "-o", pkgFile.toString, distUrl.toString).!!)
-      }
-
-      // debugging
-      println("**** AFTER DOWNLOAD ****")
-      println(Seq("ls", "-la", baseDir.toString).!!)
-
-      println(s"Verifying checksum...for $pkgFile for $distVersion")
-      val expectedChecksum = sparkChecksums(distVersion)
-      val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
-      if (actualChecksum == expectedChecksum) {
-        println(s"Checksum verified for $pkgFile for $distVersion")
+      if (destDir.exists()) {
+        println(s"$destDir already exists, skipping download and extract")
       } else {
-        throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
-      }
+        println("**** CREATING BASE DIR ****")
+        baseDir.mkdirs()
+        val pkgFile = baseDir / filename
+        if (!pkgFile.exists()) {
+          pkgFile.createNewFile()
+          println(s"Downloading $distUrl to $pkgFile...")
+          //        (distUrl #> pkgFile).!! // this seems to be somehow unreliable...
+          println(Seq("curl", "-o", pkgFile.toString, distUrl.toString).!!)
+        }
 
-      println(s"Extracting $pkgFile to $baseDir")
-      println("**** BEFORE EXTRACT ****")
-      println(Seq("ls", "-la", baseDir.toString).!!)
-      println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
-      println("**** AFTER EXTRACT ****")
-      println(Seq("ls", "-la", baseDir.toString).!!)
+        // debugging
+        println("**** AFTER DOWNLOAD ****")
+        println(Seq("ls", "-la", baseDir.toString).!!)
+
+        println(s"Verifying checksum for $pkgFile for $distVersion...")
+        val expectedChecksum = sparkChecksums(distVersion)
+        val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
+        if (actualChecksum == expectedChecksum) {
+          println(s"Checksum verified for $pkgFile for $distVersion")
+        } else {
+          throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
+        }
+
+        println(s"Extracting $pkgFile to $baseDir")
+        println("**** BEFORE EXTRACT ****")
+        println(Seq("ls", "-la", baseDir.toString).!!)
+        println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
+        println("**** AFTER EXTRACT ****")
+        println(Seq("ls", "-la", baseDir.toString).!!)
+      }
+      lockFile.delete()
     }
   },
   Test / envVars ++= {
