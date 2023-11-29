@@ -280,7 +280,6 @@ val sparkSettings = Seq(
       println(s"Extracting $pkgFile to $baseDir")
       // debugging
       println(Seq("ls", "-la", baseDir.toString).!!)
-      println(Seq("md5", pkgFile.toString).!!)
       println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
     }
   },
