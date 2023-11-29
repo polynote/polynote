@@ -221,6 +221,17 @@ val sparkVersions = Map(
   "2.13" -> "3.2.1"
 )
 
+// keep expected checksums here. This has two benefits over checking the sha512sum from the archive:
+// 1. We'll know if anything changes in the archive
+// 2. Spark's checksums are generated with gpg rather than sha512sum up until a certain version, so they're a pain to verify
+//    See https://issues.apache.org/jira/browse/SPARK-30683
+// To add to this list, download the tarball for the new version from the apache repo and run `sha512sum <file>.tgz`
+val sparkChecksums = Map(
+  "2.1.1" -> "4b6427ca6dc6f888b21bff9f9a354260af4a0699a1f43caabf58ae6030951ee5fa8b976497aa33de7e4ae55609d47a80bfe66dfc48c79ea28e3e5b03bdaaba11",
+  "3.1.2" -> "ba47e074b2a641b23ee900d4e28260baa250e2410859d481b38f2ead888c30daea3683f505608870148cf40f76c357222a2773f1471e7342c622e93bf02479b7",
+  "3.2.1" -> "2ec9f1cb65af5ee7657ca83a1abaca805612b8b3a1d8d9bb67e317106025c81ba8d44d82ad6fdb45bbe6caa768d449cd6a4945ec050ce9390f806f46c5cb1397"
+)
+
 val sparkDistUrl: String => String =
   ver => s"https://archive.apache.org/dist/spark/spark-$ver/"
 
@@ -256,11 +267,20 @@ val sparkSettings = Seq(
       if (!pkgFile.exists()) {
         pkgFile.createNewFile()
         println(s"Downloading $distUrl to $pkgFile...")
-        (distUrl #> pkgFile).!!
+//        (distUrl #> pkgFile).!! // this seems to be somehow unreliable...
+        println(Seq("curl", "-o", pkgFile.toString, distUrl.toString).!!)
       }
+      println("Verifying checksum...")
+      val expectedChecksum = sparkChecksums(distVersion)
+      val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
+      if (actualChecksum != expectedChecksum) {
+        throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
+      }
+
       println(s"Extracting $pkgFile to $baseDir")
       // debugging
       println(Seq("ls", "-la", baseDir.toString).!!)
+      println(Seq("md5", pkgFile.toString).!!)
       println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
     }
   },
