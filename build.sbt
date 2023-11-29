@@ -279,7 +279,7 @@ val sparkSettings = Seq(
       } else {
         println("Lock file no longer exists, test setup must have finished")
       }
-    } else {t
+    } else {
       baseDir.mkdirs()
       lockFile.createNewFile()
 
