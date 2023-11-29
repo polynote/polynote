@@ -261,6 +261,10 @@ val sparkSettings = Seq(
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
+    // debugging
+    println("**** BEFORE DOWNLOAD ****")
+    println(Seq("ls", "-la", baseDir.toString).!!)
+
     if (!destDir.exists()) {
       baseDir.mkdirs()
       val pkgFile = baseDir / filename
@@ -270,17 +274,26 @@ val sparkSettings = Seq(
 //        (distUrl #> pkgFile).!! // this seems to be somehow unreliable...
         println(Seq("curl", "-o", pkgFile.toString, distUrl.toString).!!)
       }
-      println("Verifying checksum...")
+
+      // debugging
+      println("**** AFTER DOWNLOAD ****")
+      println(Seq("ls", "-la", baseDir.toString).!!)
+
+      println(s"Verifying checksum...for $pkgFile for $distVersion")
       val expectedChecksum = sparkChecksums(distVersion)
       val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
-      if (actualChecksum != expectedChecksum) {
+      if (actualChecksum == expectedChecksum) {
+        println(s"Checksum verified for $pkgFile for $distVersion")
+      } else {
         throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
       }
 
       println(s"Extracting $pkgFile to $baseDir")
-      // debugging
+      println("**** BEFORE EXTRACT ****")
       println(Seq("ls", "-la", baseDir.toString).!!)
       println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
+      println("**** AFTER EXTRACT ****")
+      println(Seq("ls", "-la", baseDir.toString).!!)
     }
   },
   Test / envVars ++= {
