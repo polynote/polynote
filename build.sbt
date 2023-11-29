@@ -1,6 +1,4 @@
 import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Try
 
 name := "polynote"
@@ -281,7 +279,7 @@ val sparkSettings = Seq(
       } else {
         println("Lock file no longer exists, test setup must have finished")
       }
-    } else {
+    } else {t
       baseDir.mkdirs()
       lockFile.createNewFile()
 
