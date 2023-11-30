@@ -282,31 +282,34 @@ val sparkSettings = Seq(
     } else {
       baseDir.mkdirs()
       lockFile.createNewFile()
+      lockFile.deleteOnExit()
 
-      if (destDir.exists()) {
-        println(s"$destDir already exists, skipping download and extract")
-      } else {
-        val pkgFile = baseDir / filename
-        if (!pkgFile.exists()) {
-          pkgFile.createNewFile()
-          println(s"Downloading $distUrl to $pkgFile...")
-          (distUrl #> pkgFile).!!
-        }
-
-        println(s"Verifying checksum for $pkgFile for $distVersion...")
-        val expectedChecksum = sparkChecksums(distVersion)
-        val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
-        if (actualChecksum == expectedChecksum) {
-          println(s"Checksum verified for $pkgFile for $distVersion")
+      try {
+        if (destDir.exists()) {
+          println(s"$destDir already exists, skipping download and extract")
         } else {
-          throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
+          val pkgFile = baseDir / filename
+          if (!pkgFile.exists()) {
+            pkgFile.createNewFile()
+            println(s"Downloading $distUrl to $pkgFile...")
+            (distUrl #> pkgFile).!!
+          }
+
+          println(s"Verifying checksum for $pkgFile for $distVersion...")
+          val expectedChecksum = sparkChecksums(distVersion)
+          val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
+          if (actualChecksum == expectedChecksum) {
+            println(s"Checksum verified for $pkgFile for $distVersion")
+          } else {
+            throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
+          }
+
+          println(s"Extracting $pkgFile to $baseDir")
+          println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
         }
-
-        println(s"Extracting $pkgFile to $baseDir")
-        println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
+      } finally {
+        lockFile.delete()
       }
-
-      lockFile.delete()
     }
 
     println("Test setup completed")
