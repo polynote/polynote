@@ -2479,6 +2479,13 @@ export class VizCell extends Cell {
                     }
                 }
                 watchValues();
+
+                // if we got some output, sync it back to the viz selector state
+                if (cellState.state.output.length) {
+                    if (this.viz.type == "table" && cellState.state.output[0].contentType == "text/html") {
+                        this.editor.tableHTML = cellState.state.output[0].content.join("")
+                    }
+                }
             })
         } else {
             // If notebook is live & kernel is active, we should have the value right now.
@@ -2606,7 +2613,7 @@ export class VizCell extends Cell {
         }
         this._editorEl = this.editor.el;
 
-        if (!this.cellState.state.output.length || this.viz.type !== 'plot') {
+        if (!this.cellState.state.output.length) {
             const result = this.vizResult(this.viz);
             if (result) {
                 this.previousViews[this.viz.type] = [this.viz, result];

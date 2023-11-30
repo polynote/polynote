@@ -37,6 +37,11 @@ export class TableView {
         return [this.start, this.end];
     }
 
+    set range(range: [number, number]) {
+        this.start = range[0];
+        this.end = range[1];
+    }
+
     get asHTML(): string {
         return `<div class="table-view">${this.table.outerHTML}</div>`;
     }
@@ -138,6 +143,19 @@ export class TableView {
 
     dispose() {
         this.listeners = [];
+    }
+
+    setContent(content: string) {
+        this.table.innerHTML = "";
+        const dummy = div([], [])
+        dummy.innerHTML = content;
+        const table = dummy.getElementsByTagName('table')[0];
+        if (!table) {
+            return;
+        }
+        while (table.childNodes.length) {
+            this.table.appendChild(table.childNodes[0]);
+        }
     }
 
 }

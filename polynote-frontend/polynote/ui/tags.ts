@@ -564,7 +564,7 @@ export function table(classes: string[], contentSpec: TableContentSpec): TableEl
 
     return Object.assign(table, {
         addRow(row: Content[] | TableRow, whichBody?: TagElement<"tbody">) {
-            const tbody = whichBody ?? body;
+            const tbody = whichBody ?? table.tBodies.item(0) ?? body;
             const rowEl = mkTR(row);
             if (contentSpec.addToTop)
                 tbody.insertBefore(rowEl, tbody.firstChild);

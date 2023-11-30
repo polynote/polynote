@@ -134,6 +134,9 @@ export class VizSelector extends Disposable {
             .whenInstance(StreamingDataRepr, streamRepr => {
                 try {
                     this.tableView = TableView.create(dispatcher, state, streamRepr, true);
+                    if (viz.type == "table") {
+                        this.tableView.range = viz.rowRange;
+                    }
                     if (streamRepr.dataType instanceof StructType) {
                         this.plotSelector = new PlotSelector(value, streamRepr.dataType, this.viz.type === 'plot' ? this.viz.plotDefinition : undefined);
                         opts[PlotTitle] = this.plotSelector.el.listener(
@@ -243,5 +246,11 @@ export class VizSelector extends Disposable {
 
     get tableHTML(): string {
         return this.tableView?.asHTML || "";
+    }
+
+    set tableHTML(html: string) {
+        if (this.tableView) {
+            this.tableView.setContent(html);
+        }
     }
 }
