@@ -5,7 +5,6 @@ import java.net.{InetSocketAddress, URI}
 import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
-
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe.syntax._
@@ -13,7 +12,7 @@ import io.circe._
 import polynote.kernel.{BaseEnv, TaskB}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
-import polynote.messages.{ShortMap, ShortString}
+import polynote.messages.{ShortList, ShortMap, ShortString, TinyList, TinyString}
 import scodec.{Attempt, Codec}
 import scodec.codecs.implicits._
 import scodec.codecs.utf8_32
@@ -163,10 +162,20 @@ object Credentials {
   implicit val decoder: Decoder[Credentials] = deriveDecoder
 }
 
+final case class ScalaVersionConfig(
+  versionNumber: String,
+  sparkSubmitArgs: String
+)
+
+object ScalaVersionConfig {
+  implicit val encoder: Encoder.AsObject[ScalaVersionConfig] = deriveEncoder
+  implicit val decoder: Decoder[ScalaVersionConfig] = deriveDecoder
+}
+
 final case class SparkPropertySet(
   name: String,
   properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
-  sparkSubmitArgs: Option[String] = None,
+  versionConfigs: Option[List[ScalaVersionConfig]] = None,
   distClasspathFilter: Option[Pattern] = None
 )
 
@@ -291,15 +300,30 @@ object PolynoteConfig {
           .as(Json.fromJsonObject(JsonObject.empty))
     }
 
-    val configIO = for {
-      configJson  <- parsed
-      defaultJson <- default
-      merged = defaultJson.deepMerge(configJson) // priority goes to configJson
-      parsedConfig <- ZIO.fromEither(merged.as[PolynoteConfig])
-      _ <- ZIO.when(parsedConfig.behavior.kernelIsolation == KernelIsolation.Never) {
-        Logging.warn("Configuration value `behavior.kernel_isolation: never` is deprecated and will be removed")
-      }
-    } yield parsedConfig
+    val configIO = parsed
+      .flatMap(configJson =>
+        default
+          .map { defaultJson => val merged = defaultJson.deepMerge(configJson); (defaultJson, merged) }
+          .flatMap { case (defaultJson, merged) =>
+            ZIO.fromEither(merged.as[PolynoteConfig])
+              .flatMap(parsedConfig =>
+                ZIO.when(parsedConfig.behavior.kernelIsolation == KernelIsolation.Never) {
+                    Logging.warn("Configuration value `behavior.kernel_isolation: never` is deprecated and will be removed")
+                  }
+                  .map(_ => parsedConfig)
+              )
+          }
+      )
+
+    // for {
+    //      configJson  <- parsed
+    //      defaultJson <- default
+    //      merged = defaultJson.deepMerge(configJson) // priority goes to configJson
+    //      parsedConfig <- ZIO.fromEither(merged.as[PolynoteConfig])
+    //      _ <- ZIO.when(parsedConfig.behavior.kernelIsolation == KernelIsolation.Never) {
+    //        Logging.warn("Configuration value `behavior.kernel_isolation: never` is deprecated and will be removed")
+    //      }
+    //    } yield parsedConfig
 
     Logging.info(s"Loading configuration from $file") *> configIO
       .catchAll {

@@ -131,8 +131,9 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |      properties:
         |        something: thing
         |        another:   one
-        |      spark_submit_args: some more args
-        |
+        |      version_configs:
+        |        - version_number: some version
+        |          spark_submit_args: some args
         |    - name: Test 2
         |      properties:
         |        something: thing2
@@ -144,8 +145,13 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     parsed.sparkSubmitArgs shouldEqual Some("these are the args")
     parsed.distClasspathFilter.get.pattern() shouldEqual ".jar$"
     parsed.propertySets.get shouldEqual List(
-      SparkPropertySet(name = "Test", properties = Map("something" -> "thing", "another" -> "one"), sparkSubmitArgs = Some("some more args"), None),
-      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"))
+      SparkPropertySet(
+        name = "Test",
+        properties = Map("something" -> "thing", "another" -> "one"),
+        versionConfigs = Some(List(ScalaVersionConfig("some version", "some args"))),
+        None
+      ),
+      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), None)
     )
     parsed.pyspark.get.distributionExcludes shouldEqual List("foo", "bar")
     parsed.pyspark.get.distributeDependencies shouldEqual Option(true)

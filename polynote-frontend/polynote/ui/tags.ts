@@ -390,6 +390,7 @@ export interface DropdownElement extends TagElement<"select"> {
     getSelectedValue(): string
     addValue(key: string, val: string): void
     onSelect(fn: (newValue: string) => void): TagElement<"select">
+    clearValues(): void
 }
 
 export function dropdown(classes: string[], options: Record<string, string>, value?: string): DropdownElement & BindableTagElement<string, 'select', DropdownElement> {
@@ -419,6 +420,10 @@ export function dropdown(classes: string[], options: Record<string, string>, val
         },
         onSelect(fn: (newValue: string) => void): TagElement<"select"> {
             return select.change(_ => fn(this.getSelectedValue()));
+        },
+        clearValues(): void {
+            select.innerHTML = "";
+            opts = [];
         }
     });
 

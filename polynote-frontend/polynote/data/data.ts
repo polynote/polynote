@@ -6,6 +6,7 @@ import {
     combined,
     discriminated,
     int16,
+    int32,
     int64,
     mapCodec,
     optional,
@@ -161,13 +162,30 @@ RepositoryConfig.codec = discriminated(
     (msgTypeId) => RepositoryConfig.codecs[msgTypeId].codec,
     msg => (msg.constructor as typeof RepositoryConfig).msgTypeId);
 
-export class SparkPropertySet {
-    static codec = combined(str, mapCodec(uint16, str as Codec<string>, str), optional(str), optional(str)).to(SparkPropertySet);
-    static unapply(inst: SparkPropertySet): ConstructorParameters<typeof SparkPropertySet> {
-        return [inst.name, inst.properties, inst.sparkSubmitArgs, inst.distClasspathFilter];
+export class VersionConfig {
+    static codec = combined(str, str).to(VersionConfig);
+
+    static unapply(inst: VersionConfig): ConstructorParameters<typeof VersionConfig> {
+        return [inst.versionName, inst.sparkSubmitArgs];
     }
 
-    constructor(readonly name: string, readonly properties: Record<string, string>, readonly sparkSubmitArgs?: string, readonly distClasspathFilter?: string) {
+    constructor(readonly versionName: string, readonly sparkSubmitArgs: string) {
+        Object.freeze(this);
+    }
+}
+
+export class SparkPropertySet {
+    static codec = combined(
+      str,
+      mapCodec(uint16, str as Codec<string>, str),
+      optional(arrayCodec(int32, VersionConfig.codec)),
+      optional(str)
+    ).to(SparkPropertySet);
+    static unapply(inst: SparkPropertySet): ConstructorParameters<typeof SparkPropertySet> {
+        return [inst.name, inst.properties, inst.versionConfigs, inst.distClasspathFilter];
+    }
+
+    constructor(readonly name: string, readonly properties: Record<string, string>, readonly versionConfigs?: VersionConfig[], readonly distClasspathFilter?: string) {
         Object.freeze(this);
     }
 }
