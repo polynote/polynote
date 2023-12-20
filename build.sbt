@@ -221,6 +221,17 @@ val sparkVersions = Map(
   "2.13" -> "3.2.1"
 )
 
+// keep expected checksums here. This has two benefits over checking the sha512sum from the archive:
+// 1. We'll know if anything changes in the archive
+// 2. Spark's checksums are generated with gpg rather than sha512sum up until a certain version, so they're a pain to verify
+//    See https://issues.apache.org/jira/browse/SPARK-30683
+// To add to this list, download the tarball for the new version from the apache repo and run `sha512sum <file>.tgz`
+val sparkChecksums = Map(
+  "2.1.1" -> "4b6427ca6dc6f888b21bff9f9a354260af4a0699a1f43caabf58ae6030951ee5fa8b976497aa33de7e4ae55609d47a80bfe66dfc48c79ea28e3e5b03bdaaba11",
+  "3.1.2" -> "ba47e074b2a641b23ee900d4e28260baa250e2410859d481b38f2ead888c30daea3683f505608870148cf40f76c357222a2773f1471e7342c622e93bf02479b7",
+  "3.2.1" -> "2ec9f1cb65af5ee7657ca83a1abaca805612b8b3a1d8d9bb67e317106025c81ba8d44d82ad6fdb45bbe6caa768d449cd6a4945ec050ce9390f806f46c5cb1397"
+)
+
 val sparkDistUrl: String => String =
   ver => s"https://archive.apache.org/dist/spark/spark-$ver/"
 
@@ -250,17 +261,58 @@ val sparkSettings = Seq(
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
-    if (!destDir.exists()) {
-      baseDir.mkdirs()
-      val pkgFile = baseDir / filename
-      if (!pkgFile.exists()) {
-        pkgFile.createNewFile()
-        println(s"Downloading $distUrl to $pkgFile...")
-        (distUrl #> (baseDir / filename)).!
+    // It seems that this Tests.Setup block gets run concurrently, which can sometimes cause weirdness to happen.
+    // So we try to use a lockfile to ensure that it only ever runs once
+    // (Yes there still the possibility of a race condition here, but I don't know how to properly synchronize SBT tasks...)
+    val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup_is_running.lock"
+    if (lockFile.exists()) {
+      println(s"Lock file $lockFile exists, test setup is already running. Waiting for it to finish...")
+      val start = System.currentTimeMillis()
+      val timeout = 10 * 60 * 1000 // 10 minutes
+      val checkInterval = 10 * 1000 // 10 seconds
+      while (System.currentTimeMillis() < start + timeout && lockFile.exists()) {
+        println(s"Lock file $lockFile still exists after ${System.currentTimeMillis() - start}ms. Waiting...")
+        Thread.sleep(checkInterval)
       }
-      println(s"Extracting $pkgFile to $baseDir")
-      Seq("tar", "-zxpf", (baseDir / filename).toString, "-C", baseDir.toString).!
+      if (lockFile.exists()) {
+        throw new Exception(s"Lock file $lockFile still exists after $timeout ms. Aborting.")
+      } else {
+        println("Lock file no longer exists, test setup must have finished")
+      }
+    } else {
+      baseDir.mkdirs()
+      lockFile.createNewFile()
+      lockFile.deleteOnExit()
+
+      try {
+        if (destDir.exists()) {
+          println(s"$destDir already exists, skipping download and extract")
+        } else {
+          val pkgFile = baseDir / filename
+          if (!pkgFile.exists()) {
+            pkgFile.createNewFile()
+            println(s"Downloading $distUrl to $pkgFile...")
+            (distUrl #> pkgFile).!!
+          }
+
+          println(s"Verifying checksum for $pkgFile for $distVersion...")
+          val expectedChecksum = sparkChecksums(distVersion)
+          val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
+          if (actualChecksum == expectedChecksum) {
+            println(s"Checksum verified for $pkgFile for $distVersion")
+          } else {
+            throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
+          }
+
+          println(s"Extracting $pkgFile to $baseDir")
+          println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
+        }
+      } finally {
+        lockFile.delete()
+      }
     }
+
+    println("Test setup completed")
   },
   Test / envVars ++= {
     Map(
