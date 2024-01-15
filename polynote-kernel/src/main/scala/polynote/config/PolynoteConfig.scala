@@ -175,6 +175,7 @@ object ScalaVersionConfig {
 final case class SparkPropertySet(
   name: String,
   properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
+  sparkSubmitArgs: Option[String] = None,
   versionConfigs: Option[List[ScalaVersionConfig]] = None,
   distClasspathFilter: Option[Pattern] = None
 )
@@ -300,30 +301,15 @@ object PolynoteConfig {
           .as(Json.fromJsonObject(JsonObject.empty))
     }
 
-    val configIO = parsed
-      .flatMap(configJson =>
-        default
-          .map { defaultJson => val merged = defaultJson.deepMerge(configJson); (defaultJson, merged) }
-          .flatMap { case (defaultJson, merged) =>
-            ZIO.fromEither(merged.as[PolynoteConfig])
-              .flatMap(parsedConfig =>
-                ZIO.when(parsedConfig.behavior.kernelIsolation == KernelIsolation.Never) {
-                    Logging.warn("Configuration value `behavior.kernel_isolation: never` is deprecated and will be removed")
-                  }
-                  .map(_ => parsedConfig)
-              )
-          }
-      )
-
-    // for {
-    //      configJson  <- parsed
-    //      defaultJson <- default
-    //      merged = defaultJson.deepMerge(configJson) // priority goes to configJson
-    //      parsedConfig <- ZIO.fromEither(merged.as[PolynoteConfig])
-    //      _ <- ZIO.when(parsedConfig.behavior.kernelIsolation == KernelIsolation.Never) {
-    //        Logging.warn("Configuration value `behavior.kernel_isolation: never` is deprecated and will be removed")
-    //      }
-    //    } yield parsedConfig
+    val configIO = for {
+      configJson  <- parsed
+      defaultJson <- default
+      merged = defaultJson.deepMerge(configJson) // priority goes to configJson
+      parsedConfig <- ZIO.fromEither(merged.as[PolynoteConfig])
+      _ <- ZIO.when(parsedConfig.behavior.kernelIsolation == KernelIsolation.Never) {
+        Logging.warn("Configuration value `behavior.kernel_isolation: never` is deprecated and will be removed")
+      }
+    } yield parsedConfig
 
     Logging.info(s"Loading configuration from $file") *> configIO
       .catchAll {

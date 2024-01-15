@@ -47,7 +47,10 @@ object DeploySparkSubmit extends DeployCommand {
         .flatMap(versionConfig => versionConfig.flatMap(_.find(_.versionNumber == scalaVersion)))
     })
 
-    val sparkSubmitArgs = versionConfig.map(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++ sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
+    val sparkSubmitArgs =
+      nbConfig.sparkTemplate.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
+      versionConfig.map(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
+      sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
 

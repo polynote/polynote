@@ -46,13 +46,11 @@ export class NotebookConfigEl extends Disposable {
         const exclusions = new Exclusions(configState.view("exclusions"), stateHandler);
         const resolvers = new Resolvers(configState.view("repositories"), stateHandler);
         const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates").disposeWith(configState);
-        // we need a new state handler in order to avoid updating the config when the user changes the dropdown but doesn't hit 'Save'
-        const configHandlerCopy = StateHandler.from(stateHandler.lens("config").state).disposeWith(configState);
-        const spark = new SparkConf(configState.view("sparkConfig"), configState.view("sparkTemplate"), configHandlerCopy, serverTemplatesHandler, stateHandler);
-        const kernel = new KernelConf(configState, configHandlerCopy.view("sparkTemplate"), stateHandler);
+        const spark = new SparkConf(configState, serverTemplatesHandler, stateHandler);
+        const kernel = new KernelConf(configState, stateHandler);
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
-            this.saveConfig(new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs), true);
+            this.saveConfig(new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, spark.scalaVersion, kernel.jvmArgs), true);
         })
 
         this.el = div(['notebook-config'], [
@@ -73,7 +71,7 @@ export class NotebookConfigEl extends Disposable {
                     ]),
                     div([], [
                         button([], {}, ['Copy Configuration']).click(() => {
-                            const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, kernel.scalaVersion, kernel.jvmArgs);
+                            const conf = new NotebookConfig(dependencies.conf, exclusions.conf, resolvers.conf, spark.conf, spark.template, kernel.envVars, spark.scalaVersion, kernel.jvmArgs);
                             this.copyConfig(conf);
                         }),
                         button([], {}, ['Paste & Save Configuration']).click(() => this.pasteConfig()),
@@ -449,20 +447,33 @@ class SparkConf extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
     private templateEl: DropdownElement;
+    private scalaVersionInput: DropdownElement;
 
-    constructor(confHandler: StateView<Record<string, string> | undefined>, templateHandler: StateView<SparkPropertySet | undefined>,
-                configHandlerCopy: StateHandler<NotebookConfig>, private allTemplatesHandler: StateView<SparkPropertySet[]>,
-                stateHandler: StateHandler<NBConfig>) {
+    constructor(configState: StateView<NotebookConfig>, private allTemplatesHandler: StateView<SparkPropertySet[]>, stateHandler: StateHandler<NBConfig>) {
         super()
 
         this.templateEl = dropdown([], Object.fromEntries([["", "None"]]), );
         this.container = div(['spark-config-list'], []);
 
+        const confHandler = configState.view("sparkConfig");
+        const templateHandler = configState.view("sparkTemplate");
+        const scalaVersionHandler = configState.view("scalaVersion");
+
+        // TODO: this could come from the server
+        const availableScalaVersions = [
+            {key: "2.11", value: "2.11"},
+            {key: "2.12", value: "2.12"},
+            {key: "2.13", value: "2.13"}
+        ];
+
         this.el = div(['notebook-spark-config', 'notebook-config-section', 'open'], [
-            h3([], ['Spark configuration']).click(() => stateHandler.updateField('openSpark', openDependencies => setValue(!openDependencies))),,
+            h3([], ['Scala and Spark configuration']).click(() => stateHandler.updateField('openSpark', openDependencies => setValue(!openDependencies))),,
             div(['notebook-config-section-content'], [
-                para([], ['Set Spark configuration for this notebook here. Please note that it is possible that your environment may override some of these settings at runtime :(']),
-                div([], [h4([], ['Spark template:']), this.templateEl, h4([], ['Spark properties:']), this.container])
+                para([], ['Set the Scala and Spark configuration for this notebook here. Please note that it is possible that your environment may override some of these settings at runtime :(']),
+                div(['notebook-config-row'], [h4([], ['Spark template:']), this.templateEl, h4([], ['Spark properties:']), this.container]),
+                h4([], 'Scala version:'),
+                para([], ['If you have selected a Spark template, this will read from the associated versionConfigs key to display compatible Scala versions.']),
+                this.scalaVersionInput = dropdown(['scala-version'], {}),
             ])
         ])
 
@@ -492,20 +503,36 @@ class SparkConf extends Disposable {
         // watch for changes in the config's template
         const setTemplate = (template: SparkPropertySet | undefined) => {
             this.templateEl.setSelectedValue(template?.name ?? "")
-            configHandlerCopy.updateField("sparkTemplate", () => setValue(template)); // also update the state handler copy
         }
         setTemplate(templateHandler.state)
-        templateHandler.addObserver(template => setTemplate(template)).disposeWith(this)
+        templateHandler.addObserver(template => {
+            setTemplate(template);
+            populateScalaVersions(template); // update displayed Scala versions
+        }).disposeWith(this)
 
         stateHandler.view('openSpark').addObserver(open => {
             toggleConfigVisibility(open, this.el);
         }).disposeWith(this)
 
-        // when the user selects a new Spark template, update the state in the copied state handler so the kernel dropdown receives the correct list of available Scala versions
+        // list the Scala versions coming from the version configurations associated with the selected Spark template
+        const populateScalaVersions = (selectedTemplate: SparkPropertySet | undefined) => {
+            this.scalaVersionInput.clearValues();
+            const scalaVersions = (selectedTemplate?.versionConfigs) ?
+              selectedTemplate?.versionConfigs.map(versionConfig => ({key: versionConfig.versionName, value: versionConfig.versionName})) :
+              [{key: "Default", value: "Default"}, ...availableScalaVersions];
+            scalaVersions.forEach(version => this.scalaVersionInput.addValue(version.key, version.value));
+            this.scalaVersionInput.setSelectedValue(scalaVersionHandler.state || "");
+        }
+
+        // update displayed Scala versions when a different Spark template is selected
         this.templateEl.onSelect((newValue) => {
             const newSparkTemplate = this.allTemplatesHandler.state.find(tmpl => tmpl.name === newValue);
-            configHandlerCopy.updateField("sparkTemplate", () => setValue(newSparkTemplate));
+            populateScalaVersions(newSparkTemplate);
         });
+
+        scalaVersionHandler.addObserver(version => {
+            this.scalaVersionInput.setSelectedValue(version || "")
+        }).disposeWith(this);
     }
 
     private addConf(item?: {key: string, val: string}) {
@@ -546,34 +573,26 @@ class SparkConf extends Disposable {
         return this.allTemplatesHandler.state.find(tmpl => tmpl.name === name)
     }
 
+    get scalaVersion(): string | undefined {
+        return this.scalaVersionInput.getSelectedValue() || undefined;
+    }
+
 }
 
 class KernelConf extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
     private jvmArgsInput: TagElement<"input">;
-    private scalaVersionInput: DropdownElement;
 
-    constructor(configState: StateView<NotebookConfig>, templateConfigState: StateView<SparkPropertySet | undefined>, stateHandler: StateHandler<NBConfig>) {
+    constructor(configState: StateView<NotebookConfig>, stateHandler: StateHandler<NBConfig>) {
         super();
         const envHandler = configState.view("env");
         const jvmArgsHandler = configState.view("jvmArgs");
-        const scalaVersionHandler = configState.view("scalaVersion");
-
-        // TODO: this could come from the server
-        const availableScalaVersions = [
-            {key: "2.11", value: "2.11"},
-            {key: "2.12", value: "2.12"},
-            {key: "2.13", value: "2.13"}
-        ]
 
         this.el = div(['notebook-env', 'notebook-config-section', 'open'], [
             h3([], ['Kernel configuration']).click(() => stateHandler.updateField('openKernel', openDependencies => setValue(!openDependencies))),,
             div(['notebook-config-section-content'], [
                 para([], ['Please note this is only supported when kernels are launched as a subprocess (default).']),
-                h4([], 'Scala version:'),
-                para([], `If using Spark, the Scala version must match that of your Spark installation. "Default" will use Polynote's configured Scala version, or auto-detect the appropriate version.`),
-                this.scalaVersionInput = dropdown(['scala-version'], {}),
                 h4([], 'Environment variables:'),
                 this.container = div(['env-list'], []),
                 h4([], ['Additional JVM arguments:']),
@@ -581,31 +600,6 @@ class KernelConf extends Disposable {
                 this.jvmArgsInput = textbox(['jvm-args'], "JVM Arguments", joinQuotedArgs(jvmArgsHandler.state)).attr("size", "64")
             ])
         ])
-
-        // list the Scala versions, coming from the version configurations associated with the selected Spark template
-        const populateScalaVersions = (selectedTemplate: SparkPropertySet | undefined) => {
-            this.scalaVersionInput.clearValues();
-            const scalaVersions = (selectedTemplate?.versionConfigs) ?
-              selectedTemplate?.versionConfigs.map(versionConfig => ({key: versionConfig.versionName, value: versionConfig.versionName})) :
-              [{key: "Default", value: "Default"}, ...availableScalaVersions];
-
-            scalaVersions.forEach(version => this.scalaVersionInput.addValue(version.key, version.value))
-            // if (!selectedTemplate) {
-            //     this.scalaVersionInput.addValue("Default", "Default");
-            //     availableScalaVersions.forEach(availableVersion => this.scalaVersionInput.addValue(availableVersion.key, availableVersion.value));
-            // }
-            // else {
-            //     selectedTemplate.versionConfigs ? selectedTemplate.versionConfigs.forEach(versionConfig => {
-            //         this.scalaVersionInput.addValue(versionConfig.versionName, versionConfig.versionName);
-            //     }) :
-            //     selectedTemplate.versionConfigs?.forEach(versionConfig => {
-            //         this.scalaVersionInput.addValue(versionConfig.versionName, versionConfig.versionName);
-            //     });
-            // }
-            this.scalaVersionInput.setSelectedValue(scalaVersionHandler.state || "");
-        }
-        templateConfigState.addObserver(populateScalaVersions).disposeWith(this); // watch for changes to which Spark template is selected in the UI
-        configState.observeKey("sparkTemplate", (template) => populateScalaVersions(template)).disposeWith(this); // watch for changes from the server
 
         const setEnv = (env: Record<string, string> | undefined) => {
             this.container.innerHTML = ""
@@ -619,7 +613,6 @@ class KernelConf extends Disposable {
             }
         }
         setEnv(envHandler.state);
-        scalaVersionHandler.addObserver(version => this.scalaVersionInput.setSelectedValue(version || ""));
         envHandler.addObserver(env => setEnv(env));
         jvmArgsHandler.addObserver(strs => this.jvmArgsInput.value = joinQuotedArgs(strs) || "");
 
@@ -666,10 +659,6 @@ class KernelConf extends Disposable {
             return parseQuotedArgs(this.jvmArgsInput.value);
         }
         return undefined;
-    }
-
-    get scalaVersion(): string | undefined {
-        return this.scalaVersionInput.getSelectedValue() || undefined;
     }
 }
 

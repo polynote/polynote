@@ -137,6 +137,10 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |    - name: Test 2
         |      properties:
         |        something: thing2
+        |    - name: Old config format
+        |      properties:
+        |        something: thingOld
+        |      spark_submit_args: spark args
         |""".stripMargin
 
     // Pattern has no equals :(
@@ -148,10 +152,12 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
       SparkPropertySet(
         name = "Test",
         properties = Map("something" -> "thing", "another" -> "one"),
+        sparkSubmitArgs = None,
         versionConfigs = Some(List(ScalaVersionConfig("some version", "some args"))),
         None
       ),
-      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), None)
+      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), None),
+      SparkPropertySet(name = "Old config format", properties = Map("something" -> "thingOld"), sparkSubmitArgs = Some("spark args"), None, None)
     )
     parsed.pyspark.get.distributionExcludes shouldEqual List("foo", "bar")
     parsed.pyspark.get.distributeDependencies shouldEqual Option(true)

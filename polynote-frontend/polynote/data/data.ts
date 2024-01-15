@@ -178,14 +178,17 @@ export class SparkPropertySet {
     static codec = combined(
       str,
       mapCodec(uint16, str as Codec<string>, str),
+      optional(str),
       optional(arrayCodec(int32, VersionConfig.codec)),
       optional(str)
     ).to(SparkPropertySet);
     static unapply(inst: SparkPropertySet): ConstructorParameters<typeof SparkPropertySet> {
-        return [inst.name, inst.properties, inst.versionConfigs, inst.distClasspathFilter];
+        return [inst.name, inst.properties, inst.sparkSubmitArgs, inst.versionConfigs, inst.distClasspathFilter];
     }
 
-    constructor(readonly name: string, readonly properties: Record<string, string>, readonly versionConfigs?: VersionConfig[], readonly distClasspathFilter?: string) {
+    constructor(readonly name: string, readonly properties: Record<string, string>,
+                readonly sparkSubmitArgs?: string, readonly versionConfigs?: VersionConfig[],
+                readonly distClasspathFilter?: string) {
         Object.freeze(this);
     }
 }
