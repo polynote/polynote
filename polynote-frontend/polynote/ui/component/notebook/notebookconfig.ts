@@ -46,7 +46,7 @@ export class NotebookConfigEl extends Disposable {
         const exclusions = new Exclusions(configState.view("exclusions"), stateHandler);
         const resolvers = new Resolvers(configState.view("repositories"), stateHandler);
         const serverTemplatesHandler = ServerStateHandler.view("sparkTemplates").disposeWith(configState);
-        const spark = new SparkConf(configState, serverTemplatesHandler, stateHandler);
+        const spark = new ScalaSparkConf(configState, serverTemplatesHandler, stateHandler);
         const kernel = new KernelConf(configState, stateHandler);
 
         const saveButton = button(['save'], {}, ['Save & Restart']).click(evt => {
@@ -443,7 +443,7 @@ class Exclusions extends Disposable {
     }
 }
 
-class SparkConf extends Disposable {
+class ScalaSparkConf extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
     private templateEl: DropdownElement;
@@ -455,7 +455,7 @@ class SparkConf extends Disposable {
         this.templateEl = dropdown([], Object.fromEntries([["", "None"]]), );
         this.container = div(['spark-config-list'], []);
 
-        const confHandler = configState.view("sparkConfig");
+        const sparkConfHandler = configState.view("sparkConfig");
         const templateHandler = configState.view("sparkTemplate");
         const scalaVersionHandler = configState.view("scalaVersion");
 
@@ -488,8 +488,8 @@ class SparkConf extends Disposable {
                 this.addConf()
             }
         }
-        setConf(confHandler.state)
-        confHandler.addObserver(conf => setConf(conf)).disposeWith(this)
+        setConf(sparkConfHandler.state)
+        sparkConfHandler.addObserver(conf => setConf(conf)).disposeWith(this)
 
         // populate the templates element.
         const updatedTemplates = (templates: SparkPropertySet[]) => {
