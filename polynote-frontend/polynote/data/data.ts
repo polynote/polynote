@@ -163,13 +163,13 @@ RepositoryConfig.codec = discriminated(
     msg => (msg.constructor as typeof RepositoryConfig).msgTypeId);
 
 export class VersionConfig {
-    static codec = combined(str, str).to(VersionConfig);
+    static codec = combined(str, mapCodec(uint16, str as Codec<string>, str)).to(VersionConfig);
 
     static unapply(inst: VersionConfig): ConstructorParameters<typeof VersionConfig> {
-        return [inst.versionName, inst.sparkSubmitArgs];
+        return [inst.versionName, inst.properties];
     }
 
-    constructor(readonly versionName: string, readonly sparkSubmitArgs: string) {
+    constructor(readonly versionName: string, readonly properties: Record<string, string>) {
         Object.freeze(this);
     }
 }

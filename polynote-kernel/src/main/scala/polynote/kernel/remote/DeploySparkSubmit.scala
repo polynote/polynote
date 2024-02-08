@@ -34,22 +34,23 @@ object DeploySparkSubmit extends DeployCommand {
     serverArgs: List[String] = Nil
   ): Seq[String] = {
 
-    val sparkConfig = config.spark.map(_.properties).getOrElse(Map.empty) ++
-      nbConfig.sparkTemplate.map(_.properties).getOrElse(Map.empty) ++
-      nbConfig.sparkConfig.getOrElse(Map.empty)
-
-    val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
-      .flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
-
     val versionConfig = nbConfig.scalaVersion.flatMap(scalaVersion => {
       nbConfig.sparkTemplate
         .map(_.versionConfigs)
         .flatMap(versionConfig => versionConfig.flatMap(_.find(_.versionNumber == scalaVersion)))
     })
 
+    val sparkConfig = config.spark.map(_.properties).getOrElse(Map.empty) ++
+      versionConfig.map(_.properties).getOrElse(Map.empty) ++
+      nbConfig.sparkTemplate.map(_.properties).getOrElse(Map.empty) ++
+      nbConfig.sparkConfig.getOrElse(Map.empty)
+
+    val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory" - "spark_submit_args")
+      .flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
+
     val sparkSubmitArgs =
       nbConfig.sparkTemplate.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
-      versionConfig.map(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
+      versionConfig.flatMap(_.properties.get("spark_submit_args")).toList.flatMap(parseQuotedArgs) ++
       sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"

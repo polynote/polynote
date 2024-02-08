@@ -9,6 +9,7 @@ import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe.syntax._
 import io.circe._
+import io.circe.generic.extras.Configuration
 import polynote.kernel.{BaseEnv, TaskB}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
@@ -164,7 +165,7 @@ object Credentials {
 
 final case class ScalaVersionConfig(
   versionNumber: String,
-  sparkSubmitArgs: String
+  properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
 )
 
 object ScalaVersionConfig {
