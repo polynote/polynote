@@ -9,11 +9,10 @@ import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe.syntax._
 import io.circe._
-import io.circe.generic.extras.Configuration
 import polynote.kernel.{BaseEnv, TaskB}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
-import polynote.messages.{ShortList, ShortMap, ShortString, TinyList, TinyString}
+import polynote.messages.{ShortMap, ShortString}
 import scodec.{Attempt, Codec}
 import scodec.codecs.implicits._
 import scodec.codecs.utf8_32
@@ -165,7 +164,7 @@ object Credentials {
 
 final case class ScalaVersionConfig(
   versionNumber: String,
-  properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
+  versionProperties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
 )
 
 object ScalaVersionConfig {

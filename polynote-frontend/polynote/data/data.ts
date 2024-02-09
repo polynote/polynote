@@ -166,10 +166,10 @@ export class VersionConfig {
     static codec = combined(str, mapCodec(uint16, str as Codec<string>, str)).to(VersionConfig);
 
     static unapply(inst: VersionConfig): ConstructorParameters<typeof VersionConfig> {
-        return [inst.versionName, inst.properties];
+        return [inst.versionName, inst.versionProperties];
     }
 
-    constructor(readonly versionName: string, readonly properties: Record<string, string>) {
+    constructor(readonly versionName: string, readonly versionProperties: Record<string, string>) {
         Object.freeze(this);
     }
 }

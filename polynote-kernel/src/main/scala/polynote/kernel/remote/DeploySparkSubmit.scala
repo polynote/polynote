@@ -41,16 +41,16 @@ object DeploySparkSubmit extends DeployCommand {
     })
 
     val sparkConfig = config.spark.map(_.properties).getOrElse(Map.empty) ++
-      versionConfig.map(_.properties).getOrElse(Map.empty) ++
+      versionConfig.map(_.versionProperties).getOrElse(Map.empty) ++
       nbConfig.sparkTemplate.map(_.properties).getOrElse(Map.empty) ++
       nbConfig.sparkConfig.getOrElse(Map.empty)
 
-    val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory" - "spark_submit_args")
+    val sparkArgs = (sparkConfig - "sparkSubmitArgs"  - "spark_submit_args" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
       .flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
 
     val sparkSubmitArgs =
       nbConfig.sparkTemplate.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
-      versionConfig.flatMap(_.properties.get("spark_submit_args")).toList.flatMap(parseQuotedArgs) ++
+      versionConfig.flatMap(_.versionProperties.get("spark_submit_args")).toList.flatMap(parseQuotedArgs) ++
       sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"

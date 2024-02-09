@@ -133,7 +133,12 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |        another:   one
         |      version_configs:
         |        - version_number: some version
-        |          spark_submit_args: some args
+        |          version_properties:
+        |            spark_submit_args: some args
+        |            arbitrary.spark.args: anything
+        |        - version_number: some version 2
+        |          version_properties:
+        |            spark_submit_args: different submit args
         |    - name: Test 2
         |      properties:
         |        something: thing2
@@ -153,7 +158,10 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         name = "Test",
         properties = Map("something" -> "thing", "another" -> "one"),
         sparkSubmitArgs = None,
-        versionConfigs = Some(List(ScalaVersionConfig("some version", "some args"))),
+        versionConfigs = Some(List(
+          ScalaVersionConfig("some version", Map("spark_submit_args" -> "some args", "arbitrary.spark.args" -> "anything")),
+          ScalaVersionConfig("some version 2", Map("spark_submit_args" -> "different submit args"))
+        )),
         None
       ),
       SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), None),
