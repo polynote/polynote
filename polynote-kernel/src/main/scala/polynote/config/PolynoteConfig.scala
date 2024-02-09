@@ -164,7 +164,7 @@ object Credentials {
 
 final case class ScalaVersionConfig(
   versionNumber: String,
-  versionProperties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
+  versionProperties: ShortMap[String, String] = ShortMap(Map.empty[String, String])
 )
 
 object ScalaVersionConfig {
