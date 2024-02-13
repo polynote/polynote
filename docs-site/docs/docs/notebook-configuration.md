@@ -80,7 +80,7 @@ Changing the cache option affects different types of dependencies differently.
 !!!question "Feedback requested"
     If these restrictions are inconvenient for you, please let us know and we can look into improving this feature. 
 
-### Spark
+### Scala and Spark
 
 There are two complementary ways to specify Spark properties. 
 
@@ -89,21 +89,19 @@ There are two complementary ways to specify Spark properties.
 
 For more details on using Spark with Polynote, check out the [Spark documentation](spark.md)
 
+The **Scala version** can be also be set in this section (independently of the version running on the server). Currently, 2.11,
+2.12, and 2.13 are supported (since those are the versions supported by Spark). 
+
+!!!warning
+    If a Spark template that defines the `version_configs` key is selected, the **Scala version** dropdown will only display the Scala versions listed under that key. This behavior enables you to ensure that the Scala version you select matches that of your Spark installation. 
+
 ### Kernel
 
 The Kernel configuration contains some miscellaneous configuration that affect the runtime environment of the Kernel. 
 
-First, the **Scala version** can be set (independently of the version running on the server). Currently, 2.11 and
-2.12 are supported (since those are the versions supported by Spark). Support for 2.13 is currently in alpha (build
-against Spark 3.2). 
+In the first section, you can add **Environment Variables** that will be made available to the Kernel process. 
 
-!!!warning
-    The Scala version you select must match that of your Spark installation. If you're unsure what that is, just leave 
-    it as `Default` and Polynote will take care of it for you!
-
-In the second section, you can also add **Environment Variables** that will be made available to the Kernel process. 
-
-Finally, in the last section you can add any additional **JVM Arguments** that Polynote will set when it launches the 
+In the second section you can add any additional **JVM Arguments** that Polynote will set when it launches the 
 Kernel process. 
 
 ### Copying Configurations 
