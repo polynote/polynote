@@ -11,8 +11,13 @@ import shlex
 sys_prefixes = {getattr(sys, sys_prefix) for sys_prefix in filter(lambda name: "prefix" in name, dir(sys))}
 if not os.environ.get('PYTHONPATH'):
     os.environ['PYTHONPATH'] = os.pathsep.join(sys_prefixes)
+else: 
+    print("Using user-provided PYTHONPATH")
+    
 if not os.environ.get('LD_LIBRARY_PATH'):
     os.environ['LD_LIBRARY_PATH'] = os.pathsep.join([os.path.join(path, "lib") for path in sys_prefixes])
+else: 
+    print("Using user-provided LD_LIBRARY_PATH")
 
 scala_version = os.environ.get('POLYNOTE_SCALA_VERSION', '2.11')
 
