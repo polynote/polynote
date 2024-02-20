@@ -5,7 +5,6 @@ import java.net.{InetSocketAddress, URI}
 import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
-
 import cats.syntax.either._
 import io.circe.generic.extras.semiauto._
 import io.circe.syntax._
@@ -163,10 +162,22 @@ object Credentials {
   implicit val decoder: Decoder[Credentials] = deriveDecoder
 }
 
+final case class ScalaVersionConfig(
+  versionNumber: String,
+  versionProperties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
+  sparkSubmitArgs: Option[String] = None
+)
+
+object ScalaVersionConfig {
+  implicit val encoder: Encoder.AsObject[ScalaVersionConfig] = deriveEncoder
+  implicit val decoder: Decoder[ScalaVersionConfig] = deriveDecoder
+}
+
 final case class SparkPropertySet(
   name: String,
   properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
   sparkSubmitArgs: Option[String] = None,
+  versionConfigs: Option[List[ScalaVersionConfig]] = None,
   distClasspathFilter: Option[Pattern] = None
 )
 

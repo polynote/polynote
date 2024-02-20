@@ -131,11 +131,22 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |      properties:
         |        something: thing
         |        another:   one
-        |      spark_submit_args: some more args
-        |
+        |      version_configs:
+        |        - version_number: some version
+        |          version_properties:
+        |            arbitrary.spark.args: anything
+        |          spark_submit_args: some args
+        |        - version_number: some version 2
+        |          version_properties:
+        |             arbitrary.spark.args: anything else
+        |          spark_submit_args: different submit args
         |    - name: Test 2
         |      properties:
         |        something: thing2
+        |    - name: Old config format
+        |      properties:
+        |        something: thingOld
+        |      spark_submit_args: spark args
         |""".stripMargin
 
     // Pattern has no equals :(
@@ -144,8 +155,18 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     parsed.sparkSubmitArgs shouldEqual Some("these are the args")
     parsed.distClasspathFilter.get.pattern() shouldEqual ".jar$"
     parsed.propertySets.get shouldEqual List(
-      SparkPropertySet(name = "Test", properties = Map("something" -> "thing", "another" -> "one"), sparkSubmitArgs = Some("some more args"), None),
-      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"))
+      SparkPropertySet(
+        name = "Test",
+        properties = Map("something" -> "thing", "another" -> "one"),
+        sparkSubmitArgs = None,
+        versionConfigs = Some(List(
+          ScalaVersionConfig("some version", Map("arbitrary.spark.args" -> "anything"), sparkSubmitArgs = Some("some args")),
+          ScalaVersionConfig("some version 2", Map("arbitrary.spark.args" -> "anything else"), sparkSubmitArgs = Some("different submit args"))
+        )),
+        None
+      ),
+      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), None),
+      SparkPropertySet(name = "Old config format", properties = Map("something" -> "thingOld"), sparkSubmitArgs = Some("spark args"), None, None)
     )
     parsed.pyspark.get.distributionExcludes shouldEqual List("foo", "bar")
     parsed.pyspark.get.distributeDependencies shouldEqual Option(true)

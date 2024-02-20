@@ -34,7 +34,14 @@ object DeploySparkSubmit extends DeployCommand {
     serverArgs: List[String] = Nil
   ): Seq[String] = {
 
+    val versionConfig = nbConfig.scalaVersion.flatMap(scalaVersion => {
+      nbConfig.sparkTemplate
+        .map(_.versionConfigs)
+        .flatMap(versionConfig => versionConfig.flatMap(_.find(_.versionNumber == scalaVersion)))
+    })
+
     val sparkConfig = config.spark.map(_.properties).getOrElse(Map.empty) ++
+      versionConfig.map(_.versionProperties).getOrElse(Map.empty) ++
       nbConfig.sparkTemplate.map(_.properties).getOrElse(Map.empty) ++
       nbConfig.sparkConfig.getOrElse(Map.empty)
 
@@ -43,6 +50,7 @@ object DeploySparkSubmit extends DeployCommand {
 
     val sparkSubmitArgs =
       nbConfig.sparkTemplate.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
+      versionConfig.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
       sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
