@@ -45,12 +45,12 @@ object DeploySparkSubmit extends DeployCommand {
       nbConfig.sparkTemplate.map(_.properties).getOrElse(Map.empty) ++
       nbConfig.sparkConfig.getOrElse(Map.empty)
 
-    val sparkArgs = (sparkConfig - "sparkSubmitArgs"  - "spark_submit_args" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
+    val sparkArgs = (sparkConfig - "sparkSubmitArgs" - "spark.driver.extraJavaOptions" - "spark.submit.deployMode" - "spark.driver.memory")
       .flatMap(kv => Seq("--conf", s"${kv._1}=${kv._2}"))
 
     val sparkSubmitArgs =
       nbConfig.sparkTemplate.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
-      versionConfig.flatMap(_.versionProperties.get("spark_submit_args")).toList.flatMap(parseQuotedArgs) ++
+      versionConfig.flatMap(_.sparkSubmitArgs).toList.flatMap(parseQuotedArgs) ++
       sparkConfig.get("sparkSubmitArgs").toList.flatMap(parseQuotedArgs)
 
     val isRemote = sparkConfig.get("spark.submit.deployMode") contains "cluster"
