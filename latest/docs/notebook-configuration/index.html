@@ -16,7 +16,7 @@
       
       
       <link rel="icon" href="../../favicon.ico">
-      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.9">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.10">
     
     
       
@@ -24,7 +24,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.f2e4d321.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.7e359304.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
@@ -695,9 +695,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#spark" class="md-nav__link">
+  <a href="#scala-and-spark" class="md-nav__link">
     <span class="md-ellipsis">
-      Spark
+      Scala and Spark
     </span>
   </a>
   
@@ -1135,9 +1135,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#spark" class="md-nav__link">
+  <a href="#scala-and-spark" class="md-nav__link">
     <span class="md-ellipsis">
-      Spark
+      Scala and Spark
     </span>
   </a>
   
@@ -1249,25 +1249,23 @@ unfolding the Advanced Options pane for your dependency by clicking on the <code
 <p class="admonition-title">Feedback requested</p>
 <p>If these restrictions are inconvenient for you, please let us know and we can look into improving this feature. </p>
 </div>
-<h3 id="spark">Spark<a class="headerlink" href="#spark" title="Permanent link">&para;</a></h3>
+<h3 id="scala-and-spark">Scala and Spark<a class="headerlink" href="#scala-and-spark" title="Permanent link">&para;</a></h3>
 <p>There are two complementary ways to specify Spark properties. </p>
 <ul>
 <li><code>Spark Templates</code> are sets of related configuration that can be defined in the <a href="../server-configuration/#spark">Server Configuration</a></li>
 <li><code>Spark Properties</code> are key-value pairs that Polynote will insert into the Spark configuration. </li>
 </ul>
 <p>For more details on using Spark with Polynote, check out the <a href="../spark/">Spark documentation</a></p>
-<h3 id="kernel">Kernel<a class="headerlink" href="#kernel" title="Permanent link">&para;</a></h3>
-<p>The Kernel configuration contains some miscellaneous configuration that affect the runtime environment of the Kernel. </p>
-<p>First, the <strong>Scala version</strong> can be set (independently of the version running on the server). Currently, 2.11 and
-2.12 are supported (since those are the versions supported by Spark). Support for 2.13 is currently in alpha (build
-against Spark 3.2). </p>
+<p>The <strong>Scala version</strong> can be also be set in this section (independently of the version running on the server). Currently, 2.11,
+2.12, and 2.13 are supported (since those are the versions supported by Spark). </p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>The Scala version you select must match that of your Spark installation. If you're unsure what that is, just leave 
-it as <code>Default</code> and Polynote will take care of it for you!</p>
+<p>If a Spark template that defines the <code>version_configs</code> key is selected, the <strong>Scala version</strong> dropdown will only display the Scala versions listed under that key. This behavior enables you to ensure that the Scala version you select matches that of your Spark installation. </p>
 </div>
-<p>In the second section, you can also add <strong>Environment Variables</strong> that will be made available to the Kernel process. </p>
-<p>Finally, in the last section you can add any additional <strong>JVM Arguments</strong> that Polynote will set when it launches the 
+<h3 id="kernel">Kernel<a class="headerlink" href="#kernel" title="Permanent link">&para;</a></h3>
+<p>The Kernel configuration contains some miscellaneous configuration that affect the runtime environment of the Kernel. </p>
+<p>In the first section, you can add <strong>Environment Variables</strong> that will be made available to the Kernel process. </p>
+<p>In the second section you can add any additional <strong>JVM Arguments</strong> that Polynote will set when it launches the 
 Kernel process. </p>
 <h3 id="copying-configurations">Copying Configurations<a class="headerlink" href="#copying-configurations" title="Permanent link">&para;</a></h3>
 <p>The copy and paste buttons below the last section offer easy access to copy all three sections between notebooks. </p>
