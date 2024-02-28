@@ -10,7 +10,8 @@ import {
     para,
     span,
     tag,
-    TagElement
+    TagElement,
+    textbox
 } from "../tags";
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray, getHumanishDate} from "../../util/helpers";
@@ -219,6 +220,7 @@ class SortHeader {
 export class NotebookList extends Disposable {
     readonly el: TagElement<"div">;
     readonly header: TagElement<"h2">;
+    readonly searchbox: TagElement<"input">;
 
     private dragEnter: EventTarget | null;
     private tree: BranchEl;
@@ -231,11 +233,13 @@ export class NotebookList extends Disposable {
         searchModal.show();
         searchModal.hide();
 
+        this.searchbox = textbox(['notebook-searchbox'], 'search');
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['left-buttons'], [
                 helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
             ]),
+            span(['middle-area'], [this.searchbox]),
             span(['right-buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
@@ -324,6 +328,9 @@ export class NotebookList extends Disposable {
                 removed.forEach(path => treeState.removePath(path));
             }
         });
+
+        // setup searchbox
+        this.searchbox.addEventListener("input", evt => this.tree.filter(this.searchbox.value.toLowerCase()));
 
         // we're ready to request the notebooks list now!
         dispatcher.requestNotebookList()
@@ -511,6 +518,12 @@ export class BranchEl extends Disposable {
 
     focus() {
         this.branchEl.focus()
+    }
+
+    filter(searchStr: string): boolean {
+        const childrenFound = this.children.map(child => child.filter(searchStr)).find(v => v) || false;
+        this.el.hidden = !childrenFound;
+        return childrenFound;
     }
 
     private addChild(node: Branch | Leaf) {
@@ -723,6 +736,12 @@ export class LeafEl extends Disposable {
 
     focus() {
         this.leafEl.focus()
+    }
+
+    filter(searchStr: string): boolean {
+        const isMatch = this.path.toLowerCase().includes(searchStr);
+        this.el.hidden = !isMatch;
+        return isMatch;
     }
 
     private getEl(leaf: Leaf) {
