@@ -448,12 +448,14 @@ class ScalaSparkConf extends Disposable {
     private container: TagElement<"div">;
     private templateEl: DropdownElement;
     private scalaVersionInput: DropdownElement;
+    private notebookSparkTemplates: SparkPropertySet[]; // keep our own state to handle templates that don't exist on the server
 
     constructor(configState: StateView<NotebookConfig>, private allTemplatesHandler: StateView<SparkPropertySet[]>, stateHandler: StateHandler<NBConfig>) {
         super()
 
         this.templateEl = dropdown([], Object.fromEntries([["", "None"]]), );
         this.container = div(['spark-config-list'], []);
+        this.notebookSparkTemplates = [];
 
         const sparkConfHandler = configState.view("sparkConfig");
         const templateHandler = configState.view("sparkTemplate");
@@ -493,6 +495,7 @@ class ScalaSparkConf extends Disposable {
 
         // populate the templates element.
         const updatedTemplates = (templates: SparkPropertySet[]) => {
+            this.notebookSparkTemplates = this.notebookSparkTemplates.concat(templates);
             templates.forEach(tmpl => {
                 this.templateEl.addValue(tmpl.name, tmpl.name)
             })
@@ -502,6 +505,11 @@ class ScalaSparkConf extends Disposable {
 
         // watch for changes in the config's template
         const setTemplate = (template: SparkPropertySet | undefined) => {
+            if (template && !this.notebookSparkTemplates.some(el => el.name === template.name)) {
+                // if we don't recognize the template defined in the config, add it to this notebook only
+                this.templateEl.addValue(template.name, template.name);
+                this.notebookSparkTemplates.push(template);
+            }
             this.templateEl.setSelectedValue(template?.name ?? "")
         }
         setTemplate(templateHandler.state)
@@ -526,7 +534,7 @@ class ScalaSparkConf extends Disposable {
 
         // update displayed Scala versions when a different Spark template is selected
         this.templateEl.onSelect((newValue) => {
-            const newSparkTemplate = this.allTemplatesHandler.state.find(tmpl => tmpl.name === newValue);
+            const newSparkTemplate = this.notebookSparkTemplates.find(tmpl => tmpl.name === newValue);
             populateScalaVersions(newSparkTemplate);
         });
 
@@ -570,7 +578,7 @@ class ScalaSparkConf extends Disposable {
 
     get template(): SparkPropertySet | undefined {
         const name = this.templateEl.options[this.templateEl.selectedIndex].value;
-        return this.allTemplatesHandler.state.find(tmpl => tmpl.name === name)
+        return this.notebookSparkTemplates.find(tmpl => tmpl.name === name);
     }
 
     get scalaVersion(): string | undefined {
