@@ -1,31 +1,45 @@
 package polynote.kernel.interpreter
 package scal
 
+import com.github.javaparser.ast.DataKey
+import com.github.javaparser.symbolsolver.JavaSymbolSolver
+import com.github.javaparser.symbolsolver.resolution.typesolvers.{ClassLoaderTypeSolver, CombinedTypeSolver, JarTypeSolver}
+import com.github.javaparser.{JavaParser, ParseProblemException, ParserConfiguration, StaticJavaParser, Position => JPosition}
 import polynote.kernel.{BaseEnv, ScalaCompiler}
 import polynote.kernel.dependency.Artifact
 import polynote.kernel.environment.CurrentTask
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
+import polynote.messages.DefinitionLocation
 import zio.ZIO.effectTotal
 import zio.blocking.{Blocking, effectBlocking}
 import zio.clock.Clock
 import zio.duration.Duration
 import zio.{RIO, Ref, Task, ZIO}
 
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import scala.meta.interactive.InteractiveSemanticdb
-import scala.reflect.internal.util.{BatchSourceFile, SourceFile}
-import scala.reflect.io.{AbstractFile, FileZipArchive}
-import scala.tools.nsc.{Global, interactive}
-import scala.tools.nsc.interactive.{NscThief, Response}
+import scala.reflect.internal.util.{BatchSourceFile, Position, SourceFile}
+import scala.reflect.io.{AbstractFile, FileZipArchive, ZipArchive}
+import scala.tools.nsc.interactive.{Global, NscThief, Response}
 
 class SemanticDbScan (compiler: ScalaCompiler) {
 
-  private val classpath = compiler.global.classPath.asClassPathString//.dependencies.map(_.file.getAbsolutePath).mkString(File.pathSeparator)
+  private val classpath = compiler.global.classPath.asClassPathString
   private val sources = compiler.dependencies.flatMap(_.source)
-  val semanticdbGlobal: interactive.Global = InteractiveSemanticdb.newCompiler(classpath, List())
+  val semanticdbGlobal: Global = InteractiveSemanticdb.newCompiler(classpath, List())
   private val compileUnits = new ConcurrentHashMap[AbstractFile, semanticdbGlobal.RichCompilationUnit]
-  private val javaMapping = new ConcurrentHashMap[String, semanticdbGlobal.RichCompilationUnit]
+  val javaMapping = new ConcurrentHashMap[String, semanticdbGlobal.RichCompilationUnit]
+  private val binariesTypeSolver = new ClassLoaderTypeSolver(compiler.classLoader)
+  private val sourcesTypeSolver = new LazyParsingTypeSolver(this, binariesTypeSolver)
+  private val symbolSolver = new JavaSymbolSolver(sourcesTypeSolver)
+  val javaParser = new JavaParser(
+    new ParserConfiguration()
+      .setSymbolResolver(symbolSolver)
+      .setLanguageLevel(ParserConfiguration.LanguageLevel.RAW)
+  )
+
   semanticdbGlobal.settings.stopAfter.value = List("namer")
 
   // TODO: this should be a ref
@@ -37,6 +51,15 @@ class SemanticDbScan (compiler: ScalaCompiler) {
     sources => TaskManager.run("semanticdb", "Indexing sources")(indexSources(sources))
   }
 
+  def dependencyDefinitions(file: SourceFile, offset: Int): RIO[Blocking with Clock, List[DefinitionLocation]] =
+    if (file.file.name.endsWith(".java")) {
+      javaDefinitions(file, offset).retryN(3)
+    } else {
+      treeAt(file.file, offset).flatMap {
+        tree => ScalaCompleter.findSymbolOfTree(semanticdbGlobal, Some(this))(tree, offset)
+      }
+    }
+
   def lookupPosition(sym: Global#Symbol): semanticdbGlobal.Position = {
     val imported = importer.importSymbol(sym.asInstanceOf[compiler.global.Symbol])
     if (!imported.pos.isDefined && sym.isJava) {
@@ -45,17 +68,17 @@ class SemanticDbScan (compiler: ScalaCompiler) {
         s = s.owner
       }
       // find position of the symbol
-      val tree = javaMapping.get(s.fullName).body
+      val unit = javaMapping.get(s.fullName)
+      if (unit != null && unit.body != null) {
+        val tree = unit.body
 
-      if (tree == null) {
-        semanticdbGlobal.NoPosition
-      } else {
         val defnCandidates = tree.collect {
           case tree: semanticdbGlobal.DefTree if tree.name.decoded == sym.name.decoded => tree
         }
         val withPos = defnCandidates.find(_.pos.isDefined)
         withPos.map(_.pos).getOrElse(semanticdbGlobal.NoPosition)
-      }
+
+      } else semanticdbGlobal.NoPosition
     } else imported.pos
   }
 
@@ -67,7 +90,7 @@ class SemanticDbScan (compiler: ScalaCompiler) {
     if (unit == null)
       return ZIO.succeed(EmptyTree)
 
-//    run.compileLate(unit) // doesn't seem to work
+    // run.compileLate(unit) // doesn't seem to work
     val check = ZIO.when(!unit.isTypeChecked)(ZIO {
       run.typerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
       unit.status = PartiallyChecked
@@ -86,15 +109,18 @@ class SemanticDbScan (compiler: ScalaCompiler) {
     }
   }
 
-
-  def index(sourceFile: SourceFile): Task[semanticdbGlobal.Tree] = for {
-    response     <- ZIO(new Response[semanticdbGlobal.Tree])
-    _            <- ZIO(semanticdbGlobal.askLoadedTyped(sourceFile, false, response))
-    _            <- {
-      ZIO.sleep(Duration.fromMillis(100)).provideLayer(Clock.live) *> effectTotal(response.isComplete)
-    }.repeatUntilEquals(true)
-    result       <- ZIO.fromEither(response.get.swap)
-  } yield result
+  private def javaDefinitions(file: SourceFile, offset: Int): RIO[Blocking with Clock, List[DefinitionLocation]] = {
+    ZIO(javaParser.parse(new String(file.content)).getResult.get).map {
+      cu =>
+        val pos = Position.offset(file, offset)
+        val line = pos.line
+        val col = pos.column
+        val result = Option(cu.accept(new JavaTreeFinder(), new JPosition(line, col)))
+        result.flatMap(ScalaCompleter.urlOf).toList.map {
+          url => DefinitionLocation(url, line, col)
+        }
+    }
+  }
 
   private def scanSources = Ref.make(0).flatMap {
     completed => ZIO.foreach(sources) {
@@ -134,7 +160,7 @@ class SemanticDbScan (compiler: ScalaCompiler) {
     // do an initial namer run of all the sources together
     run.compileUnits(units, run.parserPhase)
     units
-  }.flatMap {
+  }.zipLeft(CurrentTask.setProgress(0.5)).flatMap {
     units =>
       // if there were errors doing that, it could result in some sources getting skipped because of other bad sources.
       // so now loop through them all again, running parser and namer on each one individually.
@@ -145,10 +171,13 @@ class SemanticDbScan (compiler: ScalaCompiler) {
               run.parserPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
               run.namerPhase.asInstanceOf[semanticdbGlobal.GlobalPhase].apply(unit)
             } *> completed.updateAndGet(_ + 1).flatMap {
-              numCompleted => CurrentTask.setProgress(numCompleted.toDouble / sources.size)
+              numCompleted => CurrentTask.setProgress(0.5 + (numCompleted.toDouble / sources.size * 0.5))
             }
           }
       }.zipLeft(ZIO {
+        // namer is enough to figure out which files define which symbols. But to be able to figure out the symbol of
+        // what they're clicking on, we'll need to run the typer on that file. So from now on, we'll need to go all the
+        // way through the typer.
         semanticdbGlobal.settings.stopAfter.value = List("typer")
         run = new semanticdbGlobal.Run()
       })
@@ -157,6 +186,9 @@ class SemanticDbScan (compiler: ScalaCompiler) {
 }
 
 object SemanticDbScan {
+
+  // Used to attach the source file to the JavaParser CompilationUnit, so we can retrieve it after using SymbolResolver.
+  val OriginalSource: DataKey[AbstractFile] = new DataKey[AbstractFile] {}
 
 }
 

@@ -279,6 +279,12 @@ monaco.languages.registerDefinitionProvider("scala", {
     }
 });
 
+monaco.languages.registerDefinitionProvider("java", {
+    provideDefinition: (doc, pos, cancelToken) => {
+        return (doc as CodeCellModel).goToDefinition(doc.getOffsetAt(pos));
+    }
+});
+
 monaco.languages.registerDefinitionProvider("python", {
     provideDefinition: (doc, pos, cancelToken) => {
         return (doc as CodeCellModel).goToDefinition(doc.getOffsetAt(pos));

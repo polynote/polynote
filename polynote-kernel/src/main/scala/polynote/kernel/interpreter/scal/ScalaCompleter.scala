@@ -243,43 +243,8 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
     }
   }.option.map(_.flatten)
 
-  private def urlOf(source: AbstractFile) = if (source.name.startsWith("Cell")) {
-    val n = source.name
-    Some("#" + n)
-  } else source match {
-    case inJar: ZipArchive#Entry =>
-      inJar.underlyingSource.flatMap(Option.apply).map {
-        archive => s"${archive.name.split(File.separatorChar).last}!${inJar.path}"
-      }
-    case _ => None
-  }
-
-  private def symbolLocation(global: Global)(sym: global.Symbol): Option[(DefinitionLocation, SourceFile)] = for {
-    pos    <- Option(sym.pos).filter(_.isDefined).orElse(semanticDbScan.flatMap(s => Option(s.lookupPosition(sym)))) if pos.isDefined
-    source <- Option(pos.source)
-    file   <- Option(source.file)
-    url    <- urlOf(file)
-  } yield (DefinitionLocation(url, pos.line, pos.column), source)
-
-  private def findSymbolOfTree(global: Global)(tree: global.Tree, pos: Int): RIO[Blocking, List[DefinitionLocation]]  = {
-    import global._
-    val alts = tree match {
-      case Import(expr, selectors) =>
-        selectors.dropWhile(sel => sel.namePos + sel.name.length < pos).headOption.toList.flatMap {
-          selector =>
-            expr.tpe.members.lookup(selector.name).alternatives
-        }
-      case tree: RefTree => tree.symbol.alternatives
-      case tree: TypeTree => tree.symbol.alternatives
-      case tree => Nil
-    }
-    effectBlocking(alts.flatMap(sym => symbolLocation(global)(sym).toList)).map {
-      altSyms => altSyms.map(_._1)
-    }
-  }
-
   def locateDefinitions(cellCode: compiler.CellCode, pos: Int): RIO[Blocking, List[DefinitionLocation]] =
-    cellCode.typedTreeAt(pos).flatMap(findSymbolOfTree(compiler.global)(_, pos))
+    cellCode.typedTreeAt(pos).flatMap(ScalaCompleter.findSymbolOfTree(compiler.global, semanticDbScan)(_, pos))
 
   def locateDefinitionsFromDependency(dependency: String, pos: Int): RIO[Blocking with Clock, List[DefinitionLocation]] = semanticDbScan match {
     case None => ZIO.succeed(Nil)
@@ -295,10 +260,7 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
           fileEntry <- dirEntry.entries.get(fileName)
         } yield fileEntry
       }.someOrFailException.flatMap {
-        fileEntry => semanticDbScan.treeAt(fileEntry, pos).flatMap {
-          tree =>
-            findSymbolOfTree(semanticDbScan.semanticdbGlobal)(tree, pos)
-        }
+        fileEntry => semanticDbScan.dependencyDefinitions(new BatchSourceFile(fileEntry), pos)
       }
   }
 
@@ -447,4 +409,39 @@ class ScalaCompleter[Compiler <: ScalaCompiler](
 object ScalaCompleter {
   object NoTree extends Throwable("No typed tree found")
   def apply(compiler: ScalaCompiler, indexer: ClassIndexer, scan: Option[SemanticDbScan]): ScalaCompleter[compiler.type] = new ScalaCompleter(compiler, indexer, scan)
+
+  def urlOf(source: AbstractFile): Option[String] = if (source.name.startsWith("Cell")) {
+    val n = source.name
+    Some("#" + n)
+  } else source match {
+    case inJar: ZipArchive#Entry =>
+      inJar.underlyingSource.flatMap(Option.apply).map {
+        archive => s"${archive.name.split(File.separatorChar).last}!${inJar.path}"
+      }
+    case _ => None
+  }
+
+  def symbolLocation(global: Global, semanticDbScan: Option[SemanticDbScan])(sym: global.Symbol): Option[(DefinitionLocation, SourceFile)] = for {
+    pos    <- Option(sym.pos).filter(_.isDefined).orElse(semanticDbScan.flatMap(s => Option(s.lookupPosition(sym)))) if pos.isDefined
+    source <- Option(pos.source)
+    file   <- Option(source.file)
+    url    <- urlOf(file)
+  } yield (DefinitionLocation(url, pos.line, pos.column), source)
+
+  def findSymbolOfTree(global: Global, semanticDbScan: Option[SemanticDbScan])(tree: global.Tree, pos: Int): RIO[Blocking, List[DefinitionLocation]]  = {
+    import global._
+    val alts = tree match {
+      case Import(expr, selectors) =>
+        selectors.dropWhile(sel => sel.namePos + sel.name.length < pos).headOption.toList.flatMap {
+          selector =>
+            expr.tpe.members.lookup(selector.name).alternatives
+        }
+      case tree: RefTree => tree.symbol.alternatives
+      case tree: TypeTree => tree.symbol.alternatives
+      case tree => Nil
+    }
+    effectBlocking(alts.flatMap(sym => symbolLocation(global, semanticDbScan)(sym).toList)).map {
+      altSyms => altSyms.map(_._1)
+    }
+  }
 }

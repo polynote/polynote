@@ -148,11 +148,12 @@ class KernelPublisher private (
     signatures  <- kernel.parametersAt(cellID, pos).provideSomeLayer[BaseEnv with GlobalEnv](cellEnv(cellID))
   } yield signatures
 
-  def goToDefinition(cellID: Either[String, CellID], pos: Int): RIO[BaseEnv with GlobalEnv, List[DefinitionLocation]] = for {
-    kernel <- kernel
-    env     = cellID.fold(_ => depEnv, id => cellEnv(id))
-    result <- kernel.goToDefinition(cellID, pos).provideSomeLayer[BaseEnv with GlobalEnv](env)
-  } yield result
+  def goToDefinition(cellID: Either[String, CellID], pos: Int): RIO[BaseEnv with GlobalEnv, List[DefinitionLocation]] = kernelIfStarted.flatMap {
+    case None => ZIO.succeed(Nil)
+    case Some(kernel) =>
+      val env = cellID.fold(_ => depEnv, id => cellEnv(id))
+      kernel.goToDefinition(cellID, pos).provideSomeLayer[BaseEnv with GlobalEnv](env)
+  }
 
   def kernelStatus(): TaskB[KernelBusyState] = for {
     kernelOpt <- kernelRef.get

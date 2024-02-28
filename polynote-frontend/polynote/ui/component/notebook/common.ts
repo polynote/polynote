@@ -7,6 +7,7 @@ import Location = languages.Location;
 import {NotebookStateHandler} from "../../../state/notebook_state";
 import {Either, Left, Right} from "../../../data/codec_types";
 import {arrExists, nameFromPath, posToRange} from "../../../util/helpers";
+import {languageOfExtension} from "../../../interpreter/file_extensions";
 
 
 export function findDefinitionLocation(
@@ -44,7 +45,8 @@ export function openDefinition(notebookState: NotebookStateHandler, lang: string
     const params = new URLSearchParams(location.uri.query);
     const filename = params.get("dependency");
     const filePieces = filename?.split('.')
-    const fileLanguage = filePieces?.[filePieces.length - 1] || lang;
+    const fileExtension = filePieces?.[filePieces.length - 1]
+    const fileLanguage = languageOfExtension(fileExtension) || lang;
 
     if (uriString in ServerStateHandler.state.dependencySources) {
         return ServerStateHandler.get.updateAsync(state => {

@@ -20,6 +20,7 @@ val sparkHome: SettingKey[String] = settingKey("Location of specific Spark insta
 val versions = new {
   val coursier   = "2.0.0-RC5-6"
   val zio        = "1.0.11"
+  val javaparser = "3.25.5"
 }
 
 
@@ -189,6 +190,8 @@ val `polynote-kernel` = project.settings(
     "io.circe" %% "circe-generic-extras" % circeVersion.value,
     "io.circe" %% "circe-parser" % circeVersion.value,
     "net.sf.py4j" % "py4j" % "0.10.7",
+    "com.github.javaparser" % "javaparser-core" % versions.javaparser,
+    "com.github.javaparser" % "javaparser-symbol-solver-core" % versions.javaparser,
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
   distFiles := Seq(assembly.value) ++ (Compile / dependencyClasspath).value.collect {

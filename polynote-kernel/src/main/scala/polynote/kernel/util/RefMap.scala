@@ -76,6 +76,10 @@ class RefMap[K, V] private (
     case Right(ref) => ref.get
   })
 
+  def entries: UIO[List[(K, V)]] = ZIO.collectAll(underlying.asScala.toList.collect {
+    case (key, Right(ref)) => ref.get.map(value => (key, value))
+  })
+
   def isEmpty: UIO[Boolean] = ZIO.effectTotal(underlying.isEmpty)
 }
 
