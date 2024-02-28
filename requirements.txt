@@ -4,4 +4,4 @@ nbconvert
 numpy
 pandas==1.2.5
 jedi>=0.18.1
-jep==4.1.1 # https://github.com/polynote/polynote/issues/1428
+jep==4.2.0 # https://github.com/polynote/polynote/issues/1428

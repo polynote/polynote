@@ -139,7 +139,7 @@ lazy val `polynote-runtime` = project.settings(
     "-language:experimental.macros"
   ),
   libraryDependencies ++= Seq(
-    "black.ninia" % "jep" % "4.0.0",
+    "black.ninia" % "jep" % "4.2.0",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
   ),
   distFiles := Seq(assembly.value)
