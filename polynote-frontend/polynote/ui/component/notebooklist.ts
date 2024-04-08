@@ -234,7 +234,7 @@ export class NotebookList extends Disposable {
         this.header = h2(['ui-panel-header', 'notebooks-list-header'], [
             'Notebooks',
             span(['left-buttons'], [
-                helpIconButton([], "https://polynote.org/latest/docs/notebooks-list/"),
+                helpIconButton([], "https://polynote.org/docs/notebooks-list/"),
             ]),
             span(['right-buttons'], [
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
