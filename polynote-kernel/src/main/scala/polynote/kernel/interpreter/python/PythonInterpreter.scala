@@ -28,7 +28,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths, StandardOpenOption}
 import java.util
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.{Executors, ThreadFactory}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet, Executors, ThreadFactory}
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 import scala.reflect.{ClassTag, classTag}
@@ -45,6 +45,8 @@ class PythonInterpreter private[python] (
   venvPath: Option[Path]
 ) extends Interpreter {
   import pyApi._
+
+  private val allowedSources = new ConcurrentSkipListSet[String]()
 
   protected val runner: PythonObject.Runner = new PythonObject.Runner {
     def run[T](task: => T): T = if (Thread.currentThread() eq jepThread.get()) {
@@ -243,15 +245,9 @@ class PythonInterpreter private[python] (
           Some(DefinitionLocation(path, line, column))
         else None
     }
+  }.tap {
+    locs => ZIO(locs.foreach(loc => allowedSources.add(loc.uri)))
   }
-
-  private def definitionSource(locations: List[DefinitionLocation]) = {
-    for {
-      firstLoc  <- ZIO(locations.headOption).someOrFailException
-      path      <- ZIO(Paths.get(firstLoc.uri.stripPrefix("python://")))
-      source    <- readFile(path)
-    } yield source
-  }.option
 
   // TODO: we probably need to write out prior code cells, and use the jedi Project (https://jedi.readthedocs.io/en/latest/docs/api.html#jedi.Project)
   //        to allow finding references to other cells. This will only find references that are external.
@@ -274,9 +270,8 @@ class PythonInterpreter private[python] (
   } yield locations
 
   override def getDependencyContent(uri: String): RIO[Blocking, String] = ZIO(new URI(uri)).flatMap {
-    // TODO: some better checking that it's OK to read this path. Maybe goToDefinition should keep track of
-    //        which locations it's reported, so we can restrict them? For now, at least check that it's a .py file
-    case uri if !uri.getPath.endsWith(".py") => ZIO.fail(new SecurityException(s""))
+    // check that the file is a python file, *and* it's previously been sent to the client as a definition location
+    case uri if !uri.getPath.endsWith(".py") || !allowedSources.contains(uri.getPath) => ZIO.fail(new SecurityException(s""))
     case uri => effectBlocking(Files.readAllLines(Paths.get(uri.getPath)).asScala.mkString("\n"))
   }
 

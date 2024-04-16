@@ -137,10 +137,10 @@ class LocalKernel private[kernel] (
           case Left(uri) =>
             val ext = uri.split('.').last
             val lookup = for {
-              interps   <- interpreters.values
-              interp    <- ZIO.succeed(interps.find(_.fileExtensions.contains(ext))).someOrFailException
-              locations <- interp.goToDependencyDefinition(uri, pos)
-            } yield locations.map(asDepURL(ext))
+              interps        <- interpreters.entries
+              (lang, interp) <- ZIO.succeed(interps.find(_._2.fileExtensions.contains(ext))).someOrFailException
+              locations      <- interp.goToDependencyDefinition(uri, pos)
+            } yield locations.map(asDepURL(lang))
             lookup.onError(Logging.error).catchAll(_ => ZIO.succeed(Nil))
         }
     }
