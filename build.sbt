@@ -91,10 +91,10 @@ val commonSettings = Seq(
     (assembly / assemblyOption).value.copy(includeScala = false)
   },
   assembly / assemblyShadeRules := Seq(
-    ShadeRule.rename("cats.**" -> "shaded.cats.@1").inAll,
-    ShadeRule.rename("dev.zio.**" -> "shaded.dev.zio.@1").inAll,
-    ShadeRule.rename("io.circe.**" -> "shaded.io.circe.@1").inAll,
-    ShadeRule.rename("org.scodec.**" -> "shaded.org.scodec.@1").inAll,
+    ShadeRule.rename("cats.**" -> "polynote.shaded.cats.@1").inAll,
+    ShadeRule.rename("dev.zio.**" -> "polynote.shaded.dev.zio.@1").inAll,
+    ShadeRule.rename("io.circe.**" -> "polynote.shaded.io.circe.@1").inAll,
+    ShadeRule.rename("org.scodec.**" -> "polynote.shaded.org.scodec.@1").inAll,
   ),
   Global / cancelable := true,
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
