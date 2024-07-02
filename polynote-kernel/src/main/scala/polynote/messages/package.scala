@@ -1,13 +1,12 @@
 package polynote
 
 import java.nio.charset.StandardCharsets
-
 import cats.data.Ior
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 import scodec.{Attempt, Codec, DecodeResult, SizeBound, codecs}
 import scodec.bits.{BitVector, ByteVector}
-import codecs.{byte, int32, listOfN, string, uint16, uint32, uint8, variableSizeBytes, provide}
-
+import codecs.{byte, int32, listOfN, provide, string, uint16, uint32, uint8, variableSizeBytes}
+import polynote.messages.ShortMap
 import shapeless.Lazy
 import shapeless.tag.@@
 
@@ -148,9 +147,6 @@ package object messages {
   implicit def shortMapCodec[A, B](implicit ca: Lazy[Codec[A]], cb: Lazy[Codec[B]]): Codec[ShortMap[A, B]] =
     listOfN(uint16, ca.value ~ cb.value).xmap(l => ShortMap(l.toMap), m => m.toList)
 
-  implicit def shortMapEncoder[A, B](implicit enc: Encoder[Map[A, B]]): Encoder[ShortMap[A, B]] = enc.contramap(m => m)
-  implicit def shortMapDecoder[A, B](implicit dec: Decoder[Map[A, B]]): Decoder[ShortMap[A, B]] = dec.map(m => ShortMap(m))
-
   // refined ByteVector type, to encode it with a 32-bit length frame
   // assumption: We will never be sending ByteVectors of more than 4GB over the wire!
   type ByteVector32 = ByteVector @@ ShortTag
@@ -186,4 +182,9 @@ package object messages {
         def sizeBound: SizeBound = (aCodec.sizeBound * len) + SizeBound(32, None)
       }
     }.xmap(_._2, arr => arr.length -> arr)
+}
+
+object ShortMapImplicits {
+  implicit def shortMapEncoder[A, B](implicit enc: Encoder[Map[A, B]]): Encoder[ShortMap[A, B]] = enc.contramap(m => m)
+  implicit def shortMapDecoder[A, B](implicit dec: Decoder[Map[A, B]]): Decoder[ShortMap[A, B]] = dec.map(m => ShortMap(m))
 }

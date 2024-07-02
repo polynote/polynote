@@ -93,7 +93,6 @@ val commonSettings = Seq(
   assembly / assemblyShadeRules := Seq(
     ShadeRule.rename("cats.**" -> "polynote.shaded.cats.@1").inAll,
     ShadeRule.rename("dev.zio.**" -> "polynote.shaded.dev.zio.@1").inAll,
-    ShadeRule.rename("io.circe.**" -> "polynote.shaded.io.circe.@1").inAll,
     ShadeRule.rename("org.scodec.**" -> "polynote.shaded.org.scodec.@1").inAll,
   ),
   Global / cancelable := true,
@@ -120,14 +119,12 @@ val commonSettings = Seq(
   assembly / test := {},
   circeVersion := {
     scalaBinaryVersion.value match {
-      case "2.13" | "2.12" => "0.12.2"
-      case "2.11"          => "0.12.0-M3"
+      case "2.13" | "2.12" => "0.14.1"
     }
   },
   circeYamlVersion := {
     scalaBinaryVersion.value match {
-      case "2.13" | "2.12" => "0.12.0"
-      case "2.11"          => "0.11.0-M1"
+      case "2.13" | "2.12" => "0.14.1"
     }
   }
 )

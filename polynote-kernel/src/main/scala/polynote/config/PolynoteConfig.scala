@@ -169,6 +169,8 @@ final case class ScalaVersionConfig(
 )
 
 object ScalaVersionConfig {
+  import polynote.ShortMapImplicits._
+
   implicit val encoder: Encoder.AsObject[ScalaVersionConfig] = deriveEncoder
   implicit val decoder: Decoder[ScalaVersionConfig] = deriveDecoder
 }
@@ -182,6 +184,8 @@ final case class SparkPropertySet(
 )
 
 object SparkPropertySet {
+  import polynote.ShortMapImplicits._
+
   implicit val decoder: Decoder[SparkPropertySet] = deriveConfigDecoder
   implicit val encoder: Encoder[SparkPropertySet] = deriveEncoder
   private implicit val patternCodec: Codec[Pattern] = utf8_32.exmap(str => Attempt.fromTry(Try(Pattern.compile(str))), pat => Attempt.fromTry(Try(pat.pattern())))

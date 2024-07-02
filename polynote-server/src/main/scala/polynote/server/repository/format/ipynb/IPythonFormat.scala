@@ -24,6 +24,6 @@ class IPythonFormat extends NotebookFormat {
 
   override def encodeNotebook(nb: NotebookContent): RIO[Any, String] = for {
     ipynb <- ZIO(JupyterNotebook.fromNotebook(nb))
-  } yield Printer.spaces2.copy(dropNullValues = true).pretty(ipynb.asJson)
+  } yield Printer.spaces2.copy(dropNullValues = true).print(ipynb.asJson)
 }
 
