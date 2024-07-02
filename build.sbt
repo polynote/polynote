@@ -90,6 +90,12 @@ val commonSettings = Seq(
   assembly / assemblyOption := {
     (assembly / assemblyOption).value.copy(includeScala = false)
   },
+  assembly / assemblyShadeRules := Seq(
+    ShadeRule.rename("cats.**" -> "shaded.cats.@1").inAll,
+    ShadeRule.rename("dev.zio.**" -> "shaded.dev.zio.@1").inAll,
+    ShadeRule.rename("io.circe.**" -> "shaded.io.circe.@1").inAll,
+    ShadeRule.rename("org.scodec.**" -> "shaded.org.scodec.@1").inAll,
+  ),
   Global / cancelable := true,
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
   buildUI := {
