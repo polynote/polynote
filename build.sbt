@@ -88,7 +88,7 @@ val commonSettings = Seq(
       oldStrategy(x)
   },
   assembly / assemblyOption := {
-    (assembly / assemblyOption).value.copy(includeScala = false)
+    (assembly / assemblyOption).value.withIncludeScala(false)
   },
   assembly / assemblyShadeRules := Seq(
     ShadeRule.rename("cats.**" -> "polynote.shaded.cats.@1").inAll,
@@ -348,9 +348,9 @@ lazy val `polynote-spark` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   ),
   assembly / assemblyOption := {
-    (assembly / assemblyOption).value.copy(
-      includeScala = false,
-      prependShellScript = Some(
+    (assembly / assemblyOption).value
+      .withIncludeScala(false)
+      .withPrependShellScript(Some(
         IO.read(file(".") / "scripts/polynote").linesIterator.toSeq
       ))
   },
