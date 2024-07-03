@@ -83,6 +83,7 @@ val commonSettings = Seq(
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case PathList("coursier", "shaded", xs @ _*) => MergeStrategy.first // coursier shades some of the same classes. assembly somehow can't dedupe even though they seem identical to me.
     case PathList(_, "BuildInfo$.class") => MergeStrategy.discard
+    case x if x.endsWith("module-info.class") => MergeStrategy.discard
     case x =>
       val oldStrategy = (assembly / assemblyMergeStrategy).value
       oldStrategy(x)
