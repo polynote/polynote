@@ -180,7 +180,7 @@ final case class JupyterCell(
 )
 
 object JupyterCell {
-  implicit val encoder: ObjectEncoder[JupyterCell] = deriveEncoder[JupyterCell].contramapObject[JupyterCell] {
+  implicit val encoder: Encoder[JupyterCell] = deriveEncoder[JupyterCell].contramapObject[JupyterCell] {
     cell =>
       if (cell.metadata.isEmpty)
         cell.copy(metadata = Some(cell.language.map(lang => JsonObject.singleton("language", lang.asJson)).getOrElse(JsonObject.empty)))
