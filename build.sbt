@@ -88,7 +88,7 @@ val commonSettings = Seq(
       oldStrategy(x)
   },
   assembly / assemblyOption := {
-    (assembly / assemblyOption).value.copy(includeScala = false)
+    (assembly / assemblyOption).value.withIncludeScala(false)
   },
   Global / cancelable := true,
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
@@ -330,9 +330,9 @@ lazy val `polynote-spark` = project.settings(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   ),
   assembly / assemblyOption := {
-    (assembly / assemblyOption).value.copy(
-      includeScala = false,
-      prependShellScript = Some(
+    (assembly / assemblyOption).value
+      .withIncludeScala(false)
+      .withPrependShellScript(Some(
         IO.read(file(".") / "scripts/polynote").linesIterator.toSeq
       ))
   },
