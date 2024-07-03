@@ -1173,7 +1173,7 @@ object VirtualEnvFetcher {
               val parseConfig = effectBlocking(new FileReader(configFile)).bracketAuto {
                 reader =>
                   ZIO.fromEither {
-                    yaml.parser.parse(reader).flatMap(_.as[PythonDepConfig])
+                    yaml.Parser.default.parse(reader).flatMap(_.as[PythonDepConfig])
                   }
               }
 

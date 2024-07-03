@@ -12,7 +12,7 @@ import io.circe._
 import polynote.kernel.{BaseEnv, TaskB}
 import polynote.kernel.environment.Config
 import polynote.kernel.logging.Logging
-import polynote.messages.{ShortMap, ShortString}
+import polynote.messages.{ShortMap, ShortString, shortMapEncoder}
 import scodec.{Attempt, Codec}
 import scodec.codecs.implicits._
 import scodec.codecs.utf8_32
@@ -283,7 +283,7 @@ object PolynoteConfig {
     effectBlocking(file.exists()).flatMap {
       case true => effectBlocking(new FileReader(file)).bracketAuto {
         reader => ZIO.fromEither {
-          yaml.parser.parse(reader).flatMap {
+          yaml.Parser.default.parse(reader).flatMap {
             case json if json.isBoolean => Right(Json.fromJsonObject(JsonObject.empty))
             case json if json.isObject  => Right(json)
             case json => Left(DecodingFailure(s"Invalid configuration; expected properties but found $json", Nil))
