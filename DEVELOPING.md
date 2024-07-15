@@ -21,7 +21,13 @@ outlined under [Dependencies](#dependencies) prior to attempting to build from
 ```
 cd polynote-frontend
 npm install
-npm run dist
+npm run build
+```
+
+- Return to the root directory
+
+```
+cd ..
 ```
 
 - Build the distribution
