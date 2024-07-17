@@ -431,7 +431,14 @@ class NewComment extends Disposable {
                 evt.preventDefault();
                 doCreate()
             }),
-            button(['cancel'], {}, ['Cancel']).mousedown(() => {hide ? hide() : controls.classList.add("hide")})
+            button(['cancel'], {}, ['Cancel']).mousedown(() => {
+                if (!hide) {
+                    controls.classList.add("hide");
+                    this.text.value = "";
+                    return;
+                }
+                hide(); 
+            })
         ])
         this.text = textarea(['comment-text'], '', '')
             .listener('keydown', (evt: KeyboardEvent) => {
