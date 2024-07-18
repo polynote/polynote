@@ -387,7 +387,7 @@ class CommentButton extends MonacoRightGutterOverlay{
 
             this.clicked = true;
 
-            const newComment = new NewComment(commentsState, () => range)
+            const newComment = new NewComment(commentsState, () => range, this.hide.bind(this))
             newComment.display(this)
                 .then(() => this.hide())
         });
@@ -407,8 +407,8 @@ class NewComment extends Disposable {
     text: TagElement<"textarea">;
 
     constructor(readonly commentsState: StateHandler<Record<string, CellComment>>,
-                readonly range: () => PosRange) {
-
+        readonly range: () => PosRange,
+        readonly hide?: () => void) {
         super()
         this.currentIdentity = ServerStateHandler.state.identity;
 
@@ -431,7 +431,14 @@ class NewComment extends Disposable {
                 evt.preventDefault();
                 doCreate()
             }),
-            button(['cancel'], {}, ['Cancel']).mousedown(() => controls.classList.add("hide"))
+            button(['cancel'], {}, ['Cancel']).mousedown(() => {
+                if (!hide) {
+                    controls.classList.add("hide");
+                    this.text.value = "";
+                    return;
+                }
+                hide(); 
+            })
         ])
         this.text = textarea(['comment-text'], '', '')
             .listener('keydown', (evt: KeyboardEvent) => {
