@@ -349,7 +349,7 @@ final case class Comment(
 )
 
 object Comment {
-  implicit val encoder: Encoder[Comment] = deriveEncoder
+  implicit val encoder: Encoder.AsObject[Comment] = deriveEncoder
   implicit val decoder: Decoder[Comment] = deriveDecoder
 }
 

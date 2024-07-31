@@ -64,8 +64,8 @@ object JupyterOutput {
   import io.circe.generic.extras, extras.Configuration
   implicit val conf: Configuration = Configuration.default.withDiscriminator("output_type").withSnakeCaseConstructorNames.withSnakeCaseMemberNames
 
-  implicit val encoder: Encoder[JupyterOutput] = extras.semiauto.deriveEncoder[JupyterOutput]
-  implicit val decoder: Decoder[JupyterOutput] = extras.semiauto.deriveDecoder[JupyterOutput]
+  implicit val encoder: Encoder[JupyterOutput] = extras.semiauto.deriveConfiguredEncoder[JupyterOutput]
+  implicit val decoder: Decoder[JupyterOutput] = extras.semiauto.deriveConfiguredDecoder[JupyterOutput]
 
   def toResult(cellId: CellID)(result: JupyterOutput): Result = {
     def jsonToStr(json: Json): String = json.fold("", _.toString, _.toString, _.toString, _.map(jsonToStr).mkString, _.toString)
@@ -180,7 +180,7 @@ final case class JupyterCell(
 )
 
 object JupyterCell {
-  implicit val encoder: Encoder[JupyterCell] = deriveEncoder[JupyterCell].contramapObject[JupyterCell] {
+  implicit val encoder: Encoder.AsObject[JupyterCell] = deriveEncoder[JupyterCell].contramapObject[JupyterCell] {
     cell =>
       if (cell.metadata.isEmpty)
         cell.copy(metadata = Some(cell.language.map(lang => JsonObject.singleton("language", lang.asJson)).getOrElse(JsonObject.empty)))

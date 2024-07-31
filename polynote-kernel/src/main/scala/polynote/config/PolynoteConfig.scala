@@ -6,7 +6,7 @@ import java.nio.file.Path
 import java.util.UUID
 import java.util.regex.Pattern
 import cats.syntax.either._
-import io.circe.generic.extras.semiauto._
+import io.circe.generic.extras.semiauto.{deriveConfiguredEncoder, deriveConfiguredDecoder}
 import io.circe.syntax._
 import io.circe._
 import polynote.kernel.{BaseEnv, TaskB}
@@ -31,15 +31,15 @@ final case class Listen(
 }
 
 object Listen {
-  implicit val encoder: Encoder.AsObject[Listen] = deriveEncoder
-  implicit val decoder: Decoder[Listen] = deriveConfigDecoder
+  implicit val encoder: Encoder.AsObject[Listen] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Listen] = deriveConfiguredDecoder
 }
 
 final case class Mount(dir: String, mounts: Map[String, Mount] = Map.empty)
 
 object Mount {
-  implicit val encoder: Encoder.AsObject[Mount] = deriveEncoder
-  implicit val decoder: Decoder[Mount] = deriveConfigDecoder[Mount]
+  implicit val encoder: Encoder.AsObject[Mount] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Mount] = deriveConfiguredDecoder[Mount]
 }
 
 final case class KernelConfig(
@@ -61,8 +61,8 @@ object KernelConfig {
     portRange.start + ":" + portRange.end
   }
 
-  implicit val encoder: Encoder.AsObject[KernelConfig] = deriveEncoder
-  implicit val decoder: Decoder[KernelConfig] = deriveConfigDecoder[KernelConfig]
+  implicit val encoder: Encoder.AsObject[KernelConfig] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[KernelConfig] = deriveConfiguredDecoder[KernelConfig]
 }
 
 final case class Wal(
@@ -70,8 +70,8 @@ final case class Wal(
 )
 
 object Wal {
-  implicit val encoder: Encoder.AsObject[Wal] = deriveEncoder
-  implicit val decoder: Decoder[Wal] = deriveConfigDecoder[Wal]
+  implicit val encoder: Encoder.AsObject[Wal] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Wal] = deriveConfiguredDecoder[Wal]
 }
 
 final case class Storage(
@@ -82,8 +82,8 @@ final case class Storage(
 )
 
 object Storage {
-  implicit val encoder: Encoder.AsObject[Storage] = deriveEncoder
-  implicit val decoder: Decoder[Storage] = deriveConfigDecoder[Storage]
+  implicit val encoder: Encoder.AsObject[Storage] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Storage] = deriveConfiguredDecoder[Storage]
 }
 
 sealed trait KernelIsolation
@@ -118,15 +118,15 @@ final case class Behavior(
 }
 
 object Behavior {
-  implicit val encoder: Encoder.AsObject[Behavior] = deriveEncoder
-  implicit val decoder: Decoder[Behavior] = deriveConfigDecoder
+  implicit val encoder: Encoder.AsObject[Behavior] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Behavior] = deriveConfiguredDecoder
 }
 
 final case class AuthProvider(provider: String, config: JsonObject)
 
 object AuthProvider {
-  implicit val encoder: Encoder.AsObject[AuthProvider] = deriveEncoder
-  implicit val decoder: Decoder[AuthProvider] = deriveConfigDecoder
+  implicit val encoder: Encoder.AsObject[AuthProvider] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[AuthProvider] = deriveConfiguredDecoder
 }
 
 final case class Security(
@@ -135,8 +135,8 @@ final case class Security(
 )
 
 object Security {
-  implicit val encoder: Encoder.AsObject[Security] = deriveEncoder
-  implicit val decoder: Decoder[Security] = deriveConfigDecoder
+  implicit val encoder: Encoder.AsObject[Security] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Security] = deriveConfiguredDecoder
 }
 
 final case class UI(
@@ -144,8 +144,8 @@ final case class UI(
 )
 
 object UI {
-  implicit val encoder: Encoder.AsObject[UI] = deriveEncoder
-  implicit val decoder: Decoder[UI] = deriveDecoder
+  implicit val encoder: Encoder.AsObject[UI] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[UI] = deriveConfiguredDecoder
 }
 
 case class Credentials(
@@ -154,12 +154,12 @@ case class Credentials(
 object Credentials {
   final case class Coursier(path: String)
   object Coursier {
-    implicit val encoder: Encoder.AsObject[Coursier] = deriveEncoder
-    implicit val decoder: Decoder[Coursier] = deriveDecoder
+    implicit val encoder: Encoder.AsObject[Coursier] = deriveConfiguredEncoder
+    implicit val decoder: Decoder[Coursier] = deriveConfiguredDecoder
   }
 
-  implicit val encoder: Encoder.AsObject[Credentials] = deriveEncoder
-  implicit val decoder: Decoder[Credentials] = deriveDecoder
+  implicit val encoder: Encoder.AsObject[Credentials] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Credentials] = deriveConfiguredDecoder
 }
 
 final case class ScalaVersionConfig(
@@ -169,8 +169,8 @@ final case class ScalaVersionConfig(
 )
 
 object ScalaVersionConfig {
-  implicit val encoder: Encoder.AsObject[ScalaVersionConfig] = deriveEncoder
-  implicit val decoder: Decoder[ScalaVersionConfig] = deriveDecoder
+  implicit val encoder: Encoder.AsObject[ScalaVersionConfig] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[ScalaVersionConfig] = deriveConfiguredDecoder
 }
 
 final case class SparkPropertySet(
@@ -182,8 +182,8 @@ final case class SparkPropertySet(
 )
 
 object SparkPropertySet {
-  implicit val decoder: Decoder[SparkPropertySet] = deriveConfigDecoder
-  implicit val encoder: Encoder[SparkPropertySet] = deriveEncoder
+  implicit val decoder: Decoder[SparkPropertySet] = deriveConfiguredDecoder
+  implicit val encoder: Encoder[SparkPropertySet] = deriveConfiguredEncoder
   private implicit val patternCodec: Codec[Pattern] = utf8_32.exmap(str => Attempt.fromTry(Try(Pattern.compile(str))), pat => Attempt.fromTry(Try(pat.pattern())))
   implicit val codec: Codec[SparkPropertySet] = cachedImplicit[Codec[SparkPropertySet]]
 }
@@ -194,8 +194,8 @@ final case class PySparkConfig(
 )
 
 object PySparkConfig {
-  implicit val encoder: Encoder.AsObject[PySparkConfig] = deriveEncoder
-  implicit val decoder: Decoder[PySparkConfig] = deriveDecoder
+  implicit val encoder: Encoder.AsObject[PySparkConfig] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[PySparkConfig] = deriveConfiguredDecoder
 }
 
 final case class SparkConfig(
@@ -220,12 +220,12 @@ object SparkConfig {
   def toMap(config: SparkConfig): Map[String, String] = config.properties ++ config.sparkSubmitArgs.toList.map("sparkSubmitArgs" -> _).toMap
 
   private val legacyDecoder: Decoder[SparkConfig] = mapStringStringDecoder.map(fromMap)
-  private val newDecoder: Decoder[SparkConfig] = deriveConfigDecoder
+  private val newDecoder: Decoder[SparkConfig] = deriveConfiguredDecoder
   implicit val decoder: Decoder[SparkConfig] = Decoder.decodeJsonObject.flatMap {
     case obj if obj.contains("properties") || obj.contains("spark_submit_args") || obj.contains("dist_classpath_filter") || obj.contains("property_sets") => newDecoder
     case _ => legacyDecoder
   }
-  implicit val encoder: Encoder[SparkConfig] = deriveEncoder
+  implicit val encoder: Encoder[SparkConfig] = deriveConfiguredEncoder
 }
 
 final case class StaticConfig(
@@ -234,8 +234,8 @@ final case class StaticConfig(
 )
 
 object StaticConfig {
-  implicit val encoder: Encoder[StaticConfig] = deriveEncoder
-  implicit val decoder: Decoder[StaticConfig] = deriveDecoder
+  implicit val encoder: Encoder[StaticConfig] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[StaticConfig] = deriveConfiguredDecoder
 }
 
 final case class Log(
@@ -243,8 +243,8 @@ final case class Log(
 )
 
 object Log {
-  implicit val encoder: Encoder.AsObject[Log] = deriveEncoder
-  implicit val decoder: Decoder[Log] = deriveDecoder
+  implicit val encoder: Encoder.AsObject[Log] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[Log] = deriveConfiguredDecoder
 }
 
 final case class PolynoteConfig(
@@ -268,8 +268,8 @@ final case class PolynoteConfig(
 
 
 object PolynoteConfig {
-  implicit val encoder: Encoder.AsObject[PolynoteConfig] = deriveEncoder
-  implicit val decoder: Decoder[PolynoteConfig] = deriveConfigDecoder[PolynoteConfig]
+  implicit val encoder: Encoder.AsObject[PolynoteConfig] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[PolynoteConfig] = deriveConfiguredDecoder[PolynoteConfig]
 
   private val defaultConfig = "default.yml" // we expect this to be in the directory Polynote was launched from.
 

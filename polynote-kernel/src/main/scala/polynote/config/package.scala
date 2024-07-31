@@ -9,7 +9,7 @@ import io.circe.{CursorOp, Decoder, DecodingFailure, Encoder, HCursor, Json}
 import polynote.messages.{ShortList, ShortMap, TinyString}
 import scodec.codecs.{Discriminated, Discriminator, byte}
 import io.circe.generic.extras.{Configuration, JsonKey}
-import io.circe.generic.extras.semiauto._
+import io.circe.generic.extras.semiauto.{deriveConfiguredDecoder, deriveConfiguredEncoder}
 import cats.syntax.traverse._
 import cats.syntax.either._
 import cats.instances.list._
@@ -63,8 +63,8 @@ package object config {
   object RepositoryConfig {
 
     implicit val discriminated: Discriminated[RepositoryConfig, Byte] = Discriminated(byte)
-    implicit val encoder: Encoder.AsObject[RepositoryConfig] = deriveEncoder
-    implicit val decoder: Decoder[RepositoryConfig] = deriveDecoder
+    implicit val encoder: Encoder.AsObject[RepositoryConfig] = deriveConfiguredEncoder
+    implicit val decoder: Decoder[RepositoryConfig] = deriveConfiguredDecoder
   }
 
   implicit val circeConfig: Configuration =
@@ -130,8 +130,6 @@ package object config {
       }
     }
   }
-
-  def deriveConfigDecoder[A](implicit decoder: Lazy[ValidatedConfigDecoder[A]]): Decoder[A] = decoder.value
 
   implicit val mapStringStringDecoder: Decoder[Map[String, String]] = Decoder[Map[String, Json]].emap {
     jsonMap => jsonMap.toList.map {
