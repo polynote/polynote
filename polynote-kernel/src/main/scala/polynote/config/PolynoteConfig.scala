@@ -199,7 +199,7 @@ object PySparkConfig {
 }
 
 final case class SparkConfig(
-  properties: Map[String, String],
+  properties: Map[String, String] = Map.empty,
   sparkSubmitArgs: Option[String] = None,
   distClasspathFilter: Option[Pattern] = None,
   propertySets: Option[List[SparkPropertySet]] = None,
