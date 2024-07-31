@@ -59,7 +59,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.6.0",
+  version := "0.6.1",
   publishTo := sonatypePublishToBundle.value,
   // disable scalaDoc generation because it's causing weird compiler errors and we don't use it anyways
   Compile / packageDoc / publishArtifact := false,
