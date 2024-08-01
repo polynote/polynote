@@ -13,31 +13,34 @@ outlined under [Dependencies](#dependencies) prior to attempting to build from
 - SBT
 - Node.js 13+
 - Python 3.7
+- Install Polynote's Python dependencies
 
-## Building
+  ```
+  pip install -r ./requirements.txt
+  ```
 
-- Build the frontend
+## Running for Development with IntelliJ
+
+
+### Configuring the Frontend:
+
 
 ```
 cd polynote-frontend
 npm install
-npm run dist
+npm run build
 ```
 
-- Build the distribution
+**Activate live frontend reloading:**
 
 ```
-sbt dist
+npm run watch
 ```
 
-# Running
 
-```
-cd target/dist/polynote
-./polynote.py
-```
+### Running from IntelliJ:
 
-# Running with IntelliJ
+
 To run your app using IntelliJ, navigate to `Run -> Edit Configuration` and create a new application configuration 
 performing the following steps:
 
@@ -49,7 +52,9 @@ performing the following steps:
 - Under 'Main Class', enter `polynote.Main` 
 - Under `Program Arguments`, enter `--watch`
 
-## Troubleshooting with IntelliJ 
+<hr/>
+
+#### Troubleshooting with IntelliJ:
 Occasionally, IntelliJ will not play nicely with your run configuration. Below is a list of common issues we've noticed - 
 please [submit an issue](https://github.com/polynote/polynote/issues/new/choose) if you encounter any other problems.
 
@@ -58,4 +63,35 @@ please [submit an issue](https://github.com/polynote/polynote/issues/new/choose)
 - Polynote crashes with a Fiber issue at runtime. 
   - This is most likely because IntelliJ sometimes creates its own run configuration depending on how you launch your
     application. To fix this, go to `Run` in your bottom bar and select `Modify Run Configuration` and apply the 
-    above settings. 
+    above settings.
+
+ <br/>
+
+## Building the Distribution
+
+Build the frontend:
+
+```
+cd polynote-frontend
+npm install
+npm run dist
+```
+
+Return to the root directory:
+
+```
+cd ..
+```
+
+Build the distribution:
+
+```
+sbt dist
+```
+
+### Running the Distribution
+
+```
+cd target/dist/polynote
+./polynote.py
+```
