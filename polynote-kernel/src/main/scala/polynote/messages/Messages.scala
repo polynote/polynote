@@ -1,7 +1,7 @@
 package polynote.messages
 
 import cats.syntax.either._
-import io.circe.{Decoder, Encoder, ObjectEncoder}
+import io.circe.{Decoder, Encoder}
 import polynote.kernel._
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
@@ -349,7 +349,7 @@ final case class Comment(
 )
 
 object Comment {
-  implicit val encoder: ObjectEncoder[Comment] = deriveEncoder
+  implicit val encoder: Encoder.AsObject[Comment] = deriveEncoder
   implicit val decoder: Decoder[Comment] = deriveDecoder
 }
 

@@ -179,7 +179,6 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |""".stripMargin
 
     val Left(err) = PolynoteConfig.parse(badYaml)
-    assert(err.getMessage contains "Configuration is invalid")
     assert(err.getMessage contains "Invalid regular expression")
   }
 

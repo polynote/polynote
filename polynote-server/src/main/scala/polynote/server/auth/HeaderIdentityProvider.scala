@@ -1,7 +1,8 @@
 package polynote.server.auth
-import io.circe.{Decoder, Json, JsonObject, ObjectEncoder}
-import io.circe.generic.extras.semiauto.{deriveDecoder, deriveEncoder}
-import uzhttp.{HTTPError, Request, Response}, HTTPError.Forbidden
+import io.circe.{Decoder, Encoder, Json, JsonObject}
+import io.circe.generic.extras.semiauto.{deriveConfiguredDecoder, deriveConfiguredEncoder}
+import uzhttp.{HTTPError, Request, Response}
+import HTTPError.Forbidden
 import polynote.kernel.{BaseEnv, environment}
 import zio.{RIO, ZIO}
 import polynote.config.circeConfig
@@ -36,8 +37,8 @@ case class HeaderIdentityProvider(
 }
 
 object HeaderIdentityProvider {
-  implicit val encoder: ObjectEncoder[HeaderIdentityProvider] = deriveEncoder
-  implicit val decoder: Decoder[HeaderIdentityProvider] = deriveDecoder
+  implicit val encoder: Encoder.AsObject[HeaderIdentityProvider] = deriveConfiguredEncoder
+  implicit val decoder: Decoder[HeaderIdentityProvider] = deriveConfiguredDecoder
 
   class Loader extends ProviderLoader {
     override val providerKey: String = "header"

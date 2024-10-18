@@ -41,7 +41,7 @@ lazy val nativeLibraryPath = {
 }
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
-val scalaVersions = Seq("2.11.12", "2.12.15", "2.13.6")
+val scalaVersions = Seq("2.12.15", "2.13.6")
 lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
@@ -59,7 +59,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.6.0",
+  version := "0.6.1",
   publishTo := sonatypePublishToBundle.value,
   // disable scalaDoc generation because it's causing weird compiler errors and we don't use it anyways
   Compile / packageDoc / publishArtifact := false,
@@ -83,6 +83,7 @@ val commonSettings = Seq(
     case PathList("META-INF", "CHANGES") => MergeStrategy.discard
     case PathList("coursier", "shaded", xs @ _*) => MergeStrategy.first // coursier shades some of the same classes. assembly somehow can't dedupe even though they seem identical to me.
     case PathList(_, "BuildInfo$.class") => MergeStrategy.discard
+    case x if x.endsWith("module-info.class") => MergeStrategy.discard
     case x =>
       val oldStrategy = (assembly / assemblyMergeStrategy).value
       oldStrategy(x)
@@ -112,18 +113,8 @@ val commonSettings = Seq(
   },
   scalacOptions += "-deprecation",
   assembly / test := {},
-  circeVersion := {
-    scalaBinaryVersion.value match {
-      case "2.13" | "2.12" => "0.12.2"
-      case "2.11"          => "0.12.0-M3"
-    }
-  },
-  circeYamlVersion := {
-    scalaBinaryVersion.value match {
-      case "2.13" | "2.12" => "0.12.0"
-      case "2.11"          => "0.11.0-M1"
-    }
-  }
+  circeVersion := "0.14.3",
+  circeYamlVersion := "0.15.2"
 )
 
 lazy val `polynote-macros` = project.settings(
@@ -219,7 +210,6 @@ val `polynote-server` = project.settings(
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
 val sparkVersions = Map(
-  "2.11" -> "2.1.1",
   "2.12" -> "3.1.2",
   "2.13" -> "3.2.1"
 )
@@ -230,7 +220,6 @@ val sparkVersions = Map(
 //    See https://issues.apache.org/jira/browse/SPARK-30683
 // To add to this list, download the tarball for the new version from the apache repo and run `sha512sum <file>.tgz`
 val sparkChecksums = Map(
-  "2.1.1" -> "4b6427ca6dc6f888b21bff9f9a354260af4a0699a1f43caabf58ae6030951ee5fa8b976497aa33de7e4ae55609d47a80bfe66dfc48c79ea28e3e5b03bdaaba11",
   "3.1.2" -> "ba47e074b2a641b23ee900d4e28260baa250e2410859d481b38f2ead888c30daea3683f505608870148cf40f76c357222a2773f1471e7342c622e93bf02479b7",
   "3.2.1" -> "2ec9f1cb65af5ee7657ca83a1abaca805612b8b3a1d8d9bb67e317106025c81ba8d44d82ad6fdb45bbe6caa768d449cd6a4945ec050ce9390f806f46c5cb1397"
 )
