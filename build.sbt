@@ -68,6 +68,7 @@ val commonSettings = Seq(
     Developer(id = "jonathanindig", name = "Jonathan Indig", email = "", url = url("https://github.com/jonathanindig")),
     Developer(id = "omidmogasemi", name = "Omid Mogasemi", email = "", url = url("https://github.com/omidmogasemi"))
   ),
+  javacOptions ++= Seq("-source", "8", "-target", "8"),
   scalacOptions ++= Seq(
     "-language:higherKinds",
     "-unchecked",
