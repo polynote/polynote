@@ -1,9 +1,8 @@
 package polynote.runtime
 
 import java.io.DataOutput
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.charset.StandardCharsets
-
 import scala.collection.GenTraversable
 import polynote.runtime.macros.StructDataEncoderMacros
 import polynote.runtime.util.stringPrefix
@@ -131,7 +130,7 @@ object DataEncoder extends DataEncoder0 {
   implicit val byteBuffer: DataEncoder[ByteBuffer] = sizedInstance[ByteBuffer](BinaryType, buf => buf.limit() + 4) {
     (out, bytes) =>
       val b = bytes.duplicate()
-      b.rewind()
+      (b:Buffer).rewind()
       out.writeInt(b.limit())
       val buf = new Array[Byte](1024)
       while (b.hasRemaining) {
@@ -217,7 +216,7 @@ object DataEncoder extends DataEncoder0 {
     case size if size >= 0 =>
       val buf = ByteBuffer.allocate(size)
       dataEncoder.encode(new BufferOutput(buf), value)
-      buf.rewind()
+      (buf:Buffer).rewind()
       buf
     case _ =>
       import java.io.{DataOutputStream, ByteArrayOutputStream}

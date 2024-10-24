@@ -1,6 +1,6 @@
 package polynote.kernel
 
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.util.concurrent.TimeUnit
 import polynote.kernel.Kernel.InterpreterNotStarted
 import polynote.kernel.dependency.CoursierFetcher
@@ -166,13 +166,13 @@ class LocalKernel private[kernel] (
       case Lazy =>
         for {
           handle <- ZIO.fromOption(LazyDataRepr.getHandle(handleId)).mapError(_ => new NoSuchElementException(s"Lazy#$handleId"))
-        } yield Array(ByteVector32(ByteVector(handle.data.rewind().asInstanceOf[ByteBuffer])))
+        } yield Array(ByteVector32(ByteVector((handle.data:Buffer).rewind().asInstanceOf[ByteBuffer])))
 
       case Updating =>
         for {
           handle <- ZIO.fromOption(UpdatingDataRepr.getHandle(handleId))
             .mapError(_ => new NoSuchElementException(s"Updating#$handleId"))
-        } yield handle.lastData.map(data => ByteVector32(ByteVector(data.rewind().asInstanceOf[ByteBuffer]))).toArray
+        } yield handle.lastData.map(data => ByteVector32(ByteVector((data:Buffer).rewind().asInstanceOf[ByteBuffer]))).toArray
 
       case Streaming => StreamingHandles.getStreamData(handleId, count)
     }

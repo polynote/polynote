@@ -3,7 +3,7 @@ package remote
 
 import java.io.{BufferedReader, File, InputStreamReader}
 import java.net.{BindException, InetSocketAddress}
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.channels.{ClosedChannelException, ServerSocketChannel, SocketChannel}
 import java.nio.file.{Path, Paths}
 import java.util.concurrent.{Semaphore, TimeUnit}
@@ -474,7 +474,7 @@ object SocketTransport {
     private val writeLock = new Semaphore(1)
 
     private def readBuffer(): Take[Nothing, Option[ByteBuffer]] = incomingLengthBuffer.synchronized {
-      incomingLengthBuffer.rewind()
+      (incomingLengthBuffer:Buffer).rewind()
       while(incomingLengthBuffer.hasRemaining) {
         if(socketChannel.read(incomingLengthBuffer) == -1) {
           return Take.end
@@ -492,7 +492,7 @@ object SocketTransport {
           socketChannel.read(msgBuffer)
         }
 
-        msgBuffer.rewind()
+        (msgBuffer:Buffer).rewind()
         Take.single(Some(msgBuffer))
       }
     }
@@ -520,7 +520,7 @@ object SocketTransport {
 
     // MUST SYNCHRONIZE on writeLock to invoke this!
     private def writeSize(size: Int) = {
-      outgoingLengthBuffer.rewind()
+      (outgoingLengthBuffer:Buffer).rewind()
       outgoingLengthBuffer.putInt(0, size)
       socketChannel.write(outgoingLengthBuffer)
     }

@@ -1,6 +1,6 @@
 package polynote
 
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.util.concurrent.ConcurrentHashMap
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, CurrentTask, PublishResult, PublishStatus}
 import polynote.kernel.interpreter.{Interpreter, InterpreterState}
@@ -116,7 +116,7 @@ package object kernel {
                 case None => for {
                   handle     <- ZIO.effectTotal(StreamingDataRepr.getHandle(handleId)).get.mapError(_ => new NoSuchElementException(s"Invalid streaming handle ID $handleId"))
                     iter       <- effectBlocking(handle.iterator)
-                    handleIter  = new HandleIterator(handleId, handle.iterator.map(buf => ByteVector32(ByteVector(buf.rewind().asInstanceOf[ByteBuffer]))))
+                    handleIter  = new HandleIterator(handleId, handle.iterator.map(buf => ByteVector32(ByteVector((buf:Buffer).rewind().asInstanceOf[ByteBuffer]))))
                     _          <- ZIO.effectTotal(streams.put(handleId, handleIter))
                     arr        <- takeElems(handleIter, count)
                 } yield arr

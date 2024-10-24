@@ -4,7 +4,7 @@ import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.runtime.{DoubleType, IntType, OptionalType, ReprsOf, StreamingDataRepr, StringType, StructField, StructType}
 
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.charset.StandardCharsets
 
 case class Example(label: String, i: Int, d: Double)
@@ -45,7 +45,7 @@ class SparkReprsOfSuite extends FreeSpec with Matchers {
         val result = representation(rows)
 
         def decode(buf: ByteBuffer) = {
-          buf.rewind()
+          (buf:Buffer).rewind()
           val present = buf.get()
           val label = if (present == 1) {
             val labelLength = buf.getInt()

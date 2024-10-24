@@ -9,6 +9,8 @@ import polynote.testing.InterpreterSpec
 import polynote.testing.kernel.MockEnv
 import shapeless.Witness
 
+import java.nio.Buffer
+
 class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
   val interpreter: PythonInterpreter = PythonInterpreter(None).provide(ScalaCompiler.Provider.of(compiler)).runIO()
   interpreter.init(State.Root).provideSomeLayer(MockEnv.init).runIO()
@@ -44,7 +46,7 @@ class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
               buf =>
                 val d = buf.getDouble()
                 val i = buf.getLong()
-                buf.rewind()
+                (buf:Buffer).rewind()
                 (d, i)
             }
 
@@ -106,7 +108,7 @@ class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
             val List(row1, row2) = handle2.iterator.map {
               buf =>
                 val struct = (buf.getLong(), (buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble()), buf.getDouble(), buf.getDouble())
-                buf.rewind()
+                (buf:Buffer).rewind()
                 struct
             }.toList
 

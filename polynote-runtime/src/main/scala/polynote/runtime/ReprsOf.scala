@@ -1,7 +1,7 @@
 package polynote.runtime
 
 import java.io.DataOutput
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.charset.StandardCharsets
 import polynote.runtime
 
@@ -51,7 +51,7 @@ object ReprsOf extends ExpandedScopeReprs {
         val buf = ByteBuffer.allocate(bytes.length + 4)
         buf.putInt(bytes.length)
         buf.put(bytes)
-        buf.rewind()
+        (buf:Buffer).rewind()
         buf
     }
 

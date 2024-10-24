@@ -1,7 +1,7 @@
 package polynote.kernel.util
 
 import java.io.{OutputStream, PrintStream}
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
 import polynote.kernel.{Output, Result}
@@ -27,10 +27,10 @@ class ResultOutputStream(publishSync: Result => Unit, rel: String, bufSize: Int 
         if (len > 0) {
           val b = ByteBuffer.allocate(buf.position())
           val arr = new Array[Byte](buf.position())
-          buf.rewind()
+          (buf:Buffer).rewind()
           buf.get(arr)
           publishSync(Output(contentType, new String(arr, StandardCharsets.UTF_8)))
-          buf.rewind()
+          (buf:Buffer).rewind()
         }
       }
     }

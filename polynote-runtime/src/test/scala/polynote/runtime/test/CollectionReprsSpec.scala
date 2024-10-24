@@ -1,9 +1,8 @@
 package polynote.runtime.test
 
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
-
 import org.scalatest.{FreeSpec, Matchers}
 import polynote.runtime.{DataEncoder, GroupAgg, ReprsOf, StreamingDataRepr}
 
@@ -20,7 +19,7 @@ class CollectionReprsSpec extends FreeSpec with Matchers {
         val Right(h1) = h.modify(List(GroupAgg(List("label"), List("i" -> "mean", "d" -> "mean")))).right.map(_.apply(1))
 
         def decode(buf: ByteBuffer) = {
-          buf.rewind()
+          (buf:Buffer).rewind()
           val labelLength = buf.getInt()
           val labelArr = new Array[Byte](labelLength)
           buf.get(labelArr)
