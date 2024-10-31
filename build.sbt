@@ -68,10 +68,12 @@ val commonSettings = Seq(
     Developer(id = "jonathanindig", name = "Jonathan Indig", email = "", url = url("https://github.com/jonathanindig")),
     Developer(id = "omidmogasemi", name = "Omid Mogasemi", email = "", url = url("https://github.com/omidmogasemi"))
   ),
+  javacOptions ++= Seq("-source", "8", "-target", "8"),
   scalacOptions ++= Seq(
     "-language:higherKinds",
     "-unchecked",
-    "-target:jvm-1.8"
+    "-target:jvm-1.8",
+    "-release", "8"
   ) ++ (if (scalaBinaryVersion.value.startsWith("2.13")) Nil else Seq("-Ypartial-unification")),
   Test / fork := true,
   Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
