@@ -187,6 +187,7 @@ val `polynote-kernel` = project.settings(
     "com.github.javaparser" % "javaparser-symbol-solver-core" % versions.javaparser,
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
+  dependencyOverrides += "com.chuusai" %% "shapeless" % "2.3.2",
   distFiles := Seq(assembly.value) ++ (Compile / dependencyClasspath).value.collect {
     case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") => jar.data
   },
