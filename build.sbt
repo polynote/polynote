@@ -46,6 +46,8 @@ lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
 
+val shapelessVersion = Map("2.12" -> "2.3.2", "2.13" -> "2.3.3")
+
 val commonSettings = Seq(
   scalaVersion := "2.12.15",
   crossScalaVersions := scalaVersions,
@@ -187,7 +189,7 @@ val `polynote-kernel` = project.settings(
     "com.github.javaparser" % "javaparser-symbol-solver-core" % versions.javaparser,
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
-  dependencyOverrides += "com.chuusai" %% "shapeless" % "2.3.2",
+  dependencyOverrides += "com.chuusai" %% "shapeless" % shapelessVersion(scalaBinaryVersion.value),
   distFiles := Seq(assembly.value) ++ (Compile / dependencyClasspath).value.collect {
     case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") => jar.data
   },
