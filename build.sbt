@@ -62,6 +62,7 @@ val commonSettings = Seq(
     )
   ),
   version := "0.6.1",
+  dependencyOverrides += "com.chuusai" %% "shapeless" % shapelessVersion(scalaBinaryVersion.value),
   publishTo := sonatypePublishToBundle.value,
   // disable scalaDoc generation because it's causing weird compiler errors and we don't use it anyways
   Compile / packageDoc / publishArtifact := false,
@@ -189,7 +190,6 @@ val `polynote-kernel` = project.settings(
     "com.github.javaparser" % "javaparser-symbol-solver-core" % versions.javaparser,
     "org.scalamock" %% "scalamock" % "4.4.0" % "test"
   ),
-  dependencyOverrides += "com.chuusai" %% "shapeless" % shapelessVersion(scalaBinaryVersion.value),
   distFiles := Seq(assembly.value) ++ (Compile / dependencyClasspath).value.collect {
     case jar if jar.data.name.matches(".*scala-(library|reflect|compiler|collection-compat|xml).*") => jar.data
   },
