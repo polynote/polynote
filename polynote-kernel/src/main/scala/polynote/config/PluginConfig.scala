@@ -38,11 +38,11 @@ object PluginConfig {
     fromToString,
     fromToString,
     arr => Array(arr.map(fromJson)),
-    obj => Struct(obj.toMap.mapValues(fromJson))
+    obj => Struct(obj.toMap.mapValues(fromJson).toMap)
   )
 
   private[polynote] def fromJson(jsonObj: JsonObject): PluginConfig =
-    Struct(jsonObj.toMap.mapValues(fromJson))
+    Struct(jsonObj.toMap.mapValues(fromJson).toMap)
 
 
 }

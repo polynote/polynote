@@ -66,6 +66,6 @@ object HeaderIdentityProvider {
       })
     }.collect {
       case (str, Some(perms)) => (str, perms)
-    }
+    }.toMap
   }
 }
