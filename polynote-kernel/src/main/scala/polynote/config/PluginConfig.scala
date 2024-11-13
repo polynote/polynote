@@ -1,6 +1,6 @@
 package polynote.config
 
-import io.circe.Json
+import io.circe.{Json, JsonObject}
 
 sealed trait PluginConfig {
   import PluginConfig._
@@ -40,5 +40,9 @@ object PluginConfig {
     arr => Array(arr.map(fromJson)),
     obj => Struct(obj.toMap.mapValues(fromJson))
   )
+
+  private[polynote] def fromJson(jsonObj: JsonObject): PluginConfig =
+    Struct(jsonObj.toMap.mapValues(fromJson))
+
 
 }

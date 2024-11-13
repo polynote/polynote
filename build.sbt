@@ -73,8 +73,11 @@ val commonSettings = Seq(
     "-language:higherKinds",
     "-unchecked",
     "-target:jvm-1.8",
-    "-release", "8"
-  ) ++ (if (scalaBinaryVersion.value.startsWith("2.13")) Nil else Seq("-Ypartial-unification")),
+  ) ++ (
+    if (scalaBinaryVersion.value.startsWith("2.13")) Nil else Seq("-Ypartial-unification")
+  ) ++ (
+    if (sys.props.get("java.version").exists(_.startsWith("1.8"))) Nil else Seq("-release", "8")
+  ),
   Test / fork := true,
   Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
   libraryDependencies ++= Seq(
