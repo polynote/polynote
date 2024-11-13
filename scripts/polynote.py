@@ -19,7 +19,7 @@ if not os.environ.get('LD_LIBRARY_PATH'):
 else: 
     print("Using user-provided LD_LIBRARY_PATH")
 
-scala_version = os.environ.get('POLYNOTE_SCALA_VERSION', '2.11')
+scala_version = os.environ.get('POLYNOTE_SCALA_VERSION', '2.12')
 
 polynote_dir = os.path.dirname(os.path.realpath(__file__))
 os.chdir(polynote_dir)

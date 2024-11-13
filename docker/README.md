@@ -7,12 +7,12 @@ running `docker pull polynote/polynote:latest`.
 
 Every release of Polynote will publish four images:
 
-| Description                   | Tag name                                              |
-|-------------------------------|-------------------------------------------------------|
-|Base image with Scala 2.11     | `polynote/polynote:${POLYNOTE_VERSION}-2.11`          |
-|Base image with Scala 2.12     | `polynote/polynote:${POLYNOTE_VERSION}-2.12`          |
-|Spark 2.4 image with Scala 2.11| `polynote/polynote:${POLYNOTE_VERSION}-2.11-spark2.4` |
-|Spark 2.4 image with Scala 2.12| `polynote/polynote:${POLYNOTE_VERSION}-2.12-spark2.4` |
+| Description                     | Tag name                                              |
+|---------------------------------|-------------------------------------------------------|
+| Base image with Scala 2.12      | `polynote/polynote:${POLYNOTE_VERSION}-2.12`          |
+| Base image with Scala 2.13      | `polynote/polynote:${POLYNOTE_VERSION}-2.12`          |
+| Spark 2.4 image with Scala 2.12 | `polynote/polynote:${POLYNOTE_VERSION}-2.12-spark2.4` |
+| Spark 3 image with Scala 2.12   | `polynote/polynote:${POLYNOTE_VERSION}-2.12-spark3`   |
 
 Additionally, the `latest` tag is updated to point to `polynote/polynote:${POLYNOTE_VERSION}-2.11-spark2.4`. 
 

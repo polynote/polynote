@@ -114,7 +114,7 @@ object Rope {
 
   /** Creates a rope from a character array. */
   def apply(a: Array[Char]): Rope =
-    if (a == null || a.isEmpty) {
+    if (a == null || a.length == 0) {
       RopeEmpty
     } else if (a.length > thresh) {
       val (a1, a2) = a.splitAt(a.length / 2)
