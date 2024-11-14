@@ -46,6 +46,8 @@ lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
 
+val shapelessVersion = Map("2.12" -> "2.3.2", "2.13" -> "2.3.3")
+
 val commonSettings = Seq(
   scalaVersion := "2.12.15",
   crossScalaVersions := scalaVersions,
@@ -60,6 +62,7 @@ val commonSettings = Seq(
     )
   ),
   version := "0.6.1",
+  dependencyOverrides += "com.chuusai" %% "shapeless" % shapelessVersion(scalaBinaryVersion.value),
   publishTo := sonatypePublishToBundle.value,
   // disable scalaDoc generation because it's causing weird compiler errors and we don't use it anyways
   Compile / packageDoc / publishArtifact := false,
