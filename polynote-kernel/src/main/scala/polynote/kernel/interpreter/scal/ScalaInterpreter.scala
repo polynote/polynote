@@ -219,7 +219,11 @@ class ScalaInterpreter private[scal] (
     constructor   <- ZIO(cls.getDeclaredConstructors()(0))
     prevInstances  = collectPrevInstances(code, state)
     (nonImplicitInputs, implicitInputs) = partitionInputs(code, inputValues)
-    run            = cellThread.foldLeft(effectBlockingInterrupt(createInstance(constructor, prevInstances, nonImplicitInputs ++ implicitInputs)))(_.lock(_))
+    blockingService <- cellThread match {
+      case Some(exec) => ZIO.succeed(new Blocking.Service { def blockingExecutor = exec })
+      case None       => ZIO.service[Blocking.Service]
+    }
+    run            = blockingService.effectBlockingInterrupt(createInstance(constructor, prevInstances, nonImplicitInputs ++ implicitInputs))
     instance      <- run.catchSome {
       case err: InvocationTargetException if !(err.getCause eq err) && err.getCause != null => ZIO.fail(err.getCause)
     }
