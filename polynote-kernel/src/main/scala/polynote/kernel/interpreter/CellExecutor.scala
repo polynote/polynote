@@ -75,4 +75,16 @@ object CellExecutor {
       }.flatten
     }
 
+  def layer(classLoader: ClassLoader, parentBlockingExecutor: Executor): ZLayer[BaseEnv with InterpreterEnv, Throwable, Blocking] = ZLayer.fromEffect {
+    ZIO.mapN(PublishResult.access, ZIO.runtime[Any]) {
+      (publish, runtime) => new Blocking.Service {
+        override def blockingExecutor: Executor =
+          new CellExecutor(
+            result => runtime.unsafeRun(publish.publish(result)),
+            classLoader,
+            parentBlockingExecutor)
+      }
+    }
+  }
+
 }

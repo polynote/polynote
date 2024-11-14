@@ -11,7 +11,7 @@ import polynote.config.{PolynoteConfig, SparkConfig}
 import polynote.kernel.dependency.{Artifact, CoursierFetcher}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
-import polynote.kernel.interpreter.{Interpreter, InterpreterState, State}
+import polynote.kernel.interpreter.{CellExecutor, Interpreter, InterpreterState, State}
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import polynote.kernel.util.{RefMap, pathOf}
@@ -34,13 +34,16 @@ import scala.tools.nsc.io.Directory
 
 // TODO: this class may not even be necessary
 class LocalSparkKernel private[kernel] (
-  compilerProvider: ScalaCompiler,
+  scalaCompiler: ScalaCompiler,
   sparkSession: SparkSession,
+  executor: Executor,
   interpreterState: InterpreterState.Service,
   interpreters: RefMap[String, Interpreter],
   busyState: SubscriptionRef[KernelBusyState],
   closed: Promise[Throwable, Unit]
-) extends LocalKernel(compilerProvider, interpreterState, interpreters, busyState, closed) {
+) extends LocalKernel(scalaCompiler, interpreterState, interpreters, busyState, closed) {
+
+  override def cellExecutorLayer: ZLayer[BaseEnv with InterpreterEnv, Throwable, Blocking] = CellExecutor.layer(scalaCompiler.classLoader, executor)
 
   override def info(): TaskG[KernelInfo] = super.info().map {
     info => sparkSession.sparkContext.uiWebUrl match {
@@ -127,38 +130,39 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map {a => (a.url, a.file) }
     compiler         <- ScalaCompiler(Artifact(false, sparkRuntimeJar.toURI.toString, sparkRuntimeJar, None) :: scalaDeps, sparkClasspath, updateSettings _)
     classLoader       = compiler.classLoader
-    session          <- startSparkSession(sparkJars, classLoader)
+    executor         <- mkExecutor(classLoader)
+    session          <- startSparkSession(sparkJars, classLoader, executor)
     busyState        <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
     scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[BaseEnv with Config with TaskManager](ZLayer.succeed(compiler)))
     interpState      <- InterpreterState.access
     closed           <- Promise.make[Throwable, Unit]
-  } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)
+  } yield new LocalSparkKernel(compiler, session, executor, interpState, interpreters, busyState, closed)
 
-  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
+  /**
+    * We create a dedicated [[Executor]] for starting Spark, so that its context classloader can be fixed to the
+    * notebook's class loader. This is necessary so that classes defined by the notebook (and dependencies) can be
+    * found by Spark's serialization machinery.
+    */
+  private def mkExecutor(classLoader: ClassLoader): RIO[Blocking, Executor] = effectBlocking {
+    val threadFactory = new ThreadFactory {
+      def newThread(r: Runnable): Thread = {
+        val thread = new Thread(r)
+        thread.setName("Spark session")
+        thread.setDaemon(true)
+        thread.setContextClassLoader(classLoader)
+        thread
+      }
+    }
+
+    Executor.fromExecutionContext(2048)(ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor(threadFactory)))
+  }
+
+  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader, executor: Executor): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
 
     // TODO: config option for using downloaded deps vs. giving the urls
     //       for now we'll just give Spark the urls to the deps
     val jars = deps.map(_._1)
-
-    /**
-      * We create a dedicated [[Executor]] for starting Spark, so that its context classloader can be fixed to the
-      * notebook's class loader. This is necessary so that classes defined by the notebook (and dependencies) can be
-      * found by Spark's serialization machinery.
-      */
-    def mkExecutor(): RIO[Blocking, Executor] = effectBlocking {
-      val threadFactory = new ThreadFactory {
-        def newThread(r: Runnable): Thread = {
-          val thread = new Thread(r)
-          thread.setName("Spark session")
-          thread.setDaemon(true)
-          thread.setContextClassLoader(classLoader)
-          thread
-        }
-      }
-
-      Executor.fromExecutionContext(2048)(ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor(threadFactory)))
-    }
 
     def mkSpark(
       sparkConfig: Map[String, String],
@@ -182,7 +186,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
         .setIfMissing("spark.app.name", s"Polynote ${BuildInfo.version}: $notebookPath")
 
       org.apache.spark.repl.Main.createSparkSession()
-    }
+    }.lock(executor)
 
     /**
       *  If the session was already started by a different notebook, then it doesn't have our dependencies; inject them.
@@ -215,7 +219,6 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
         config             <- Config.access
         notebookConfig     <- CurrentNotebook.config
         path               <- CurrentNotebook.path
-        executor           <- mkExecutor()
         interpreterConfigs <- interpreterSparkConfigs
         serverConfigs       = config.spark.map(SparkConfig.toMap).getOrElse(Map.empty)
         notebookConfigs     = notebookConfig.sparkConfig.getOrElse(Map.empty)

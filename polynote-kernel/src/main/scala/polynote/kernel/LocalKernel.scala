@@ -31,6 +31,8 @@ class LocalKernel private[kernel] (
 
   def currentTime: ZIO[Clock, Nothing, Long] = ZIO.accessM[Clock](_.get.currentTime(TimeUnit.MILLISECONDS))
 
+  def cellExecutorLayer: ZLayer[BaseEnv with InterpreterEnv, Throwable, Blocking] = CellExecutor.layer(scalaCompiler.classLoader)
+
   override def queueCell(id: CellID): RIO[BaseEnv with GlobalEnv with CellEnv, Task[Unit]] = PublishStatus.access.flatMap {
     publishStatus =>
       val notifyCancelled = publishStatus.publish(CellStatusUpdate(id, Complete))
@@ -54,7 +56,7 @@ class LocalKernel private[kernel] (
               _             <- PublishResult(ExecutionInfo(startTime, None))
               _             <- CurrentNotebook.get
               initialState   = State.id(id, prevState)                                                                    // run the cell while capturing outputs
-              resultState   <- (interpreter.run(cell.content.toString, initialState).provideSomeLayer(CellExecutor.layer(scalaCompiler.classLoader)) >>= updateValues)
+              resultState   <- (interpreter.run(cell.content.toString, initialState).provideSomeLayer(cellExecutorLayer) >>= updateValues)
                 .ensuring(CurrentRuntime.access.flatMap(rt => ZIO.effectTotal(rt.clearExecutionStatus())))
               _             <- updateState(resultState)
               _             <- ZIO.collectAll_(resultState.values.map(PublishResult.apply))                              // publish the result values
