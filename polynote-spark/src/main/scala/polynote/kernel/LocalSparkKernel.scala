@@ -127,15 +127,15 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map {a => (a.url, a.file) }
     compiler         <- ScalaCompiler(Artifact(false, sparkRuntimeJar.toURI.toString, sparkRuntimeJar, None) :: scalaDeps, sparkClasspath, updateSettings _)
     classLoader       = compiler.classLoader
-    session          <- startSparkSession(sparkJars, classLoader)
+    (session, exec)  <- startSparkSession(sparkJars, classLoader)
     busyState        <- SubscriptionRef.make(KernelBusyState(busy = true, alive = true))
     interpreters     <- RefMap.empty[String, Interpreter]
-    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter().provideSomeLayer[BaseEnv with Config with TaskManager](ZLayer.succeed(compiler)))
+    scalaInterpreter <- interpreters.getOrCreate("scala")(ScalaSparkInterpreter(Some(exec)).provideSomeLayer[BaseEnv with Config with TaskManager](ZLayer.succeed(compiler)))
     interpState      <- InterpreterState.access
     closed           <- Promise.make[Throwable, Unit]
   } yield new LocalSparkKernel(compiler, session, interpState, interpreters, busyState, closed)
 
-  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): RIO[BaseEnv with GlobalEnv with CellEnv, SparkSession] = {
+  private def startSparkSession(deps: List[(String, File)], classLoader: ClassLoader): RIO[BaseEnv with GlobalEnv with CellEnv, (SparkSession, Executor)] = {
 
     // TODO: config option for using downloaded deps vs. giving the urls
     //       for now we'll just give Spark the urls to the deps
@@ -224,7 +224,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
         _                  <- ensureJars(session).lock(executor)
         _                  <- ZIO(SparkEnv.get.serializer.setDefaultClassLoader(classLoader)).lock(executor)
         _                  <- attachListener(session)
-      } yield session
+      } yield (session, executor)
     }
   }
 }

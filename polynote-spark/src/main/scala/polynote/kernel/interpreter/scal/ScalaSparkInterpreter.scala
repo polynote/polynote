@@ -6,13 +6,15 @@ import polynote.kernel.interpreter.{Interpreter, State}
 import polynote.kernel.task.TaskManager
 import zio.blocking.Blocking
 import zio.clock.Clock
+import zio.internal.Executor
 import zio.{RIO, ZIO}
 
 class ScalaSparkInterpreter private[scal] (
   compiler: ScalaCompiler,
   indexer: ClassIndexer,
-  scan: Option[SemanticDbScan]
-) extends ScalaInterpreter(compiler, indexer, scan) {
+  scan: Option[SemanticDbScan],
+  cellThread: Option[Executor] = None
+) extends ScalaInterpreter(compiler, indexer, scan, cellThread) {
   import scalaCompiler.global._
   override protected def transformCode(code: List[Tree]): List[Tree] =
     q"org.apache.spark.sql.catalyst.encoders.OuterScopes.addOuterScope(this)" :: super.transformCode(code)
@@ -36,11 +38,11 @@ object ScalaSparkInterpreter {
        |import org.apache.spark.sql.functions._
        |""".stripMargin
 
-  def apply(): RIO[ScalaCompiler.Provider with BaseEnv with Config with TaskManager, ScalaSparkInterpreter] = for {
+  def apply(cellThread: Option[Executor] = None): RIO[ScalaCompiler.Provider with BaseEnv with Config with TaskManager, ScalaSparkInterpreter] = for {
     compiler <- ScalaCompiler.access
     index    <- ClassIndexer.default
     scan     <- ScalaInterpreter.maybeScan(compiler)
-  } yield new ScalaSparkInterpreter(compiler, index, scan)
+  } yield new ScalaSparkInterpreter(compiler, index, scan, cellThread)
 
   object Factory extends ScalaInterpreter.Factory {
     override def apply(): RIO[BaseEnv with GlobalEnv with ScalaCompiler.Provider with CurrentNotebook with CurrentTask with TaskManager, ScalaSparkInterpreter] = ScalaSparkInterpreter()

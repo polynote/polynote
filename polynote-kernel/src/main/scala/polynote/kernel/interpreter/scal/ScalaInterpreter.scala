@@ -15,6 +15,7 @@ import polynote.kernel.environment.{Config, CurrentNotebook, CurrentRuntime, Cur
 import polynote.kernel.logging.Logging
 import polynote.kernel.task.TaskManager
 import zio.clock.Clock
+import zio.internal.Executor
 
 import java.net.URI
 import scala.reflect.io.FileZipArchive
@@ -22,7 +23,8 @@ import scala.reflect.io.FileZipArchive
 class ScalaInterpreter private[scal] (
   val scalaCompiler: ScalaCompiler,
   indexer: ClassIndexer,
-  scan: Option[SemanticDbScan]
+  scan: Option[SemanticDbScan],
+  cellThread: Option[Executor] = None
 ) extends Interpreter {
   import scalaCompiler.{CellCode, global, Imports}
   import global.{Tree, ValDef, TermName, Modifiers, EmptyTree, TypeTree, Import, Name, Type, Quasiquote, typeOf, atPos, NoType}
@@ -217,7 +219,8 @@ class ScalaInterpreter private[scal] (
     constructor   <- ZIO(cls.getDeclaredConstructors()(0))
     prevInstances  = collectPrevInstances(code, state)
     (nonImplicitInputs, implicitInputs) = partitionInputs(code, inputValues)
-    instance      <- effectBlockingInterrupt(createInstance(constructor, prevInstances, nonImplicitInputs ++ implicitInputs)).catchSome {
+    run            = cellThread.foldLeft(effectBlockingInterrupt(createInstance(constructor, prevInstances, nonImplicitInputs ++ implicitInputs)))(_.lock(_))
+    instance      <- run.catchSome {
       case err: InvocationTargetException if !(err.getCause eq err) && err.getCause != null => ZIO.fail(err.getCause)
     }
   } yield instance
