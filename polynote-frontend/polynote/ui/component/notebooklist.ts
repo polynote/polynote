@@ -15,7 +15,7 @@ import {
 import {ServerMessageDispatcher} from "../../messaging/dispatcher";
 import {deepCopy, diffArray, getHumanishDate} from "../../util/helpers";
 import {
-    Disposable,
+    Disposable, noUpdate,
     ObjectStateHandler,
     removeKey, setProperty, setValue,
     StateView,
@@ -222,6 +222,7 @@ export class NotebookList extends Disposable {
 
     private dragEnter: EventTarget | null;
     private tree: BranchEl;
+    private currentNotebook: string;
 
     constructor(readonly dispatcher: ServerMessageDispatcher) {
         super();
@@ -237,10 +238,14 @@ export class NotebookList extends Disposable {
                 helpIconButton([], "https://polynote.org/docs/notebooks-list/"),
             ]),
             span(['right-buttons'], [
+                iconButton(['highlight-notebook'], 'Find opened notebook', 'crosshairs', 'Highlight').click(evt => {
+                    evt.stopPropagation();
+                    this.tree.highlightPath(this.currentNotebook, 0);
+                }),
                 iconButton(['create-notebook'], 'Create new notebook', 'plus-circle', 'New').click(evt => {
                     evt.stopPropagation();
                     dispatcher.createNotebook()
-                }),
+                })
             ])
         ]);
 
@@ -248,9 +253,12 @@ export class NotebookList extends Disposable {
             fullPath: "",
             value: "",
             lastSaved: 0,
-            children: {}
+            children: {},
+            isOrHasCurrentNotebook: true
         });
         this.tree = new BranchEl(dispatcher, treeState);
+
+        this.currentNotebook = "";
 
         const updateSortPrefs = (prefs: NotebookListPrefs) => {
             NotebookListPrefsHandler.update(() => setValue(deepCopy(prefs)));
@@ -302,7 +310,7 @@ export class NotebookList extends Disposable {
             return newNotebooks => {
                 const [removed, added] = diffArray(oldPaths, Object.keys(newNotebooks));
 
-                added.forEach(path => treeState.addPath(path, 0));
+                added.forEach(path => treeState.addPath(path, 0, this.currentNotebook));
                 removed.forEach(path => treeState.removePath(path));
             }
         });
@@ -319,11 +327,18 @@ export class NotebookList extends Disposable {
 
                 added.forEach(path => {
                     treeState.removePath(path[0]);
-                    treeState.addPath(path[0], path[1]);
+                    treeState.addPath(path[0], path[1], this.currentNotebook);
                 });
                 removed.forEach(path => treeState.removePath(path));
             }
         });
+
+        serverStateHandler.view("currentNotebook").addObserver(notebookPath => {
+            if (notebookPath) {
+                this.currentNotebook = notebookPath;
+                treeState.updateCurrentNotebook(notebookPath);
+            }
+        }).disposeWith(this);
 
         // we're ready to request the notebooks list now!
         dispatcher.requestNotebookList()
@@ -352,7 +367,8 @@ export class NotebookList extends Disposable {
 export interface Leaf {
     fullPath: string,
     value: string,
-    lastSaved: number
+    lastSaved: number,
+    isOrHasCurrentNotebook: boolean
 }
 
 export interface Branch extends Leaf {
@@ -370,7 +386,7 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
         super(state);
     }
 
-    addPath(path: string, lastSaved: number) {
+    addPath(path: string, lastSaved: number, currentNotebook: string) {
         this.update(topState => {
             const pieces = path.split("/");
             const update: UpdatePartial<Branch> = {
@@ -392,6 +408,7 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
                 if (!currentState || !isBranch(currentState) || !currentState.children[piece]) {
                     currentUpdate.fullPath = currentPath;
                     currentUpdate.value = piece;
+                    currentUpdate.isOrHasCurrentNotebook = currentNotebook === path;
                     currentState = undefined;
                 } else {
                     currentState = currentState.children[piece];
@@ -402,7 +419,8 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
             currentUpdate.children[path] = {
                 fullPath: path,
                 value: leaf,
-                lastSaved
+                lastSaved,
+                isOrHasCurrentNotebook: currentNotebook === path
             }
             return update;
         });
@@ -432,6 +450,31 @@ export class BranchHandler extends ObjectStateHandler<Branch> {
         this.update(state => go(path, state))
     }
 
+    // traverses the tree to update isOrHasCurrentNotebook for each Node so that elements
+    // can display the proper styling to highlight themselves
+    updateCurrentNotebook(currentNotebookPath: string) {
+        function go(fullPath: string, sliceIndex: number, parent: Branch): UpdatePartial<Branch> {
+            return {
+                children: Object.keys(parent.children).reduce((acc, key)  => {
+                    const branchOrLeaf = parent.children[key];
+                    const currPath = fullPath.split("/", sliceIndex + 1).join("/");
+                    if ("children" in branchOrLeaf) {
+                        acc[key] = {
+                            ...go(fullPath, sliceIndex + 1, branchOrLeaf),
+                            isOrHasCurrentNotebook: setValue(branchOrLeaf["fullPath"] === currPath) // is this branch part of the path to the current notebook?
+                        } // 'tis a branch
+                    } else {
+                        acc[key] = {
+                            ...branchOrLeaf,
+                            isOrHasCurrentNotebook: setValue(branchOrLeaf["fullPath"] === fullPath)
+                        } // 'tis a leaf!
+                    }
+                    return acc
+                }, {} as UpdatePartial<Record<string, Node>>)
+            }
+        }
+        this.update(state => go(currentNotebookPath, 0, state));
+    }
 }
 
 export class BranchEl extends Disposable {
@@ -495,6 +538,15 @@ export class BranchEl extends Disposable {
                 })
             }
         }).disposeWith(this)
+
+        branch.observeKey("isOrHasCurrentNotebook", (newValue) => {
+            if (newValue) {
+                this.el.classList.add("has-current-notebook");
+            }
+            else {
+                this.el.classList.remove("has-current-notebook");
+            }
+        });
     }
 
     get expanded() {
@@ -599,6 +651,24 @@ export class BranchEl extends Disposable {
         const current = this.children.find(c => c.path === path)
         if (current instanceof BranchEl) {
             current.expanded = false;
+        }
+    }
+
+    /**
+     * Recursively expand folders until the leaf node at the desired path is reached
+     */
+    highlightPath(path: string, index: number) {
+        const currPath = path.split("/", index + 1).join("/");
+        const child = this.children.find(c => c.path === currPath);
+        if (child === null) {
+            return
+        }
+        this.expanded = index != 0; // expand the current folder, but not at the root level
+        if (child instanceof BranchEl) {
+            child.highlightPath(path, index + 1);
+        }
+        else if (child instanceof LeafEl) {
+            child.scrollTo(); // scroll to this notebook
         }
     }
 
@@ -719,10 +789,23 @@ export class LeafEl extends Disposable {
                 this.dispose()
             }
         }).disposeWith(this)
+
+        view.observeKey("isOrHasCurrentNotebook", (newValue) => {
+            if (newValue) {
+                this.leafEl.classList.add("current-notebook");
+            }
+            else {
+                this.leafEl.classList.remove("current-notebook");
+            }
+        });
     }
 
     focus() {
         this.leafEl.focus()
+    }
+
+    scrollTo() {
+        this.leafEl.scrollIntoView();
     }
 
     private getEl(leaf: Leaf) {
