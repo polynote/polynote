@@ -1,8 +1,7 @@
 package polynote.server
 
 import java.util.ServiceLoader
-
-import polynote.config.AuthProvider
+import polynote.config.{AuthProvider, PluginConfig}
 import polynote.kernel.BaseEnv
 import polynote.kernel.environment.Config
 import polynote.server.Server.Routes
@@ -51,7 +50,7 @@ package object auth {
     def find(config: AuthProvider): RIO[BaseEnv with Config, IdentityProvider.Service] = effectBlocking(loaders)
       .map(_.get(config.provider))
       .someOrFail(new NoSuchElementException(s"No identity provider could be found with key ${config.provider}"))
-      .flatMap(_.provider(config.config))
+      .flatMap(_.provider(PluginConfig.fromJson(config.config)))
 
     val load: RIO[BaseEnv with Config, IdentityProvider.Service] =
       ZIO.access[Config](_.get.security.auth).get
