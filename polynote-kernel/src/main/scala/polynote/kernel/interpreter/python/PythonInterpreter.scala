@@ -16,6 +16,7 @@ import polynote.kernel.task.TaskManager
 import polynote.kernel.util.DepsParser.flattenDeps
 import polynote.kernel.{BaseEnv, CompileErrors, Completion, CompletionType, GlobalEnv, InterpreterEnv, KernelReport, ParameterHint, ParameterHints, ResultValue, ScalaCompiler, Signatures}
 import polynote.messages.{CellID, DefinitionLocation, Notebook, NotebookConfig, ShortString, TinyList, TinyString}
+import polynote.runtime.KernelRuntime
 import polynote.runtime.python.{PythonFunction, PythonObject, TypedPythonObject}
 import zio.ZIO.effect
 import zio.blocking.{Blocking, effectBlocking}
@@ -666,6 +667,13 @@ class PythonInterpreter private[python] (
       |        import pandas as pd
       |        return pd.MultiIndex.from_arrays([[x for x in list(l1)], [x for x in list(l2)]])
       |
+      |    def get_active_kernel():
+      |        '''
+      |        Returns the instance of the kernel runtime provided to the cell currently being executed.
+      |        The value in `globals` gets set by the interpreter when it runs the cell.
+      |        '''
+      |        return globals()["kernel"]
+      |
       |except Exception as e:
       |    import sys, traceback
       |    print("An error occurred while initializing the Python interpreter.", e, file=sys.stderr)
@@ -703,13 +711,13 @@ class PythonInterpreter private[python] (
       |        def show(self):
       |            fmt = PolynoteBackend.output_format
       |            if fmt == 'svg':
-      |                kernel.display.content("image/svg", self.svg())
+      |                get_active_kernel().display.content("image/svg", self.svg())
       |            elif fmt == 'png':
-      |                kernel.display.content("image/png", self.png())
+      |                get_active_kernel().display.content("image/png", self.png())
       |            else:
       |                print(f"PolynoteBackend: Unknown output format. Accepted values for PolynoteBackend.output_format are 'png' or 'svg' but got '{fmt}'. Defaulting to 'png'.",file=sys.stderr)
       |                sys.stderr.flush()
-      |                kernel.display.content("image/png", self.png())
+      |                get_active_kernel().display.content("image/png", self.png())
       |
       |
       |    @_Backend.export
@@ -747,10 +755,10 @@ class PythonInterpreter private[python] (
         jep =>
           val setItem = globals.getAttr("__setitem__", classOf[PyCallable])
           setItem.call("kernel", runtime)
-          // TODO: Also update the global `kernel` so matplotlib integration (and other libraries?) can access the
-          //       correct kernel. We may want to have a better way to do this though, like a first class getKernel()
-          //       function for libraries (this only solves the problem for python)
           jep.set("kernel", runtime)
+
+          // make visible to cell globals
+          setItem.call("get_active_kernel", jep.getValue("get_active_kernel"))
 
           // expose `PolynoteBackend` so users can set `PolynoteBackend.output_format`
           // `PolynoteBackend` is not defined if `matplotlib` is not present.
