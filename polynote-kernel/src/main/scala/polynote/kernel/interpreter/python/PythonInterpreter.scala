@@ -688,7 +688,7 @@ class PythonInterpreter private[python] (
       |    import matplotlib
       |
       |    from matplotlib._pylab_helpers import Gcf
-      |    from matplotlib.backend_bases import (_Backend, FigureManagerBase)
+      |    from matplotlib.backend_bases import (_Backend, FigureCanvasBase, FigureManagerBase)
       |    from matplotlib.backends.backend_agg import _BackendAgg
       |    import io, base64
       |
