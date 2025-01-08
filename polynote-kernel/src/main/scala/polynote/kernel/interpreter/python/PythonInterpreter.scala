@@ -693,6 +693,9 @@ class PythonInterpreter private[python] (
       |    import io, base64
       |
       |    class PolynoteFigureManager(FigureManagerBase):
+      |        def _display(self, mime, body):
+      |            get_active_kernel().display.content(mime, body)
+      |
       |        def png(self):
       |            # Save figure as PNG for display
       |            buf = io.BytesIO()
@@ -711,20 +714,23 @@ class PythonInterpreter private[python] (
       |        def show(self):
       |            fmt = PolynoteBackend.output_format
       |            if fmt == 'svg':
-      |                get_active_kernel().display.content("image/svg", self.svg())
+      |                self._display("image/svg", self.svg())
       |            elif fmt == 'png':
-      |                get_active_kernel().display.content("image/png", self.png())
+      |                self._display("image/png", self.png())
       |            else:
       |                print(f"PolynoteBackend: Unknown output format. Accepted values for PolynoteBackend.output_format are 'png' or 'svg' but got '{fmt}'. Defaulting to 'png'.",file=sys.stderr)
       |                sys.stderr.flush()
-      |                get_active_kernel().display.content("image/png", self.png())
+      |                self._display("image/png", self.png())
       |
+      |    class PolynoteFigureCanvas(FigureCanvasBase):
+      |        manager_class = PolynoteFigureManager
       |
       |    @_Backend.export
       |    class PolynoteBackend(_BackendAgg):
       |        __module__ = "polynote"
       |
       |        FigureManager = PolynoteFigureManager
+      |        FigureCanvas = PolynoteFigureCanvas
       |
       |        output_format = 'png' # options are ['png', 'svg']
       |
