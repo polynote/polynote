@@ -16,7 +16,6 @@ jobs:
         with:
           java-version: 8
           architecture: x64
-      - uses: sbt/setup-sbt@v1
       - name: Create archive
         run: |
           cd $GITHUB_WORKSPACE/polynote-frontend
