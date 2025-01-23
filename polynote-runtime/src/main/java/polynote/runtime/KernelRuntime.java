@@ -22,8 +22,35 @@ public class KernelRuntime implements Serializable {
         }
 
         public void write(String str) { display.content(type, str); }
+        public void writelines(String[] lines) {
+            for (final String line : lines) {
+                write(line);
+            }
+        }
+
+        // a bunch of stub methods and fields from the IOBase interface: https://docs.python.org/3/library/io.html#io.IOBase
+        public void close() {}
+        public final boolean closed = false;
+        public int fileno() { return 0; }
         public void flush() {} // So python doesn't error on sys.stdout.flush().
         public Boolean isatty() { return false; } // so python doesn't error when checking isatty(), as some libs seem to do.
+        public boolean readable() { return false; }
+        public String readline() { return ""; }
+        public String readline(int size) { return ""; }
+        public int seek(int offset, int whence) { return 0; }
+        public int tell() { return 0; }
+        public int truncate(Integer size) { return 0; }
+        public boolean writable() { return true; }
+
+        // a bunch of stub methods and fields from the TextIOBase interface: https://docs.python.org/3/library/io.html#io.TextIOBase
+        public final String encoding = "utf-8";
+        public final String errors = "strict";
+        public final String newlines = null;
+        public final Object buffer = null;
+
+        public void detach() {}
+        public String read() { return ""; }
+        public String read(int size) { return ""; }
     }
 
     transient public final Display display;
