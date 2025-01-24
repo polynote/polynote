@@ -112,6 +112,10 @@ class PythonInterpreter private[python] (
       (_1, _2)
     }
 
+    override def as[T >: Null : ClassTag](obj: PythonObject): T = run {
+      obj.unwrap.as(classTag[T].runtimeClass.asInstanceOf[Class[T]])
+    }
+
     override def typeName(obj: PythonObject): String = run(pyApi.typeName(obj.unwrap))
     override def qualifiedTypeName(obj: PythonObject): String = run(pyApi.qualifiedTypeName(obj.unwrap))
     override def isCallable(obj: PyObject): Boolean = run(pyApi.isCallable(obj))

@@ -85,7 +85,7 @@ class PythonObject(obj: PyObject, private[polynote] val runner: PythonObject.Run
       callKwArgs(selectDynamic[PyCallable](method), args)
 
   def as[T >: Null : ClassTag]: T = if (obj != null)
-    obj.as(classTag[T].runtimeClass.asInstanceOf[Class[T]])
+    runner.as[T](this)
   else
     null
 
@@ -209,6 +209,7 @@ object PythonObject {
     def run[T](task: => T): T
     def runJep[T](task: Jep => T): T
     def hasAttribute(obj: PythonObject, name: String): Boolean
+    def as[T >: Null : ClassTag](obj: PythonObject): T
     def asScalaList(obj: PythonObject): List[PythonObject]
     def asScalaMap(obj: PythonObject): Map[Any, Any]
     def asScalaMapOf[K : ClassTag, V : ClassTag](obj: PythonObject): Map[K, V]
