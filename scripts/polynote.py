@@ -8,8 +8,10 @@ import shlex
 # The sys module contains a bunch of *_prefix attributes that point to various locations where these libraries might be, 
 # such as https://docs.python.org/3/library/sys.html#sys.exec_prefix 
 # We set both the PYTHONPATH and the LD_LIBRARY_PATH just in case
-sys_prefixes = {getattr(sys, sys_prefix) for sys_prefix in filter(lambda name: "prefix" in name, dir(sys))}
-sys_prefixes = filter(lambda x: x is not None, sys_prefixes)
+
+is_valid_prefix = lambda name: "prefix" in name and name != "pycache_prefix"
+sys_prefixes = {getattr(sys, sys_prefix) for sys_prefix in filter(is_valid_prefix, dir(sys))}
+
 if not os.environ.get('PYTHONPATH'):
     os.environ['PYTHONPATH'] = os.pathsep.join(sys_prefixes)
 else: 
