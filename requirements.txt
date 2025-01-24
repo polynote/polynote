@@ -2,6 +2,6 @@ virtualenv
 ipython
 nbconvert
 numpy
-pandas==1.2.5
+pandas
 jedi>=0.18.1
-jep==4.1.1 # https://github.com/polynote/polynote/issues/1428
+jep==4.2.1

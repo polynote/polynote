@@ -595,14 +595,12 @@ object ScalaCompiler {
 
 
   /**
-    * @param dependencyClasspath List of class path entries for direct dependencies. Classes from these entries will be
+    * @param dependencies     List of class path entries for direct dependencies. Classes from these entries will be
     *                            prioritized by auto-import/classpath-based completions in participating JVM languages.
-    * @param transitiveClasspath List of class path entries for transitive dependencies. These are still loaded in the
-    *                            notebook class loader, but they don't get higher priority for autocomplete.
-    * @param otherClasspath      List of class path entries which the compiler needs to know about, but which aren't
+    * @param otherClasspath   List of class path entries which the compiler needs to know about, but which aren't
     *                            going to be loaded by the dependency class loader (and thus will be loaded by the boot
     *                            class loader). This basically means Spark and its ilk.
-    * @param modifySettings      A function which will receive the base compiler [[Settings]], and can return modified
+    * @param modifySettings    A function which will receive the base compiler [[Settings]], and can return modified
     *                            settings which will be used to construct the compiler.
     * @return A [[ScalaCompiler]] instance
     */
@@ -611,12 +609,15 @@ object ScalaCompiler {
     otherClasspath: List[File],
     modifySettings: Settings => Settings
   ): RIO[Config with System, ScalaCompiler] = for {
-    settings          <- ZIO(modifySettings(defaultSettings(new Settings(), dependencies.map(_.file) ++ otherClasspath)))
-    global            <- ZIO(new Global(settings, KernelReporter(settings)))
-    counter           <- kernelCounter
-    notebookPackage    = s"notebook$counter"
-    classLoader       <- makeClassLoader(settings, dependencies)
-    _                 <- ZIO(new SemanticdbPlugin(global))
+    config             <- Config.access
+    dependencyClasspath = dependencies.map(_.file)
+    compilerClasspath   = if (config.behavior.dependencyIsolation) dependencyClasspath ++ otherClasspath else otherClasspath ++ dependencyClasspath
+    settings           <- ZIO(modifySettings(defaultSettings(new Settings(), compilerClasspath)))
+    global             <- ZIO(new Global(settings, KernelReporter(settings)))
+    counter            <- kernelCounter
+    notebookPackage     = s"notebook$counter"
+    classLoader        <- makeClassLoader(settings, dependencies)
+    _                  <- ZIO(new SemanticdbPlugin(global))
   } yield new ScalaCompiler(global, notebookPackage, classLoader, dependencies, otherClasspath)
 
   def apply(dependencies: List[Artifact], otherClasspath: List[File]): RIO[Config with System, ScalaCompiler] =

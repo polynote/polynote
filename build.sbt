@@ -61,7 +61,7 @@ val commonSettings = Seq(
       "scm:git@github.com:polynote/polynote.git"
     )
   ),
-  version := "0.6.1",
+  version := "0.7.0-SNAPSHOT",
   dependencyOverrides += "com.chuusai" %% "shapeless" % shapelessVersion(scalaBinaryVersion.value),
   publishTo := sonatypePublishToBundle.value,
   // disable scalaDoc generation because it's causing weird compiler errors and we don't use it anyways
@@ -76,8 +76,11 @@ val commonSettings = Seq(
     "-language:higherKinds",
     "-unchecked",
     "-target:jvm-1.8",
-    "-release", "8"
-  ) ++ (if (scalaBinaryVersion.value.startsWith("2.13")) Nil else Seq("-Ypartial-unification")),
+  ) ++ (
+    if (scalaBinaryVersion.value.startsWith("2.13")) Nil else Seq("-Ypartial-unification")
+  ) ++ (
+    if (sys.props.get("java.version").exists(_.startsWith("1.8"))) Nil else Seq("-release", "8")
+  ),
   Test / fork := true,
   Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
   libraryDependencies ++= Seq(
@@ -96,6 +99,7 @@ val commonSettings = Seq(
   assembly / assemblyOption := {
     (assembly / assemblyOption).value.withIncludeScala(false)
   },
+  assembly / assemblyShadeRules := Seq(ShadeRule.rename("shapeless.**" -> "polynote.shaded.shapeless.@1").inAll),
   Global / cancelable := true,
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
   buildUI := {
@@ -136,7 +140,7 @@ lazy val `polynote-runtime` = project.settings(
     "-language:experimental.macros"
   ),
   libraryDependencies ++= Seq(
-    "black.ninia" % "jep" % "4.0.0",
+    "black.ninia" % "jep" % "4.2.1",
     "org.scala-lang" % "scala-reflect" % scalaVersion.value % "provided"
   ),
   distFiles := Seq(assembly.value)

@@ -1,6 +1,7 @@
 package polynote.server.auth
 
 import io.circe.{Decoder, Encoder, JsonObject}
+import polynote.config.PluginConfig
 import polynote.kernel.environment.Config
 import polynote.kernel.BaseEnv
 import polynote.messages.CellID
@@ -58,6 +59,6 @@ object Permission {
   */
 trait ProviderLoader {
   def providerKey: String
-  def provider(config: JsonObject): RIO[BaseEnv with Config, IdentityProvider.Service]
+  def provider(config: PluginConfig): RIO[BaseEnv with Config, IdentityProvider.Service]
 }
 
