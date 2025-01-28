@@ -1,10 +1,11 @@
 package polynote.server.auth
-import io.circe.{Decoder, Encoder, Json, JsonObject}
+import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.extras.semiauto.{deriveConfiguredDecoder, deriveConfiguredEncoder}
 import uzhttp.{HTTPError, Request, Response}
 import HTTPError.Forbidden
 import polynote.kernel.{BaseEnv, environment}
 import zio.{RIO, ZIO}
+import polynote.config.PluginConfig
 import polynote.config.circeConfig
 import polynote.server.Server.Routes
 
@@ -42,7 +43,29 @@ object HeaderIdentityProvider {
 
   class Loader extends ProviderLoader {
     override val providerKey: String = "header"
-    override def provider(config: JsonObject): RIO[BaseEnv with environment.Config, HeaderIdentityProvider] =
-      ZIO.fromEither(Json.fromJsonObject(config).as[HeaderIdentityProvider])
+    override def provider(config: PluginConfig): RIO[BaseEnv with environment.Config, HeaderIdentityProvider] = {
+      ZIO.fromOption {
+        for {
+          struct         <- config.asStruct
+          header         <- struct.get("header").flatMap(_.asValue)
+          permissions     = struct.get("permissions").flatMap(_.asStruct).map(readPermissions)
+          allowAnon       = struct.get("allow_anonymous").flatMap(_.asValue.map(_ == "true"))
+        } yield HeaderIdentityProvider(
+          header,
+          permissions.getOrElse(Map("*" -> PermissionType.All)),
+          allowAnon.getOrElse(false))
+      }.mapError(_ => new Exception("Unable to parse header configuration"))
+    }
+
+    private def readPermissions(map: Map[String, PluginConfig]): Map[String, Set[PermissionType]] = map.mapValues {
+      config => config.asArray.map {
+        arr => arr.flatMap(_.asValue.flatMap(str => PermissionType.fromString(str).right.toOption)).toSet
+      }.orElse(config.asValue.flatMap {
+        case "all" => Some(PermissionType.All)
+        case str   => PermissionType.fromString(str).right.toOption.map(Set(_))
+      })
+    }.collect {
+      case (str, Some(perms)) => (str, perms)
+    }.toMap
   }
 }

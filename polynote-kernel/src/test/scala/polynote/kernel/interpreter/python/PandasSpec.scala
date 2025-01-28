@@ -100,12 +100,12 @@ class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
                       StructField("q3", DoubleType), StructField("max", DoubleType), StructField("mean", DoubleType))
                   )),
                 StructField("mean(floatcol)", DoubleType),
-                StructField("count(floatcol)", DoubleType) // not sure why pandas count is double
+                StructField("count(floatcol)", LongType)
               ))
 
             val List(row1, row2) = handle2.iterator.map {
               buf =>
-                val struct = (buf.getLong(), (buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble()), buf.getDouble(), buf.getDouble())
+                val struct = (buf.getLong(), (buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble(), buf.getDouble()), buf.getDouble(), buf.getLong())
                 buf.rewind()
                 struct
             }.toList
@@ -114,14 +114,14 @@ class PandasSpec extends FreeSpec with Matchers with InterpreterSpec {
               1,
               (1.0, 1.75, 2.0, 2.25, 3.0, 2.0),
               2.0,
-              4.0
+              4
             )
 
             row2 shouldEqual (
               2,
               (2.0, 2.5, 3.0, 3.5, 4.0, 3.0),
               3.0,
-              2.0
+              2
             )
         }
       }
