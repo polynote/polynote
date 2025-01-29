@@ -82,7 +82,8 @@ val commonSettings = Seq(
     if (sys.props.get("java.version").exists(_.startsWith("1.8"))) Nil else Seq("-release", "8")
   ),
   Test / fork := true,
-  Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
+  Test / javaOptions ++= Seq(s"-Djava.library.path=$nativeLibraryPath", "-Xmx8G"),
+  Test / parallelExecution := false,
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.0.8" % "test",
     "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
@@ -291,9 +292,10 @@ val sparkSettings = Seq(
         } else {
           val pkgFile = baseDir / filename
           if (!pkgFile.exists()) {
-            pkgFile.createNewFile()
-            println(s"Downloading $distUrl to $pkgFile...")
-            (distUrl #> pkgFile).!!
+            println(s"Downloading $distUrl to $pkgFile")
+            val cmd = Seq("wget", "-O", pkgFile.toString, "-nv", distUrl.toString)
+            println(cmd.mkString(" "))
+            cmd.!
           }
 
           println(s"Verifying checksum for $pkgFile for $distVersion...")
