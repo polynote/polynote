@@ -82,7 +82,7 @@ val commonSettings = Seq(
     if (sys.props.get("java.version").exists(_.startsWith("1.8"))) Nil else Seq("-release", "8")
   ),
   Test / fork := true,
-  Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
+  Test / javaOptions ++= Seq(s"-Djava.library.path=$nativeLibraryPath", "-Xmx8G")
   Test / parallelExecution := false,
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.0.8" % "test",
