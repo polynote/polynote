@@ -291,9 +291,10 @@ val sparkSettings = Seq(
         } else {
           val pkgFile = baseDir / filename
           if (!pkgFile.exists()) {
-            pkgFile.createNewFile()
-            println(s"Downloading $distUrl to $pkgFile...")
-            (distUrl #> pkgFile).!!
+            println(s"Downloading $distUrl to $pkgFile")
+            val cmd = Seq("wget", "-O", pkgFile.toString, "-nv", distUrl.toString)
+            println(cmd.mkString(" "))
+            cmd.!
           }
 
           println(s"Verifying checksum for $pkgFile for $distVersion...")
