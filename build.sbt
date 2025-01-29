@@ -83,6 +83,7 @@ val commonSettings = Seq(
   ),
   Test / fork := true,
   Test / javaOptions += s"-Djava.library.path=$nativeLibraryPath",
+  Global / concurrentRestrictions += Tags.limit(Tags.Test, 1),
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.0.8" % "test",
     "org.scalacheck" %% "scalacheck" % "1.14.0" % "test"
