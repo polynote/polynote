@@ -14,7 +14,7 @@ import scala.collection.JavaConverters._
 import LocalFilesystem.FileChannelWALWriter
 import zio.stream.ZStream
 
-class LocalFilesystem(maxDepth: Int = 4) extends NotebookFilesystem {
+class LocalFilesystem(maxDepth: Int = 10) extends NotebookFilesystem {
 
   override def readPathAsString(path: Path): RIO[BaseEnv, String] =
     ZManaged.fromAutoCloseable(effectBlocking(Files.newInputStream(path))).use {
