@@ -58,10 +58,12 @@ environment.
 
 !!! tip "Using Spark with Polynote"
     If you'll be using Spark with Polynote, please make sure you read this [note about Spark and Polynote](basic-usage.md#using-spark-with-polynote) for more information.
-    
-    Currently, Polynote supports both **Spark 2.1** (with Scala 2.11) and **2.4** (with Scala 2.11 and 2.12).
 
-    _Some users have had success running Spark 3.0 with Scala 2.12. Please see [this issue](https://github.com/polynote/polynote/issues/926) for more information_
+    Currently, Polynote supports the following Spark versions:
+    - **Scala 2.12**: Spark 3.3.4, 3.5.7 (default: 3.5.7)
+    - **Scala 2.13**: Spark 3.3.4, 3.5.7 (default: 3.5.7)
+
+    You can override the default Spark version by setting the `SPARK_VERSION` environment variable when building.
 
 Polynote will use the `spark-submit` command in order to start Spark kernels. 
 

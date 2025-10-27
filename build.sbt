@@ -218,9 +218,11 @@ val `polynote-server` = project.settings(
   Test / testOptions += Tests.Argument("-oF")
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
+// Supported Spark versions for each Scala binary version
+// The default version (used if SPARK_VERSION env var is not set) is the last one in each list
 val sparkVersions = Map(
-  "2.12" -> "3.1.2",
-  "2.13" -> "3.2.1"
+  "2.12" -> Seq("3.3.4", "3.5.7"),
+  "2.13" -> Seq("3.3.4", "3.5.7")
 )
 
 // keep expected checksums here. This has two benefits over checking the sha512sum from the archive:
@@ -229,8 +231,8 @@ val sparkVersions = Map(
 //    See https://issues.apache.org/jira/browse/SPARK-30683
 // To add to this list, download the tarball for the new version from the apache repo and run `sha512sum <file>.tgz`
 val sparkChecksums = Map(
-  "3.1.2" -> "ba47e074b2a641b23ee900d4e28260baa250e2410859d481b38f2ead888c30daea3683f505608870148cf40f76c357222a2773f1471e7342c622e93bf02479b7",
-  "3.2.1" -> "2ec9f1cb65af5ee7657ca83a1abaca805612b8b3a1d8d9bb67e317106025c81ba8d44d82ad6fdb45bbe6caa768d449cd6a4945ec050ce9390f806f46c5cb1397"
+  "3.3.4" -> "a3874e340a113e95898edfa145518648700f799ffe2d1ce5dde7743e88fdf5559d79d9bcb1698fdfa5296a63c1d0fc4c8e32a93529ed58cd5dcf0721502a1fc7",
+  "3.5.7" -> "f3b7d5974d746b9aaecb19104473da91068b698a4d292177deb75deb83ef9dc7eb77062446940561ac9ab7ee3336fb421332b1c877292dab4ac1b6ca30f4f2e0"
 )
 
 val sparkDistUrl: String => String =
@@ -240,7 +242,7 @@ val sparkSettings = Seq(
   resolvers ++= {
     Seq(MavenRepository(name = "Apache Staging", root = "https://repository.apache.org/content/repositories/staging"))
   },
-  sparkVersion := sparkVersions(scalaBinaryVersion.value),
+  sparkVersion := sys.env.getOrElse("SPARK_VERSION", sparkVersions(scalaBinaryVersion.value).last),
   libraryDependencies ++= Seq(
     "org.apache.spark" %% "spark-sql" % sparkVersion.value % "provided",
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
@@ -252,13 +254,13 @@ val sparkSettings = Seq(
       .getOrElse((file(".").getAbsoluteFile / "target" / "spark").getCanonicalPath)
   },
   sparkHome := {
-    (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
+    (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop3").toString
   },
   Test / testOptions += Tests.Setup { () =>
     import sys.process._
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
-    val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-$distVersion-bin-hadoop2.7-scala2.13" else s"spark-$distVersion-bin-hadoop2.7"
+    val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-$distVersion-bin-hadoop3-scala2.13" else s"spark-$distVersion-bin-hadoop3"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
