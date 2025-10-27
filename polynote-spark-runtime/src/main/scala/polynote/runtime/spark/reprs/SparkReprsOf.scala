@@ -275,16 +275,31 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         // I assume that the schema is always the same for all elements of the array
         // (it's reasonable since this is probably a Dataframe.collect result
         val prototype = arr.head
-        val rowEncoder = RowEncoder(prototype.schema) // to go from Row to InternalRow
         val (structType, encode) = structDataTypeAndEncoder(prototype.schema) // reuse code from InternalRow
         val toBytes = rowToBytes(structType, encode)
         val toInternalRow = {
-          val holder = new GenericInternalRow(1)
-          val proj = GenerateUnsafeProjection.generate(rowEncoder.serializer)
-          (row: Row) => {
-            holder.update(0, row)
-            proj.apply(holder)
+          // Use reflection to support both Spark 3.3 (RowEncoder.apply) and 3.5+ (Encoders.row)
+          // In Spark 3.5+, RowEncoder.apply was removed and we need to use Encoders.row instead
+          // In Spark 3.3, RowEncoder.apply returns ExpressionEncoder directly
+          val expressionEncoder = try {
+            // Try Spark 3.5+ API: Encoders.row(schema).asInstanceOf[ExpressionEncoder]
+            val encodersClass = Class.forName("org.apache.spark.sql.Encoders$")
+            val encodersModule = encodersClass.getField("MODULE$").get(null)
+            val rowMethod = encodersClass.getMethod("row", classOf[org.apache.spark.sql.types.StructType])
+            val encoder = rowMethod.invoke(encodersModule, prototype.schema)
+            encoder.asInstanceOf[org.apache.spark.sql.catalyst.encoders.ExpressionEncoder[Row]]
+          } catch {
+            case _: ClassCastException | _: NoSuchMethodException =>
+              // Fall back to Spark 3.3 API: RowEncoder.apply(schema)
+              val method = RowEncoder.getClass.getMethod("apply", classOf[org.apache.spark.sql.types.StructType])
+              method.invoke(RowEncoder, prototype.schema).asInstanceOf[org.apache.spark.sql.catalyst.encoders.ExpressionEncoder[Row]]
           }
+          val boundEncoder = expressionEncoder.resolveAndBind()
+          val serializerMethod = boundEncoder.getClass.getMethod("createSerializer")
+          val serializer = serializerMethod.invoke(boundEncoder)
+          // The serializer converts Row to InternalRow
+          val applyMethod = serializer.getClass.getMethod("apply", classOf[Object])
+          (row: Row) => applyMethod.invoke(serializer, row.asInstanceOf[Object]).asInstanceOf[org.apache.spark.sql.catalyst.InternalRow]
         }
         Array(
           StreamingDataRepr(
