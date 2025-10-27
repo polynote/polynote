@@ -21,7 +21,7 @@ jobs:
       with:
         java-version: 8
         architecture: x64
-    - name: Build
+    - name: Build and Test
       run: |
         echo "Setting up Python dependencies"
         pip install -r ./requirements.txt
@@ -32,5 +32,9 @@ jobs:
         export LD_PRELOAD=${jep_lib_path}/libpython3.so
 
         pushd $GITHUB_WORKSPACE
+          echo "Testing with Spark 3.3.4"
+          SPARK_VERSION=3.3.4 sbt 'set scalaVersion := "2.13.6"' test
+
+          echo "Testing with Spark 3.5.7 (default)"
           sbt 'set scalaVersion := "2.13.6"' test
         popd
