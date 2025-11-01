@@ -41,7 +41,7 @@ lazy val nativeLibraryPath = {
 }
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
-val scalaVersions = Seq("2.12.15", "2.13.6")
+val scalaVersions = Seq("2.12.20", "2.13.6")
 lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
@@ -49,7 +49,7 @@ lazy val scalaBinaryVersions = scalaVersions.map {
 val shapelessVersion = Map("2.12" -> "2.3.2", "2.13" -> "2.3.3")
 
 val commonSettings = Seq(
-  scalaVersion := "2.12.15",
+  scalaVersion := "2.12.20",
   crossScalaVersions := scalaVersions,
   organization := "org.polynote",
   publishMavenStyle := true,
