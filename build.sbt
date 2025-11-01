@@ -101,7 +101,7 @@ val commonSettings = Seq(
   },
   assembly / assemblyShadeRules := Seq(ShadeRule.rename("shapeless.**" -> "polynote.shaded.shapeless.@1").inAll),
   Global / cancelable := true,
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.10.3"),
+  addCompilerPlugin("org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full),
   buildUI := {
     sys.process.Process(Seq("npm", "run", "build"), file("./polynote-frontend/")) ! streams.value.log
   },
@@ -176,7 +176,7 @@ val `polynote-kernel` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
-    "org.scalameta" % "semanticdb-scalac-core" % "4.6.0" cross CrossVersion.full,
+    "org.scalameta" % "semanticdb-scalac-core" % "4.9.9" cross CrossVersion.full,
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
     "org.scodec" %% "scodec-core" % "1.11.4",
