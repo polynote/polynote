@@ -256,36 +256,30 @@ val sparkSettings = Seq(
   },
   Test / testOptions += Tests.Setup { () =>
     import sys.process._
+    import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
+    import java.nio.file.StandardOpenOption
+    import scala.util.control.NonFatal
+
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
     val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-$distVersion-bin-hadoop2.7-scala2.13" else s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
-    // It seems that this Tests.Setup block gets run concurrently, which can sometimes cause weirdness to happen.
-    // So we try to use a lockfile to ensure that it only ever runs once
-    // (Yes there still the possibility of a race condition here, but I don't know how to properly synchronize SBT tasks...)
-    val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup_is_running.lock"
-    if (lockFile.exists()) {
-      println(s"Lock file $lockFile exists, test setup is already running. Waiting for it to finish...")
-      val start = System.currentTimeMillis()
-      val timeout = 10 * 60 * 1000 // 10 minutes
-      val checkInterval = 10 * 1000 // 10 seconds
-      while (System.currentTimeMillis() < start + timeout && lockFile.exists()) {
-        println(s"Lock file $lockFile still exists after ${System.currentTimeMillis() - start}ms. Waiting...")
-        Thread.sleep(checkInterval)
-      }
-      if (lockFile.exists()) {
-        throw new Exception(s"Lock file $lockFile still exists after $timeout ms. Aborting.")
-      } else {
-        println("Lock file no longer exists, test setup must have finished")
-      }
-    } else {
-      baseDir.mkdirs()
-      lockFile.createNewFile()
-      lockFile.deleteOnExit()
+    val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup.lock"
+
+    baseDir.mkdirs()
+
+    // Use Java NIO file locking for proper cross-process synchronization
+    val channel = FileChannel.open(lockFile.toPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+
+    try {
+      println(s"Attempting to acquire lock...")
+      val lock = channel.lock() // Blocks until lock is available
+      println(s"Lock acquired, running setup...")
 
       try {
+        // Check if setup is needed
         if (destDir.exists()) {
           println(s"$destDir already exists, skipping download and extract")
         } else {
@@ -309,8 +303,11 @@ val sparkSettings = Seq(
           println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
         }
       } finally {
-        lockFile.delete()
+        lock.release()
       }
+    } finally {
+      channel.close()
+      lockFile.delete() // Clean up lock file
     }
 
     println("Test setup completed")
