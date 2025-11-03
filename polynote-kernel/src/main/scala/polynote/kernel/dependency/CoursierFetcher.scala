@@ -262,7 +262,7 @@ object CoursierFetcher {
   }
 
   // coursier doesn't have instances for ZIO built in
-  implicit def zioSync[R]: Sync[RIO[R, ?]] = new Sync[RIO[R, ?]] {
+  implicit def zioSync[R]: Sync[RIO[R, *]] = new Sync[RIO[R, *]] {
     def delay[A](a: => A): RIO[R, A] = ZIO.effect(a)
     def handle[A](a: RIO[R, A])(f: PartialFunction[Throwable, A]): RIO[R, A] = a.catchSome(f andThen (a => ZIO.succeed(a)))
     def fromAttempt[A](a: Either[Throwable, A]): RIO[R, A] = ZIO.fromEither(a)
