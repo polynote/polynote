@@ -41,7 +41,7 @@ lazy val nativeLibraryPath = {
 }
 
 val distBuildDir = file(".") / "target" / "dist" / "polynote"
-val scalaVersions = Seq("2.12.20", "2.13.6")
+val scalaVersions = Seq("2.12.20", "2.13.11")
 lazy val scalaBinaryVersions = scalaVersions.map {
   ver => ver.split('.').take(2).mkString(".")
 }.distinct
@@ -176,7 +176,7 @@ val `polynote-kernel` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
-    "org.scalameta" % "semanticdb-scalac-core" % "4.9.9" cross CrossVersion.full,
+    "org.scalameta" % "semanticdb-scalac-core" % "4.9.9" cross CrossVersion.patch,
     "dev.zio" %% "zio" % versions.zio,
     "dev.zio" %% "zio-streams" % versions.zio,
     "org.scodec" %% "scodec-core" % "1.11.4",
