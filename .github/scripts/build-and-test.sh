@@ -52,7 +52,7 @@ jep_lib_path=$(realpath "${jep_site_packages_path}/../../")
 
 # Set up environment variables for jep
 export LD_LIBRARY_PATH="${jep_path}:${jep_site_packages_path}:${jep_lib_path}:${LD_LIBRARY_PATH:-}"
-export LD_PRELOAD="${jep_lib_path}/libpython3.so"
+export LD_PRELOAD="$(dirname "$(dirname "$(realpath "$(which python3)")")")/lib/libpython3.so"
 
 echo "LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
 echo "LD_PRELOAD: ${LD_PRELOAD}"
