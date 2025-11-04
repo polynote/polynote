@@ -236,6 +236,8 @@ val sparkChecksums = Map(
 val sparkDistUrl: String => String =
   ver => s"https://archive.apache.org/dist/spark/spark-$ver/"
 
+lazy val setupSpark = taskKey[Unit]("Download and extract Spark distribution for testing")
+
 val sparkSettings = Seq(
   resolvers ++= {
     Seq(MavenRepository(name = "Apache Staging", root = "https://repository.apache.org/content/repositories/staging"))
@@ -254,10 +256,8 @@ val sparkSettings = Seq(
   sparkHome := {
     (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
   },
-  Test / testOptions += Tests.Setup { () =>
+  setupSpark := {
     import sys.process._
-    import java.nio.channels.FileChannel
-    import java.nio.file.StandardOpenOption
 
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
@@ -265,52 +265,45 @@ val sparkSettings = Seq(
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
-    val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup.lock"
+    val pkgFile = baseDir / filename
 
     baseDir.mkdirs()
 
-    // Use Java NIO file locking for proper cross-process synchronization
-    val channel = FileChannel.open(lockFile.toPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+    // Check if setup already completed
+    if (destDir.exists()) {
+      println(s"Spark already set up at $destDir")
+    } else {
+      // Only one project should download and extract
+      // Use the destDir creation as the completion marker
+      println(s"Setting up Spark distribution at $destDir...")
 
-    try {
-      println(s"Attempting to acquire lock...")
-      val lock = channel.lock() // Blocks until lock is available
-      println(s"Lock acquired, running setup...")
+      // Download if needed
+      if (!pkgFile.exists() || pkgFile.length() == 0) {
+        println(s"Downloading $distUrl to $pkgFile...")
+        pkgFile.delete() // Clean up any partial download
+        (distUrl #> pkgFile).!!
 
-      try {
-        // Check if setup is needed
-        if (destDir.exists()) {
-          println(s"$destDir already exists, skipping download and extract")
-        } else {
-          val pkgFile = baseDir / filename
-          if (!pkgFile.exists()) {
-            pkgFile.createNewFile()
-            println(s"Downloading $distUrl to $pkgFile...")
-            (distUrl #> pkgFile).!!
-          }
-
-          println(s"Verifying checksum for $pkgFile for $distVersion...")
-          val expectedChecksum = sparkChecksums(distVersion)
-          val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
-          if (actualChecksum == expectedChecksum) {
-            println(s"Checksum verified for $pkgFile for $distVersion")
-          } else {
-            throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
-          }
-
-          println(s"Extracting $pkgFile to $baseDir")
-          println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
+        println(s"Verifying checksum for $pkgFile...")
+        val expectedChecksum = sparkChecksums(distVersion)
+        val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
+        if (actualChecksum != expectedChecksum) {
+          pkgFile.delete() // Clean up bad download
+          throw new Exception(s"Checksum mismatch for $pkgFile. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
         }
-      } finally {
-        lock.release()
+        println(s"Checksum verified")
+      } else {
+        println(s"Using cached download at $pkgFile")
       }
-    } finally {
-      channel.close()
-      lockFile.delete() // Clean up lock file
-    }
 
-    println("Test setup completed")
+      // Extract (this creates destDir atomically)
+      if (!destDir.exists()) {
+        println(s"Extracting to $destDir...")
+        Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!
+        println(s"Extraction complete")
+      }
+    }
   },
+  Test / test := (Test / test).dependsOn(setupSpark).value,
   Test / envVars ++= {
     Map(
       "SPARK_HOME" -> sparkHome.value,
