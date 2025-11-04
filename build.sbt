@@ -3,6 +3,9 @@ import scala.util.Try
 
 name := "polynote"
 
+// Run tests sequentially to avoid race conditions when setting up Spark
+Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
+
 val buildUI: TaskKey[Unit] = taskKey[Unit]("Building UI...")
 val distUI: TaskKey[Unit] = taskKey[Unit]("Building UI for distribution...")
 val runAssembly: TaskKey[Unit] = taskKey[Unit]("Running spark server from assembly...")
@@ -254,7 +257,8 @@ val sparkSettings = Seq(
       .getOrElse((file(".").getAbsoluteFile / "target" / "spark").getCanonicalPath)
   },
   sparkHome := {
-    (file(sparkInstallLocation.value) / s"spark-${sparkVersion.value}-bin-hadoop2.7").toString
+    val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-${sparkVersion.value}-bin-hadoop2.7-scala2.13" else s"spark-${sparkVersion.value}-bin-hadoop2.7"
+    (file(sparkInstallLocation.value) / pkgName).toString
   },
   setupSpark := {
     import sys.process._
