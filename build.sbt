@@ -256,9 +256,8 @@ val sparkSettings = Seq(
   },
   Test / testOptions += Tests.Setup { () =>
     import sys.process._
-    import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
+    import java.nio.channels.FileChannel
     import java.nio.file.StandardOpenOption
-    import scala.util.control.NonFatal
 
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
