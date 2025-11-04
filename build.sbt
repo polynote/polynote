@@ -262,54 +262,83 @@ val sparkSettings = Seq(
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
-    // It seems that this Tests.Setup block gets run concurrently, which can sometimes cause weirdness to happen.
-    // So we try to use a lockfile to ensure that it only ever runs once
-    // (Yes there still the possibility of a race condition here, but I don't know how to properly synchronize SBT tasks...)
-    val lockFile = baseDir / s"spark_${scalaBinaryVersion.value}_test_setup_is_running.lock"
-    if (lockFile.exists()) {
-      println(s"Lock file $lockFile exists, test setup is already running. Waiting for it to finish...")
-      val start = System.currentTimeMillis()
-      val timeout = 10 * 60 * 1000 // 10 minutes
-      val checkInterval = 10 * 1000 // 10 seconds
-      while (System.currentTimeMillis() < start + timeout && lockFile.exists()) {
-        println(s"Lock file $lockFile still exists after ${System.currentTimeMillis() - start}ms. Waiting...")
-        Thread.sleep(checkInterval)
-      }
-      if (lockFile.exists()) {
-        throw new Exception(s"Lock file $lockFile still exists after $timeout ms. Aborting.")
-      } else {
-        println("Lock file no longer exists, test setup must have finished")
-      }
+
+    // If the Spark distribution is already extracted, skip the entire setup
+    if (destDir.exists()) {
+      println(s"$destDir already exists, test setup completed")
     } else {
+      // Use a lockfile to coordinate concurrent test setups
       baseDir.mkdirs()
-      lockFile.createNewFile()
-      lockFile.deleteOnExit()
+      val lockFile = baseDir / s"spark_${distVersion}_scala_${scalaBinaryVersion.value}_test_setup_is_running.lock"
 
+      // Try to acquire the lock with atomic file creation
+      var lockAcquired = false
       try {
-        if (destDir.exists()) {
-          println(s"$destDir already exists, skipping download and extract")
-        } else {
-          val pkgFile = baseDir / filename
-          if (!pkgFile.exists()) {
-            pkgFile.createNewFile()
-            println(s"Downloading $distUrl to $pkgFile...")
-            (distUrl #> pkgFile).!!
-          }
+        lockAcquired = lockFile.createNewFile()
+      } catch {
+        case _: Exception => lockAcquired = false
+      }
 
-          println(s"Verifying checksum for $pkgFile for $distVersion...")
-          val expectedChecksum = sparkChecksums(distVersion)
-          val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
-          if (actualChecksum == expectedChecksum) {
-            println(s"Checksum verified for $pkgFile for $distVersion")
-          } else {
-            throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
-          }
+      if (!lockAcquired) {
+        // Another process holds the lock, wait for it to finish
+        println(s"Lock file $lockFile exists, test setup is already running. Waiting for it to finish...")
+        val start = System.currentTimeMillis()
+        val timeout = 10 * 60 * 1000 // 10 minutes
+        val checkInterval = 5 * 1000 // 5 seconds
 
-          println(s"Extracting $pkgFile to $baseDir")
-          println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
+        while (System.currentTimeMillis() < start + timeout && lockFile.exists() && !destDir.exists()) {
+          val elapsed = (System.currentTimeMillis() - start) / 1000
+          println(s"Waiting for test setup to complete... ${elapsed}s elapsed")
+          Thread.sleep(checkInterval)
         }
-      } finally {
-        lockFile.delete()
+
+        // Check if setup completed successfully
+        if (destDir.exists()) {
+          println("Test setup completed by another process")
+        } else if (lockFile.exists()) {
+          // Lock file still exists but destDir wasn't created - stale lock file
+          println(s"Lock file appears stale (no progress after ${timeout}ms). Removing lock and retrying...")
+          lockFile.delete()
+          // Give it one more chance - if destDir still doesn't exist, the other process may have failed
+          Thread.sleep(1000)
+          if (!destDir.exists()) {
+            throw new Exception(s"Test setup did not complete after waiting ${timeout}ms. Please check for errors and try again.")
+          }
+        }
+      } else {
+        // We acquired the lock, perform the setup
+        try {
+          // Double-check destDir in case another process created it while we were acquiring the lock
+          if (destDir.exists()) {
+            println(s"$destDir already exists, skipping download and extract")
+          } else {
+            val pkgFile = baseDir / filename
+            if (!pkgFile.exists()) {
+              pkgFile.createNewFile()
+              println(s"Downloading $distUrl to $pkgFile...")
+              (distUrl #> pkgFile).!!
+            }
+
+            println(s"Verifying checksum for $pkgFile for $distVersion...")
+            val expectedChecksum = sparkChecksums(distVersion)
+            val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
+            if (actualChecksum == expectedChecksum) {
+              println(s"Checksum verified for $pkgFile for $distVersion")
+            } else {
+              throw new Exception(s"Checksum mismatch for $pkgFile for $distVersion. Expected:\n$expectedChecksum\nGot:\n$actualChecksum")
+            }
+
+            println(s"Extracting $pkgFile to $baseDir")
+            println(Seq("tar", "-zxpf", pkgFile.toString, "-C", baseDir.toString).!!)
+            println(s"Successfully extracted Spark to $destDir")
+          }
+        } finally {
+          // Always clean up the lock file
+          if (lockFile.exists()) {
+            lockFile.delete()
+            println(s"Released lock file $lockFile")
+          }
+        }
       }
     }
 
