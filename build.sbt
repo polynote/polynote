@@ -304,6 +304,13 @@ val sparkSettings = Seq(
     }
   },
   Test / test := (Test / test).dependsOn(setupSpark).value,
+  Test / javaOptions ++= Seq(
+    "--add-opens=java.base/java.nio=ALL-UNNAMED",
+    "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+    "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+    "--add-opens=java.base/java.util=ALL-UNNAMED"
+  ),
   Test / envVars ++= {
     Map(
       "SPARK_HOME" -> sparkHome.value,
