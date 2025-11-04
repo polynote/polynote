@@ -22,15 +22,4 @@ jobs:
         java-version: 8 
         architecture: x64
     - name: Build
-      run: |
-        echo "Setting up Python dependencies"
-        pip install -r ./requirements.txt
-        jep_site_packages_path=`pip show jep | grep "^Location:" | cut -d ':' -f 2 | cut -d ' ' -f 2`
-        jep_path=${jep_site_packages_path}/jep
-        jep_lib_path=`realpath ${jep_site_packages_path}/../../`
-        export LD_LIBRARY_PATH=${jep_path}:${jep_site_packages_path}:${jep_lib_path}:${LD_LIBRARY_PATH}
-        export LD_PRELOAD=${jep_lib_path}/libpython3.so
-
-        pushd $GITHUB_WORKSPACE
-          sbt 'set scalaVersion := "2.12.12"' test
-        popd
+      run: ./.github/scripts/build-and-test.sh 2.12.12
