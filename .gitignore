@@ -18,3 +18,5 @@ tmp
 npm-debug.log.*
 run-jar.sh
 /.bsp
+/.metals
+/.vscode
