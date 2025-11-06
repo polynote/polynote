@@ -15,6 +15,7 @@ val circeVersion: SettingKey[String] = settingKey("circe version")
 val circeYamlVersion: SettingKey[String] = settingKey("circe-yaml version")
 val sparkInstallLocation: SettingKey[String] = settingKey("Location of Spark installation(s)")
 val sparkHome: SettingKey[String] = settingKey("Location of specific Spark installation to use for SPARK_HOME during tests")
+val assembleAllSparkVersions: TaskKey[Seq[File]] = taskKey[Seq[File]]("Build assemblies for all Spark versions")
 
 
 val versions = new {
@@ -399,7 +400,21 @@ lazy val `polynote-spark-runtime` = project.settings(
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided"
   ),
-  distFiles := Seq(assembly.value)
+  assembly / assemblyJarName := {
+    val sparkMajorMinor = sparkVersion.value.split("\\.").take(2).mkString(".")
+    s"polynote-spark-runtime-spark-${sparkMajorMinor}_${scalaBinaryVersion.value}.jar"
+  },
+  distFiles := Seq(assembly.value),
+  prepDistFiles := {
+    val scalaBinary = scalaBinaryVersion.value
+    val sparkMajorMinor = sparkVersion.value.split("\\.").take(2).mkString(".")
+    val targetDir = distBuildDir / "deps" / scalaBinary / s"spark-${sparkMajorMinor}"
+    targetDir.mkdirs()
+    val sourceFiles = distFiles.value
+    val destFiles = sourceFiles.map { file => targetDir / "polynote-spark-runtime.jar" }
+    IO.copy(sourceFiles zip destFiles, overwrite = true, preserveLastModified = true, preserveExecutable = true)
+    destFiles
+  }
 ).dependsOn(`polynote-runtime` % "provided")
 
 lazy val `polynote-spark` = project.settings(
@@ -441,7 +456,17 @@ val dist = Command.command(
   "Performs cross-build and builds a distribution archive in target/polynote-dist.tar.gz"
 ) {
   state =>
-    val resultState = waitForCommand("+prepDistFiles")(state)
+    // Build for all Scala and Spark version combinations
+    var resultState = state
+    for {
+      scalaVer <- scalaVersions
+      sparkVer <- sparkVersions(scalaVer.split('.').take(2).mkString("."))
+    } {
+      val cmd = s"""set scalaVersion := "$scalaVer"; set ThisBuild / sparkVersion := "$sparkVer"; polynote-spark-runtime/prepDistFiles"""
+      resultState = waitForCommand(cmd)(resultState)
+    }
+    // Build other projects with cross-build
+    resultState = waitForCommand("+prepDistFiles")(resultState)
     val examples = IO.listFiles(file(".") / "docs" / "examples").map(f => (f, s"polynote/examples/${f.getName}"))
     val baseDir = file(".")
     val targetDir = baseDir / "target"
