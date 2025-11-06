@@ -4,11 +4,11 @@ import java.io.{ByteArrayOutputStream, DataOutput, DataOutputStream}
 import java.nio.ByteBuffer
 import org.apache.spark.sql.{DataFrame, Dataset, Row, types => sparkTypes}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, SpecializedGetters}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.storage.StorageLevel
 import polynote.runtime._
+import polynote.runtime.spark.compat.SparkVersionCompat
 
 trait SparkReprsOf[A] extends ReprsOf[A]
 
@@ -275,7 +275,7 @@ object SparkReprsOf extends LowPrioritySparkReprsOf {
         // I assume that the schema is always the same for all elements of the array
         // (it's reasonable since this is probably a Dataframe.collect result
         val prototype = arr.head
-        val rowEncoder = RowEncoder(prototype.schema) // to go from Row to InternalRow
+        val rowEncoder = SparkVersionCompat.rowEncoder(prototype.schema) // to go from Row to InternalRow
         val (structType, encode) = structDataTypeAndEncoder(prototype.schema) // reuse code from InternalRow
         val toBytes = rowToBytes(structType, encode)
         val toInternalRow = {

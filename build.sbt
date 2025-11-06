@@ -254,6 +254,10 @@ val sparkSettings = Seq(
       .filter(versions.contains)
       .getOrElse(versions.last)
   },
+  Compile / unmanagedSourceDirectories += {
+    val sparkMajorMinor = sparkVersion.value.split("\\.").take(2).mkString(".")
+    (LocalRootProject / baseDirectory).value / "polynote-spark-runtime" / "src" / "main" / s"spark_$sparkMajorMinor" / "scala"
+  },
   libraryDependencies ++= Seq(
     "org.apache.spark" %% "spark-sql" % sparkVersion.value % "provided",
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
