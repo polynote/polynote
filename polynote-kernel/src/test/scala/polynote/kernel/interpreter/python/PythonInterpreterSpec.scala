@@ -479,7 +479,65 @@ class PythonInterpreterSpec extends FreeSpec with Matchers with InterpreterSpec 
       }
     }
 
+    "should properly handle kernel display APIs" in {
+      val code =
+        """
+          |kernel.display.html("<h1>HTML</h1>")
+          |kernel.display.content("image/png", "base64encodedpng")
+          |mykernel = kernel
+          |""".stripMargin
+      assertOutput(code) { case (vars, output) =>
+        vars("mykernel").toString should include("polynote.runtime.KernelRuntime")
 
+        output should contain theSameElementsInOrderAs(Seq(
+          Output("text/html", Vector("<h1>HTML</h1>")),
+          Output("image/png", Vector("base64encodedpng")),
+        ))
+      }
+    }
+
+    "should be able to retrieve the current active kernel dynamically" in {
+      val cell1 = interp(
+        """
+          |cell1_kernel = kernel
+          |cell1_active_kernel = get_active_kernel()
+          |def get_cell1_kernel():
+          |    return kernel
+          |def get_cell1_active_kernel():
+          |    return get_active_kernel()
+          |def print_fancy(s):
+          |    get_active_kernel().display.html(f"<i>{s}</i>")""".stripMargin).run(cellState).runIO()
+      val cell2 = interp(
+        """
+          |cell2_kernel = kernel
+          |cell2_active_kernel = get_active_kernel()
+          |kernel_from_cell1 = get_cell1_kernel()
+          |active_kernel_from_cell1 = get_cell1_active_kernel()
+          |print_fancy("hi there")
+          |""".stripMargin).run(cell1._1).runIO()
+
+      val cell1Kernel :: cell1ActiveKernel :: getCell1Kernel :: getCell1ActiveKernel :: printFancy :: Nil = cell1._2.state.values
+      cell1Kernel.value.toString should include("polynote.runtime.KernelRuntime")
+      cell1ActiveKernel.value.toString should include("polynote.runtime.KernelRuntime")
+      cell1Kernel.value shouldEqual cell1ActiveKernel.value
+      getCell1Kernel.value shouldBe a[PythonFunction]
+      getCell1ActiveKernel.value shouldBe a[PythonFunction]
+      printFancy.value shouldBe a[PythonFunction]
+      // note - empty even though print_fancy is defined here!
+      cell1._2.env.publishResult.toList.runIO() shouldBe empty
+
+      val cell2Kernel :: cell2ActiveKernel :: kernelFromCell1 :: activeKernelFromCell1 :: Nil = cell2._2.state.values
+      cell2Kernel.value.toString should include("polynote.runtime.KernelRuntime")
+      cell2ActiveKernel.value.toString should include("polynote.runtime.KernelRuntime")
+      cell2Kernel.value shouldEqual cell2ActiveKernel.value
+      kernelFromCell1.value.toString should include("polynote.runtime.KernelRuntime")
+      activeKernelFromCell1.value.toString should include("polynote.runtime.KernelRuntime")
+      cell2ActiveKernel.value shouldEqual activeKernelFromCell1.value
+      // note - print_fancy correctly found the active kernel
+      cell2._2.env.publishResult.toList.runIO() should contain theSameElementsInOrderAs(Seq(
+        Output("text/html", Vector("<i>hi there</i>")),
+      ))
+    }
   }
 
   "PythonObject" - {
