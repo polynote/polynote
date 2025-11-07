@@ -1,4 +1,77 @@
-# Unreleased
+# 0.6.1 (Jan 10, 2025)
+**Breaking Changes:**
+- Drop Scala 2.11 support #1443
+  - Polynote now only supports Scala 2.12 and 2.13
+
+**Improvements:**
+- Update to latest SBT to run in modern JDK #1443
+- Update Circe dependency #1448
+- Update DEVELOPING.md documentation #1446
+- Add -release option for Java compiler targeting Java 8 #1452
+
+**Bugfixes:**
+- Fix CI sbt missing issue #1460
+- Fix startup script to exclude sys.pycache_prefix from search for jep #1455 (thanks @JanukanS)
+- Add dependency override for shapeless to avoid version conflicts #1453
+- Fix comment cancellation functionality #1444 (thanks @paaatrrrick)
+  - Cancelling a reply now properly removes its text
+- Update merge strategy to handle JDK9+ modules
+- Fix startup script for proper operation
+
+# 0.6.0 (Apr 23, 2024)
+**Features:**
+- Jump-to-definition support for Scala, Java, and Python #1372 #1408 #1418
+  - Navigate to symbol definitions across your codebase
+  - Improvements to jump-to-definition for Java and Python sources
+
+**Improvements:**
+- More robust Python library paths configuration #1433
+  - Defensively add more comprehensive set of paths to PYTHONPATH and LD_LIBRARY_PATH
+  - Print warnings when PYTHONPATH and LD_LIBRARY_PATH are not set
+- Scala version configuration moved to Spark config section #1432
+  - Better organization of Scala version selection in UI
+  - Update spark template config format
+- Pin Jep to version 4.1.1 #1429
+- Webpack watch improvements for stylesheets #1415
+  - Only build stylesheets if .less files are changed
+  - Execute build_style script when in watch mode
+- Fast fail build if tar download/extract fails #1425
+  - Use curl to download with checksum verification
+  - Better error handling during build process
+
+**Bugfixes:**
+- Fix for renaming notebooks #1423
+  - Resolves issues with notebook state after rename
+- Fix config UI not displaying templates outside of server templates #1437
+- Fix parsing failures with better error messages #1414
+  - Catch parsing failure and insert path to notebook in error message
+- Fix empty dependency array handling #1421
+- Fix copying repository configurations #1410
+  - Wrap repository configurations in object with repo type for correct JSON parsing
+- Fix Scala default version issues #1409
+  - Add observer to scala version handler when loading notebook config
+- Fix multiple comments on same range #1413
+  - Add undefined checks to fix comment deletion
+  - Improve comment state handling
+- Improve search modal error handling #1413 #1415
+  - Filter out non-relevant server errors in search modal
+  - Better error formatting and messaging
+- Update notebook help icon button URL #1440 (thanks @ikpaetukgabriel)
+
+# 0.5.2 (Nov 2022)
+**Features:**
+- Jump-to-definition MVP #1372
+
+**Improvements:**
+- Update to Scala 2.12.15 #1405
+- Allow StringRepr to be longer #1399
+- Split build into individual scala versions
+
+**Bugfixes:**
+- Fix Spark 2.4 BC SQLContext compatibility #1387 (thanks @skilld-labs)
+  - Use SQLContext._get_or_create instead of deprecated _wrapped
+- Fix typo in basic-usage.md #1395 (thanks @wsargent)
+- Stop publishing scaladoc #1401
 
 # 0.5.1 (Mar 28, 2022)
 **Features:**
