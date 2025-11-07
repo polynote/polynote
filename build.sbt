@@ -99,7 +99,7 @@ val commonSettings = Seq(
   assembly / assemblyOption := {
     (assembly / assemblyOption).value.withIncludeScala(false)
   },
-  assembly / assemblyShadeRules := Seq(ShadeRule.rename("shapeless.**" -> "polynote.shaded.shapeless.@1").inAll),
+  assembly / assemblyShadeRules := Seq(ShadeRule.rename("shapeless.**" -> "polynote.shaded.shapeless.@1", "com.google.**" -> "polynote.shaded.google.@1").inAll),
   Global / cancelable := true,
   addCompilerPlugin("org.typelevel" % "kind-projector" % "0.13.3" cross CrossVersion.full),
   buildUI := {
