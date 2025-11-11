@@ -358,8 +358,11 @@ val sparkSettings = Seq(
     )
   },
   Test / javaOptions ++= Seq(
-    // Add JVM flags required for Spark to work with Java 9+
-    // These open internal Java modules that Spark's unsafe code needs to access
+    // Add JVM flags required for Spark to work with Java 17+
+    // These open internal Java modules that Spark's unsafe code needs to access.
+    // Flags are based on those used by Spark:
+    // https://github.com/apache/spark/blob/v3.3.0/launcher/src/main/java/org/apache/spark/launcher/JavaModuleOptions.java#L28
+    "-XX:+IgnoreUnrecognizedVMOptions",
     "--add-opens=java.base/java.lang=ALL-UNNAMED",
     "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
     "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
