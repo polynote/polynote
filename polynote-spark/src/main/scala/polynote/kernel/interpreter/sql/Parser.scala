@@ -32,23 +32,16 @@ class Parser {
 
     val tableIdentifiers = ListBuffer[Parser.TableIdentifier]()
 
-    // Visitor to extract table identifiers
-    val tableIdentifierVisitor = new SqlBaseParserBaseVisitor[Unit] {
-      override def visitTableIdentifier(ctx: SqlBaseParser.TableIdentifierContext): Unit = {
+    parser.addParseListener(new SqlBaseParserBaseListener {
+      override def exitTableIdentifier(ctx: SqlBaseParser.TableIdentifierContext): Unit = {
         val db = Option(ctx.db).map(_.getText).filter(_.nonEmpty)
         val name = Option(ctx.table).map(_.getText).getOrElse("")
         tableIdentifiers += Parser.TableIdentifier(db, name)
-        super.visitTableIdentifier(ctx)
       }
-
-      override def defaultResult(): Unit = ()
-      override def aggregateResult(aggregate: Unit, nextResult: Unit): Unit = ()
-    }
+    })
 
     try {
       val statement = parser.singleStatement()
-      // Visit the parse tree to extract table identifiers
-      tableIdentifierVisitor.visit(statement)
       val result = Parser.Result(statement, tableIdentifiers.toList)
       if (errors.nonEmpty) {
         Ior.both(CompileErrors(errors.toList), result)
