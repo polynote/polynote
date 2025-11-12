@@ -122,7 +122,7 @@ val commonSettings = Seq(
   },
   scalacOptions += "-deprecation",
   assembly / test := {},
-  circeVersion := "0.14.3",
+  circeVersion := "0.14.10",
   circeYamlVersion := "0.15.2"
 )
 
