@@ -48,7 +48,8 @@ if not(deps_path.exists()):
 
 deps = Path(polynote_dir).joinpath("deps", scala_version).glob("*.jar")
 classpath = ":".join([":".join([ f'"{d}"' for d in deps ]), ":".join([ f'"{p}"' for p in plugins ])])
-cmd = f"java -cp {classpath} -Djava.library.path={jep_path} polynote.Main {' '.join(sys.argv[1:])}"
+java_executable = os.path.join(os.environ['JAVA_HOME'], 'bin', 'java') if os.environ.get('JAVA_HOME') else 'java'
+cmd = f"{java_executable} -cp {classpath} -Djava.library.path={jep_path} polynote.Main {' '.join(sys.argv[1:])}"
 cmd = shlex.split(cmd)
 print(cmd)
 os.execvp(cmd[0], cmd)
