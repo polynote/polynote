@@ -8,9 +8,9 @@ on:
 
 jobs:
   build:
-
+    timeout-minutes: 30
     runs-on: ubuntu-22.04
-    
+
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-python@v2
