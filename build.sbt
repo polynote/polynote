@@ -234,7 +234,7 @@ val sparkChecksums = Map(
 )
 
 val sparkDistUrl: String => String =
-  ver => s"https://archive.apache.org/dist/spark/spark-$ver/"
+  ver => s"https://github.com/polynote/polynote/releases/download/0.6.1"
 
 val sparkSettings = Seq(
   resolvers ++= {
@@ -258,7 +258,7 @@ val sparkSettings = Seq(
     import sys.process._
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
-    val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-$distVersion-bin-hadoop2.7-scala2.13" else s"spark-$distVersion-bin-hadoop2.7"
+    val pkgName = s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
