@@ -218,9 +218,11 @@ val `polynote-server` = project.settings(
   Test / testOptions += Tests.Argument("-oF")
 ).dependsOn(`polynote-runtime` % "provided", `polynote-runtime` % "test", `polynote-kernel` % "provided", `polynote-kernel` % "test->test")
 
+// Supported Spark versions for each Scala binary version
+// The default version (used if SPARK_VERSION env var is not set) is the last one in each list
 val sparkVersions = Map(
-  "2.12" -> "3.3.4",
-  "2.13" -> "3.3.4"
+  "2.12" -> Seq("3.3.4", "3.5.7"),
+  "2.13" -> Seq("3.3.4", "3.5.7")
 )
 
 // keep expected checksums here. This has two benefits over checking the sha512sum from the archive:
@@ -232,6 +234,8 @@ val sparkVersions = Map(
 val sparkChecksums = Map(
   "spark-3.3.4-bin-hadoop3.tgz" -> "a3874e340a113e95898edfa145518648700f799ffe2d1ce5dde7743e88fdf5559d79d9bcb1698fdfa5296a63c1d0fc4c8e32a93529ed58cd5dcf0721502a1fc7",
   "spark-3.3.4-bin-hadoop3-scala2.13.tgz" -> "0662a59544e9c9c74f32bce9a4c80f408a4b86b183ccc7ec4b2a232d524e534931f5537b18376304db6d7d54d290aa415431abbd8ec2d1ebc256dcc5cc5802d7",
+  "spark-3.5.7-bin-hadoop3.tgz" -> "f3b7d5974d746b9aaecb19104473da91068b698a4d292177deb75deb83ef9dc7eb77062446940561ac9ab7ee3336fb421332b1c877292dab4ac1b6ca30f4f2e0",
+  "spark-3.5.7-bin-hadoop3-scala2.13.tgz" -> "b1f3812bee0f27be0cea588f7da82a9e69633bb69f7b8abbdf66b9196dedc2508824bbe8233cc1e47a047041afbd2ec42a1692fba12e4d8c601daf829760d11e",
 )
 
 // Downloading from https://archive.apache.org/dist/spark is very slow, so we download the packages manually then upload to GitHub Releases
@@ -244,7 +248,12 @@ val sparkSettings = Seq(
   resolvers ++= {
     Seq(MavenRepository(name = "Apache Staging", root = "https://repository.apache.org/content/repositories/staging"))
   },
-  sparkVersion := sparkVersions(scalaBinaryVersion.value),
+  sparkVersion := {
+    val versions = sparkVersions(scalaBinaryVersion.value)
+    sys.env.get("SPARK_VERSION")
+      .filter(versions.contains)
+      .getOrElse(versions.last)
+  },
   libraryDependencies ++= Seq(
     "org.apache.spark" %% "spark-sql" % sparkVersion.value % "provided",
     "org.apache.spark" %% "spark-repl" % sparkVersion.value % "provided",
