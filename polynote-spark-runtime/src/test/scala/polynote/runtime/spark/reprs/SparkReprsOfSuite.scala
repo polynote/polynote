@@ -70,4 +70,108 @@ class SparkReprsOfSuite extends FreeSpec with Matchers {
       }
     }
   }
+
+  "RowEncoder compatibility across Spark versions" - {
+    "should correctly encode rows using SparkVersionCompat.rowEncoder" in {
+      import org.apache.spark.sql.types.{StructType => SparkStructType, StructField => SparkStructField, StringType => SparkStringType, IntegerType => SparkIntegerType, DoubleType => SparkDoubleType}
+      import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+      import polynote.runtime.spark.compat.SparkVersionCompat
+
+      // Create a schema
+      val schema = SparkStructType(Seq(
+        SparkStructField("name", SparkStringType, nullable = true),
+        SparkStructField("age", SparkIntegerType, nullable = false),
+        SparkStructField("score", SparkDoubleType, nullable = false)
+      ))
+
+      // Get the encoder using our compatibility layer
+      val encoder: ExpressionEncoder[Row] = SparkVersionCompat.rowEncoder(schema)
+
+      // Verify the encoder has the correct schema
+      encoder.schema shouldBe schema
+
+      // Create a DataFrame with this schema
+      val data = Seq(
+        Row("Alice", 25, 95.5),
+        Row("Bob", 30, 87.3),
+        Row(null, 22, 91.2)
+      )
+      val df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+
+      // Collect and verify we can encode/decode the rows
+      val collected = df.collect()
+      collected.length shouldBe 3
+      collected(0).getString(0) shouldBe "Alice"
+      collected(0).getInt(1) shouldBe 25
+      collected(0).getDouble(2) shouldBe 95.5
+      collected(2).isNullAt(0) shouldBe true
+    }
+
+    "should work with Array[Row] representation" in {
+      import org.apache.spark.sql.types.{StructType => SparkStructType, StructField => SparkStructField, StringType => SparkStringType, LongType => SparkLongType}
+
+      // Create a simple schema
+      val schema = SparkStructType(Seq(
+        SparkStructField("id", SparkLongType, nullable = false),
+        SparkStructField("name", SparkStringType, nullable = true)
+      ))
+
+      val data = Seq(
+        Row(1L, "first"),
+        Row(2L, "second"),
+        Row(3L, null)
+      )
+
+      val df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+      val rows = df.collect()
+
+      // This exercises the rowEncoder through the ReprsOf[Array[Row]] implicit
+      val representation = implicitly[ReprsOf[Array[Row]]]
+      val result = representation(rows)
+
+      // Verify we get a StreamingDataRepr
+      result should have length 1
+      result.head shouldBe a[StreamingDataRepr]
+
+      val streamingRepr = result.head.asInstanceOf[StreamingDataRepr]
+      streamingRepr.knownSize shouldBe Some(3)
+    }
+
+    "should work with Array[Row] from df.take()" in {
+      import org.apache.spark.sql.types.{StructType => SparkStructType, StructField => SparkStructField, StringType => SparkStringType, IntegerType => SparkIntegerType, DoubleType => SparkDoubleType}
+
+      // Create a larger dataset
+      val schema = SparkStructType(Seq(
+        SparkStructField("id", SparkIntegerType, nullable = false),
+        SparkStructField("name", SparkStringType, nullable = true),
+        SparkStructField("value", SparkDoubleType, nullable = false)
+      ))
+
+      val data = (1 to 100).map { i =>
+        Row(i, s"item_$i", i * 1.5)
+      }
+
+      val df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+
+      // Use take(5) instead of collect() to get limited rows
+      val rows = df.take(5)
+
+      // This exercises the rowEncoder through the ReprsOf[Array[Row]] implicit
+      val representation = implicitly[ReprsOf[Array[Row]]]
+      val result = representation(rows)
+
+      // Verify we get a StreamingDataRepr with exactly 5 rows
+      result should have length 1
+      result.head shouldBe a[StreamingDataRepr]
+
+      val streamingRepr = result.head.asInstanceOf[StreamingDataRepr]
+      streamingRepr.knownSize shouldBe Some(5)
+
+      // Verify the data can be decoded
+      StreamingDataRepr.getHandle(streamingRepr.handle).fold(fail("Expected to find a handle, found None")) { h =>
+        val decoded = h.iterator.toList
+        decoded should have length 5
+      }
+    }
+  }
 }
