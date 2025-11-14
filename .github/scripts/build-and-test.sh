@@ -59,7 +59,7 @@ echo "LD_PRELOAD: ${LD_PRELOAD}"
 
 # Run sbt tests
 echo "Running sbt tests with Scala ${SCALA_VERSION}..."
-sbt "set scalaVersion := \"${SCALA_VERSION}\"" test
+sbt ++${SCALA_VERSION} test
 
 echo "==================================="
 echo "Build and test completed successfully!"
