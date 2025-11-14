@@ -233,8 +233,11 @@ val sparkChecksums = Map(
   "3.2.1" -> "2ec9f1cb65af5ee7657ca83a1abaca805612b8b3a1d8d9bb67e317106025c81ba8d44d82ad6fdb45bbe6caa768d449cd6a4945ec050ce9390f806f46c5cb1397"
 )
 
+// Downloading from https://archive.apache.org/dist/spark is very slow, so we download the packages manually then upload to GitHub Releases
+// to work around the issue.
+// For new spark versions, add the package via https://github.com/polynote/polynote/releases/edit/0.6.1
 val sparkDistUrl: String => String =
-  ver => s"https://archive.apache.org/dist/spark/spark-$ver/"
+  ver => s"https://github.com/polynote/polynote/releases/download/0.6.1"
 
 val sparkSettings = Seq(
   resolvers ++= {
@@ -258,7 +261,7 @@ val sparkSettings = Seq(
     import sys.process._
     val baseDir = file(sparkInstallLocation.value)
     val distVersion = sparkVersion.value
-    val pkgName = if (scalaBinaryVersion.value == "2.13") s"spark-$distVersion-bin-hadoop2.7-scala2.13" else s"spark-$distVersion-bin-hadoop2.7"
+    val pkgName = s"spark-$distVersion-bin-hadoop2.7"
     val filename = s"$pkgName.tgz"
     val distUrl = url(s"${sparkDistUrl(distVersion)}/$filename")
     val destDir = baseDir / pkgName
