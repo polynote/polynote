@@ -1,7 +1,7 @@
 package polynote.kernel.interpreter.sql
 
 import org.apache.spark.sql.catalyst.parser.SqlBaseParser.SingleStatementContext
-import org.apache.spark.sql.catalyst.parser.{SqlBaseBaseVisitor, SqlBaseParser}
+import org.apache.spark.sql.catalyst.parser.{SqlBaseParserBaseVisitor, SqlBaseParser}
 import org.apache.spark.sql.thief.SessionStateThief
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import polynote.kernel.environment.CurrentNotebook
@@ -92,7 +92,7 @@ class SparkSqlInterpreter(compiler: ScalaCompiler) extends Interpreter {
 
   def shutdown(): Task[Unit] = ZIO.unit
 
-  private class CompletionVisitor(pos: Int, availableSymbols: mutable.TreeSet[String]) extends SqlBaseBaseVisitor[List[Completion]] {
+  private class CompletionVisitor(pos: Int, availableSymbols: mutable.TreeSet[String]) extends SqlBaseParserBaseVisitor[List[Completion]] {
     override def defaultResult(): List[Completion] = Nil
 
     override def aggregateResult(aggregate: List[Completion], nextResult: List[Completion]): List[Completion] = aggregate ++ nextResult
