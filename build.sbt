@@ -228,8 +228,10 @@ val sparkVersions = Map(
 // 2. Spark's checksums are generated with gpg rather than sha512sum up until a certain version, so they're a pain to verify
 //    See https://issues.apache.org/jira/browse/SPARK-30683
 // To add to this list, download the tarball for the new version from the apache repo and run `sha512sum <file>.tgz`
+// Map key format: "package-name.tgz" -> checksum
 val sparkChecksums = Map(
-  "3.3.4" -> "a3874e340a113e95898edfa145518648700f799ffe2d1ce5dde7743e88fdf5559d79d9bcb1698fdfa5296a63c1d0fc4c8e32a93529ed58cd5dcf0721502a1fc7",
+  "spark-3.3.4-bin-hadoop3.tgz" -> "a3874e340a113e95898edfa145518648700f799ffe2d1ce5dde7743e88fdf5559d79d9bcb1698fdfa5296a63c1d0fc4c8e32a93529ed58cd5dcf0721502a1fc7",
+  "spark-3.3.4-bin-hadoop3-scala2.13.tgz" -> "0662a59544e9c9c74f32bce9a4c80f408a4b86b183ccc7ec4b2a232d524e534931f5537b18376304db6d7d54d290aa415431abbd8ec2d1ebc256dcc5cc5802d7",
 )
 
 // Downloading from https://archive.apache.org/dist/spark is very slow, so we download the packages manually then upload to GitHub Releases
@@ -324,7 +326,8 @@ val sparkSettings = Seq(
             }
 
             println(s"Verifying checksum for $pkgFile for $distVersion...")
-            val expectedChecksum = sparkChecksums(distVersion)
+            val expectedChecksum = sparkChecksums.getOrElse(filename,
+              throw new Exception(s"No checksum found for $filename. Please add it to sparkChecksums in build.sbt"))
             val actualChecksum = Seq("sha512sum", pkgFile.toString).!!.trim.split(" ").head
             if (actualChecksum == expectedChecksum) {
               println(s"Checksum verified for $pkgFile for $distVersion")
