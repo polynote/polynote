@@ -178,7 +178,8 @@ final case class SparkPropertySet(
   properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
   sparkSubmitArgs: Option[String] = None,
   versionConfigs: Option[List[ScalaVersionConfig]] = None,
-  distClasspathFilter: Option[Pattern] = None
+  distClasspathFilter: Option[Pattern] = None,
+  sparkVersion: String = "3.3"
 )
 
 object SparkPropertySet {
