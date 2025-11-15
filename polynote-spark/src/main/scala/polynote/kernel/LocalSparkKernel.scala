@@ -130,9 +130,25 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     }
   }
 
-  private def selectSparkRuntimeJar(scalaBinaryVersion: String): URIO[Logging, File] = {
-    // For local kernel, always use Spark 3.5 runtime
-    val sparkVersion = "3.5"
+  private def selectSparkRuntimeJar(
+    scalaBinaryVersion: String,
+    config: PolynoteConfig,
+    nbConfig: NotebookConfig
+  ): URIO[Logging, File] = {
+    // Get Spark version from config, default to 3.3
+    val sparkVersion = {
+      // Try to get spark version from the selected property set
+      val propertySetVersion = for {
+        sparkConfig <- config.spark
+        propertySets <- sparkConfig.propertySets
+        defaultSetName <- sparkConfig.defaultPropertySet.orElse(nbConfig.sparkTemplate.map(_.name))
+        selectedSet <- propertySets.find(_.name == defaultSetName)
+      } yield selectedSet.sparkVersion  // Already "3.3" if not set in YAML
+
+      // Default to 3.3 if no property set is selected
+      propertySetVersion.getOrElse("3.3")
+    }
+
     val versionSpecificJar = new File(s"deps/${scalaBinaryVersion}/spark-${sparkVersion}/polynote-spark-runtime.jar")
 
     if (versionSpecificJar.exists()) {
@@ -146,9 +162,11 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
   }
 
   def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
+    config           <- Config.access
+    nbConfig         <- CurrentNotebook.config
     scalaDeps        <- CoursierFetcher.fetch("scala")
     scalaBinaryVer   <- detectScalaBinaryVersion
-    sparkRuntimeJar  <- selectSparkRuntimeJar(scalaBinaryVer)
+    sparkRuntimeJar  <- selectSparkRuntimeJar(scalaBinaryVer, config, nbConfig)
     sparkClasspath   <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
     _                <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
     sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map {a => (a.url, a.file) }
