@@ -163,13 +163,17 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
           ScalaVersionConfig("some version", Map("arbitrary.spark.args" -> "anything"), sparkSubmitArgs = Some("some args")),
           ScalaVersionConfig("some version 2", Map("arbitrary.spark.args" -> "anything else"), sparkSubmitArgs = Some("different submit args"))
         )),
-        None
+        distClasspathFilter = None,
+        sparkVersion = "3.3"
       ),
-      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), None),
-      SparkPropertySet(name = "Old config format", properties = Map("something" -> "thingOld"), sparkSubmitArgs = Some("spark args"), None, None)
+      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), sparkSubmitArgs = None, versionConfigs = None, distClasspathFilter = None, sparkVersion = "3.3"),
+      SparkPropertySet(name = "Old config format", properties = Map("something" -> "thingOld"), sparkSubmitArgs = Some("spark args"), versionConfigs = None, distClasspathFilter = None, sparkVersion = "3.3")
     )
     parsed.pyspark.get.distributionExcludes shouldEqual List("foo", "bar")
     parsed.pyspark.get.distributeDependencies shouldEqual Option(true)
+
+    // Verify default spark version is 3.3 when not specified
+    parsed.propertySets.get.head.sparkVersion shouldEqual "3.3"
   }
 
   it should "fail on invalid configuration" in {
@@ -257,5 +261,36 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         |""".stripMargin
     val parsed = PolynoteConfig.parse(yamlStr)
     parsed.right.value.notifications shouldEqual "release_notifications"
+  }
+
+  it should "parse spark version in property sets" in {
+    val yamlStr =
+      """
+        |spark:
+        |  property_sets:
+        |    - name: Spark 3.5 Config
+        |      spark_version: "3.5"
+        |      properties:
+        |        spark.driver.memory: 4g
+        |    - name: Spark 3.3 Config
+        |      spark_version: "3.3"
+        |      properties:
+        |        spark.driver.memory: 2g
+        |    - name: Default Version Config
+        |      properties:
+        |        spark.executor.memory: 1g
+        |""".stripMargin
+    val parsed = PolynoteConfig.parse(yamlStr)
+    val propertySets = parsed.right.value.spark.get.propertySets.get
+
+    propertySets(0).name shouldEqual "Spark 3.5 Config"
+    propertySets(0).sparkVersion shouldEqual "3.5"
+
+    propertySets(1).name shouldEqual "Spark 3.3 Config"
+    propertySets(1).sparkVersion shouldEqual "3.3"
+
+    // Third one should default to 3.3
+    propertySets(2).name shouldEqual "Default Version Config"
+    propertySets(2).sparkVersion shouldEqual "3.3"
   }
 }
