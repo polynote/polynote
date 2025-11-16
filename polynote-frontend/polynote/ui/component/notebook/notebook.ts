@@ -1,6 +1,15 @@
 import {div, icon, span, TagElement} from "../../tags";
 import {NotebookMessageDispatcher} from "../../../messaging/dispatcher";
-import {Disposable, IDisposable, MoveArrayValue, NoUpdate, setValue, StateHandler, UpdateResult} from "../../../state";
+import {
+    Disposable,
+    IDisposable,
+    insert,
+    MoveArrayValue,
+    NoUpdate,
+    setValue,
+    StateHandler,
+    UpdateResult
+} from "../../../state";
 import {CellMetadata} from "../../../data/data";
 import {CellContainer} from "./cell";
 import {NotebookConfigEl} from "./notebookconfig";
@@ -108,6 +117,8 @@ export class Notebook extends Disposable {
                 const deletedIdx = parseInt(idx);
                 const cellEl = this.cells[id].el!;
 
+                const prevIndex = deletedIdx - 1;
+                const currentOrder = [...cellOrderUpdate.newValue];
                 const prevCellId = cellOrderUpdate.newValue[deletedIdx - 1] ?? -1;
                 const undoEl = div(['undo-delete'], [
                     icon(['close-button'], 'times', 'close icon').click(evt => {
@@ -116,8 +127,22 @@ export class Notebook extends Disposable {
                     span(['undo-message'], [
                         'Cell deleted. ',
                         span(['undo-link'], ['Undo']).click(evt => {
-                            this.insertCell(prevCellId, deletedCell.language, deletedCell.content, deletedCell.metadata)
+                            // if the previous cell is no longer in the notebook, find the closest one from the
+                            // order that existed when the cell was deleted
+                            const cellsNow = notebookState.state.cells;
+                            let insertAfter = prevCellId;
+                            if (!cellsNow[prevCellId]) {
+                                insertAfter = -1;
+                                for (let idx = Math.min(prevIndex, notebookState.state.cellOrder.length - 1); idx >= 0; idx--) {
+                                    if (currentOrder[idx] !== undefined && cellsNow[currentOrder[idx]]) {
+                                        insertAfter = cellsNow[currentOrder[idx]].id;
+                                        break;
+                                    }
+                                }
+                            }
+                            this.insertCell(insertAfter, deletedCell.language, deletedCell.content, deletedCell.metadata)
                             undoEl.parentNode!.removeChild(undoEl);
+                            undoEl.innerHTML = "";  // kill event listener+closure
                         })
                     ])
                 ])
