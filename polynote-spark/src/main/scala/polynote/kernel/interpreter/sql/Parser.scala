@@ -32,7 +32,7 @@ class Parser {
 
     val tableIdentifiers = ListBuffer[Parser.TableIdentifier]()
 
-    parser.addParseListener(new SqlBaseBaseListener {
+    parser.addParseListener(new SqlBaseParserBaseListener {
       override def exitTableIdentifier(ctx: SqlBaseParser.TableIdentifierContext): Unit = {
         val db = Option(ctx.db).map(_.getText).filter(_.nonEmpty)
         val name = Option(ctx.table).map(_.getText).getOrElse("")
