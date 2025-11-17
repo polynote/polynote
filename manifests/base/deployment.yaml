@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+  labels:
+    app: polynote
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: polynote
+  template:
+    metadata:
+      labels:
+        app: polynote
+    spec:
+      containers:
+      - name: polynote
+        image: polynote/polynote:latest
+        args: ['--config', '/opt/config/config.yaml']
+        env:
+        - name: PYSPARK_ALLOW_INSECURE_GATEWAY
+          value: '1'
+        ports:
+        - containerPort: 8192
+        volumeMounts:
+        - name: config-volume
+          mountPath: /opt/config
+      volumes:
+      - name: config-volume
+        configMap:
+          name: configmap
