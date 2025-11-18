@@ -130,24 +130,44 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     }
   }
 
+  /**
+   * Selects the appropriate Spark runtime JAR based on configuration.
+   *
+   * Logic:
+   * 1. Priority order: Notebook's selected template → Server's default property set
+   * 2. Lookup path: Selected property set → version_configs → Match Scala version → Extract spark_version
+   * 3. Default: Falls back to "3.3" if any step is not configured
+   *
+   * Example configuration:
+   * spark:
+   *   default_property_set: "BDP / Spark 3.3"
+   *   property_sets:
+   *     - name: BDP / Spark 3.5
+   *       properties:
+   *         spark.driver.memory: 4g
+   *       version_configs:
+   *         - version_number: "2.12"
+   *           spark_version: "3.5"  # Determines which runtime JAR to load
+   */
   private def selectSparkRuntimeJar(
     scalaBinaryVersion: String,
     config: PolynoteConfig,
     nbConfig: NotebookConfig
   ): URIO[Logging, File] = {
-    // Get Spark version from config, default to 3.3
+    // Get Spark version from version_configs, default to 3.3
     val sparkVersion = {
-      // Try to get spark version from version_configs in the selected property set
       val versionConfigSparkVersion = for {
         sparkConfig <- config.spark
         propertySets <- sparkConfig.propertySets
-        defaultSetName <- sparkConfig.defaultPropertySet.orElse(nbConfig.sparkTemplate.map(_.name))
-        selectedSet <- propertySets.find(_.name == defaultSetName)
+        // Notebook's template selection takes precedence over server's default
+        selectedSetName <- nbConfig.sparkTemplate.map(_.name).orElse(sparkConfig.defaultPropertySet)
+        selectedSet <- propertySets.find(_.name == selectedSetName)
         versionConfigs <- selectedSet.versionConfigs
-        scalaVersionConfig <- versionConfigs.find(_.versionNumber == scalaBinaryVersion)
-      } yield scalaVersionConfig.sparkVersion
+        // Each property set has one version_configs field containing a list of configs for different Scala versions.
+        // All entries in the list should have the same spark_version, so just take the first.
+        firstVersionConfig <- versionConfigs.headOption
+      } yield firstVersionConfig.sparkVersion
 
-      // Default to 3.3 if no version config is found
       versionConfigSparkVersion.getOrElse("3.3")
     }
 
