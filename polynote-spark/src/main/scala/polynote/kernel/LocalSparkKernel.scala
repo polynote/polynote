@@ -134,13 +134,11 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
    * Selects the appropriate Spark runtime JAR based on configuration.
    *
    * Logic:
-   * 1. Priority order: Notebook's selected template → Server's default property set
-   * 2. Lookup path: Selected property set → version_configs → Match Scala version → Extract spark_version
-   * 3. Default: Falls back to "3.3" if any step is not configured
+   * 1. If notebook has a selected template, look up its version_configs and extract spark_version
+   * 2. Default: Falls back to "3.3" if notebook has no template or version_configs not found
    *
    * Example configuration:
    * spark:
-   *   default_property_set: "BDP / Spark 3.3"
    *   property_sets:
    *     - name: BDP / Spark 3.5
    *       properties:
@@ -159,8 +157,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       val versionConfigSparkVersion = for {
         sparkConfig <- config.spark
         propertySets <- sparkConfig.propertySets
-        // Notebook's template selection takes precedence over server's default
-        selectedSetName <- nbConfig.sparkTemplate.map(_.name).orElse(sparkConfig.defaultPropertySet)
+        selectedSetName <- nbConfig.sparkTemplate.map(_.name)
         selectedSet <- propertySets.find(_.name == selectedSetName)
         versionConfigs <- selectedSet.versionConfigs
         // Each property set has one version_configs field containing a list of configs for different Scala versions.
