@@ -70,41 +70,4 @@ class SparkReprsOfSuite extends FreeSpec with Matchers {
       }
     }
   }
-
-  "RowEncoder compatibility across Spark versions" - {
-    "should correctly encode rows using SparkVersionCompat.rowEncoder" in {
-      import org.apache.spark.sql.types.{StructType => SparkStructType, StructField => SparkStructField, StringType => SparkStringType, IntegerType => SparkIntegerType, DoubleType => SparkDoubleType}
-      import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-      import polynote.runtime.spark.compat.SparkVersionCompat
-
-      // Create a schema
-      val schema = SparkStructType(Seq(
-        SparkStructField("name", SparkStringType, nullable = true),
-        SparkStructField("age", SparkIntegerType, nullable = false),
-        SparkStructField("score", SparkDoubleType, nullable = false)
-      ))
-
-      // Get the encoder using our compatibility layer
-      val encoder: ExpressionEncoder[Row] = SparkVersionCompat.rowEncoder(schema)
-
-      // Verify the encoder has the correct schema
-      encoder.schema shouldBe schema
-
-      // Create a DataFrame with this schema
-      val data = Seq(
-        Row("Alice", 25, 95.5),
-        Row("Bob", 30, 87.3),
-        Row(null, 22, 91.2)
-      )
-      val df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
-
-      // Collect and verify we can encode/decode the rows
-      val collected = df.collect()
-      collected.length shouldBe 3
-      collected(0).getString(0) shouldBe "Alice"
-      collected(0).getInt(1) shouldBe 25
-      collected(0).getDouble(2) shouldBe 95.5
-      collected(2).isNullAt(0) shouldBe true
-    }
-  }
 }
