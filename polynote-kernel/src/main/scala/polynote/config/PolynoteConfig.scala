@@ -165,7 +165,8 @@ object Credentials {
 final case class ScalaVersionConfig(
   versionNumber: String,
   versionProperties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
-  sparkSubmitArgs: Option[String] = None
+  sparkSubmitArgs: Option[String] = None,
+  sparkVersion: String = "3.3"
 )
 
 object ScalaVersionConfig {
@@ -178,8 +179,7 @@ final case class SparkPropertySet(
   properties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
   sparkSubmitArgs: Option[String] = None,
   versionConfigs: Option[List[ScalaVersionConfig]] = None,
-  distClasspathFilter: Option[Pattern] = None,
-  sparkVersion: String = "3.3"
+  distClasspathFilter: Option[Pattern] = None
 )
 
 object SparkPropertySet {

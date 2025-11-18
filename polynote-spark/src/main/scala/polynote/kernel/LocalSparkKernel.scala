@@ -137,16 +137,18 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
   ): URIO[Logging, File] = {
     // Get Spark version from config, default to 3.3
     val sparkVersion = {
-      // Try to get spark version from the selected property set
-      val propertySetVersion = for {
+      // Try to get spark version from version_configs in the selected property set
+      val versionConfigSparkVersion = for {
         sparkConfig <- config.spark
         propertySets <- sparkConfig.propertySets
         defaultSetName <- sparkConfig.defaultPropertySet.orElse(nbConfig.sparkTemplate.map(_.name))
         selectedSet <- propertySets.find(_.name == defaultSetName)
-      } yield selectedSet.sparkVersion  // Already "3.3" if not set in YAML
+        versionConfigs <- selectedSet.versionConfigs
+        scalaVersionConfig <- versionConfigs.find(_.versionNumber == scalaBinaryVersion)
+      } yield scalaVersionConfig.sparkVersion
 
-      // Default to 3.3 if no property set is selected
-      propertySetVersion.getOrElse("3.3")
+      // Default to 3.3 if no version config is found
+      versionConfigSparkVersion.getOrElse("3.3")
     }
 
     val versionSpecificJar = new File(s"deps/${scalaBinaryVersion}/spark-${sparkVersion}/polynote-spark-runtime.jar")

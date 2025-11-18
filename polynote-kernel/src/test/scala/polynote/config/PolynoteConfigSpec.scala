@@ -160,20 +160,16 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
         properties = Map("something" -> "thing", "another" -> "one"),
         sparkSubmitArgs = None,
         versionConfigs = Some(List(
-          ScalaVersionConfig("some version", Map("arbitrary.spark.args" -> "anything"), sparkSubmitArgs = Some("some args")),
-          ScalaVersionConfig("some version 2", Map("arbitrary.spark.args" -> "anything else"), sparkSubmitArgs = Some("different submit args"))
+          ScalaVersionConfig("some version", Map("arbitrary.spark.args" -> "anything"), sparkSubmitArgs = Some("some args"), sparkVersion = "3.3"),
+          ScalaVersionConfig("some version 2", Map("arbitrary.spark.args" -> "anything else"), sparkSubmitArgs = Some("different submit args"), sparkVersion = "3.3")
         )),
-        distClasspathFilter = None,
-        sparkVersion = "3.3"
+        distClasspathFilter = None
       ),
-      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), sparkSubmitArgs = None, versionConfigs = None, distClasspathFilter = None, sparkVersion = "3.3"),
-      SparkPropertySet(name = "Old config format", properties = Map("something" -> "thingOld"), sparkSubmitArgs = Some("spark args"), versionConfigs = None, distClasspathFilter = None, sparkVersion = "3.3")
+      SparkPropertySet(name = "Test 2", properties = Map("something" -> "thing2"), sparkSubmitArgs = None, versionConfigs = None, distClasspathFilter = None),
+      SparkPropertySet(name = "Old config format", properties = Map("something" -> "thingOld"), sparkSubmitArgs = Some("spark args"), versionConfigs = None, distClasspathFilter = None)
     )
     parsed.pyspark.get.distributionExcludes shouldEqual List("foo", "bar")
     parsed.pyspark.get.distributeDependencies shouldEqual Option(true)
-
-    // Verify default spark version is 3.3 when not specified
-    parsed.propertySets.get.head.sparkVersion shouldEqual "3.3"
   }
 
   it should "fail on invalid configuration" in {
@@ -263,34 +259,50 @@ class PolynoteConfigSpec extends FlatSpec with Matchers with EitherValues {
     parsed.right.value.notifications shouldEqual "release_notifications"
   }
 
-  it should "parse spark version in property sets" in {
+  it should "parse spark version in version configs" in {
     val yamlStr =
       """
         |spark:
         |  property_sets:
-        |    - name: Spark 3.5 Config
-        |      spark_version: "3.5"
+        |    - name: BDP / Spark 3.5
         |      properties:
         |        spark.driver.memory: 4g
-        |    - name: Spark 3.3 Config
-        |      spark_version: "3.3"
+        |      version_configs:
+        |        - version_number: "2.12"
+        |          spark_version: "3.5"
+        |          version_properties:
+        |            spark.executor.memory: 2g
+        |        - version_number: "2.13"
+        |          spark_version: "3.5"
+        |          version_properties:
+        |            spark.executor.memory: 1g
+        |    - name: BDP / Spark 3.3
         |      properties:
         |        spark.driver.memory: 2g
-        |    - name: Default Version Config
-        |      properties:
-        |        spark.executor.memory: 1g
+        |      version_configs:
+        |        - version_number: "2.12"
+        |          spark_version: "3.3"
+        |        - version_number: "2.13"
+        |          version_properties:
+        |            spark.executor.memory: 512m
         |""".stripMargin
     val parsed = PolynoteConfig.parse(yamlStr)
     val propertySets = parsed.right.value.spark.get.propertySets.get
 
-    propertySets(0).name shouldEqual "Spark 3.5 Config"
-    propertySets(0).sparkVersion shouldEqual "3.5"
+    // First property set: BDP / Spark 3.5
+    propertySets(0).name shouldEqual "BDP / Spark 3.5"
+    val versionConfigs1 = propertySets(0).versionConfigs.get
+    versionConfigs1(0).versionNumber shouldEqual "2.12"
+    versionConfigs1(0).sparkVersion shouldEqual "3.5"
+    versionConfigs1(1).versionNumber shouldEqual "2.13"
+    versionConfigs1(1).sparkVersion shouldEqual "3.5"
 
-    propertySets(1).name shouldEqual "Spark 3.3 Config"
-    propertySets(1).sparkVersion shouldEqual "3.3"
-
-    // Third one should default to 3.3
-    propertySets(2).name shouldEqual "Default Version Config"
-    propertySets(2).sparkVersion shouldEqual "3.3"
+    // Second property set: BDP / Spark 3.3
+    propertySets(1).name shouldEqual "BDP / Spark 3.3"
+    val versionConfigs2 = propertySets(1).versionConfigs.get
+    versionConfigs2(0).versionNumber shouldEqual "2.12"
+    versionConfigs2(0).sparkVersion shouldEqual "3.3"
+    versionConfigs2(1).versionNumber shouldEqual "2.13"
+    versionConfigs2(1).sparkVersion shouldEqual "3.3"  // defaults to 3.3 when not specified
   }
 }
