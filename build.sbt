@@ -121,9 +121,7 @@ val commonSettings = Seq(
     destFiles
   },
   scalacOptions += "-deprecation",
-  assembly / test := {},
-  circeVersion := "0.14.3",
-  circeYamlVersion := "0.15.2"
+  assembly / test := {}
 )
 
 lazy val `polynote-macros` = project.settings(
@@ -173,6 +171,8 @@ val `polynote-env` = project.settings(
 
 val `polynote-kernel` = project.settings(
   commonSettings,
+  circeVersion := "0.14.3",
+  circeYamlVersion := "0.15.2",
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "provided",
     "org.scala-lang" % "scala-compiler" % scalaVersion.value % "test",
