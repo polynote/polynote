@@ -432,8 +432,21 @@ lazy val `polynote-spark` = project.settings(
       ))
   },
   assembly / assemblyMergeStrategy := {
-    // Discard Spark version-specific runtime classes from polynote-spark-runtime
-    // These should only come from the version-specific runtime JARs in spark-3.x/ directories
+    // IMPORTANT: Discard Spark version-specific runtime classes from polynote-spark-assembly.
+    //
+    // polynote-spark depends on polynote-spark-runtime (% "provided"), which contains version-specific
+    // implementations of SparkVersionCompat and SparkReprsOf for different Spark versions (3.3, 3.5, etc.).
+    //
+    // If these classes are included in polynote-spark-assembly.jar, they will be loaded by the compiler
+    // classloader and take precedence over the correct version-specific JARs at runtime, causing
+    // NoSuchMethodError when the wrong Spark API is called.
+    //
+    // Instead, these classes should ONLY come from the version-specific runtime JARs:
+    //   deps/2.12/spark-3.3/polynote-spark-runtime.jar (for Spark 3.3)
+    //   deps/2.12/spark-3.5/polynote-spark-runtime.jar (for Spark 3.5)
+    //
+    // The correct JAR is selected at runtime in LocalSparkKernel.selectSparkRuntimeJar() based on
+    // the notebook's Spark template configuration.
     case PathList("polynote", "runtime", "spark", "compat", _*) => MergeStrategy.discard
     case PathList("polynote", "runtime", "spark", "reprs", _*) => MergeStrategy.discard
     case x =>
