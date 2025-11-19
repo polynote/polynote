@@ -431,6 +431,15 @@ lazy val `polynote-spark` = project.settings(
         IO.read(file(".") / "scripts/polynote").linesIterator.toSeq
       ))
   },
+  assembly / assemblyMergeStrategy := {
+    // Discard Spark version-specific runtime classes from polynote-spark-runtime
+    // These should only come from the version-specific runtime JARs in spark-3.x/ directories
+    case PathList("polynote", "runtime", "spark", "compat", _*) => MergeStrategy.discard
+    case PathList("polynote", "runtime", "spark", "reprs", _*) => MergeStrategy.discard
+    case x =>
+      val oldStrategy = (assembly / assemblyMergeStrategy).value
+      oldStrategy(x)
+  },
   distFiles := Seq(assembly.value)
 ) dependsOn (
   `polynote-kernel` % "provided",
