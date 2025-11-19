@@ -462,7 +462,7 @@ val dist = Command.command(
       scalaVer <- scalaVersions
       sparkVer <- sparkVersions(scalaVer.split('.').take(2).mkString("."))
     } {
-      val cmd = s"""set scalaVersion := "$scalaVer"; set ThisBuild / sparkVersion := "$sparkVer"; polynote-spark-runtime/prepDistFiles"""
+      val cmd = s"""++$scalaVer; set `polynote-spark-runtime` / sparkVersion := "$sparkVer"; polynote-spark-runtime/prepDistFiles"""
       resultState = waitForCommand(cmd)(resultState)
     }
     // Build other projects with cross-build
