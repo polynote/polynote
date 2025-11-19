@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-22.04
     strategy:
+      fail-fast: false
       matrix:
         scala_version: ['2.12.12', '2.13.6']
         spark_version: ['3.3.4', '3.5.7']
