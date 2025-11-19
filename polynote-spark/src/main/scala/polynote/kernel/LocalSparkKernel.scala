@@ -168,11 +168,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
       versionConfigSparkVersion.getOrElse("3.3")
     }
 
-    // Get the base directory by finding where the polynote JARs are located
-    val runtimeJarPath = new File(pathOf(polynote.runtime.Runtime.getClass).getPath)
-    val baseDir = runtimeJarPath.getParentFile // Go up from the runtime JAR to the deps directory
-
-    val versionSpecificJar = new File(baseDir, s"spark-${sparkVersion}/polynote-spark-runtime.jar")
+    val versionSpecificJar = new File(s"deps/${scalaBinaryVersion}/spark-${sparkVersion}/polynote-spark-runtime.jar")
 
     if (versionSpecificJar.exists()) {
       Logging.info(s"Using Spark ${sparkVersion} runtime JAR for Scala ${scalaBinaryVersion}: ${versionSpecificJar.getPath}") *>
