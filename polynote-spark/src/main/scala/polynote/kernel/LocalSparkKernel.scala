@@ -7,7 +7,7 @@ import java.util.regex.Pattern
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
-import polynote.config.{PolynoteConfig, SparkConfig}
+import polynote.config.{PolynoteConfig, ScalaVersionConfig, SparkConfig}
 import polynote.kernel.dependency.{Artifact, CoursierFetcher}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
@@ -135,7 +135,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
    *
    * Logic:
    * 1. If notebook has a selected template, look up its version_configs and extract spark_version
-   * 2. Default: Falls back to "3.3" if notebook has no template or version_configs not found
+   * 2. Default: Falls back to DEFAULT_SPARK_VERSION if notebook has no template or version_configs not found
    *
    * Example configuration:
    * spark:
@@ -152,7 +152,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     config: PolynoteConfig,
     nbConfig: NotebookConfig
   ): URIO[Logging, File] = {
-    // Get Spark version from version_configs, default to 3.3
+    // Get Spark version from version_configs, defaults to DEFAULT_SPARK_VERSION
     val sparkVersion = {
       val versionConfigSparkVersion = for {
         sparkConfig <- config.spark
@@ -165,7 +165,7 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
         firstVersionConfig <- versionConfigs.headOption
       } yield firstVersionConfig.sparkVersion
 
-      versionConfigSparkVersion.getOrElse("3.3")
+      versionConfigSparkVersion.getOrElse(ScalaVersionConfig.DEFAULT_SPARK_VERSION)
     }
 
     val versionSpecificJar = new File(s"deps/${scalaBinaryVersion}/spark-${sparkVersion}/polynote-spark-runtime.jar")
