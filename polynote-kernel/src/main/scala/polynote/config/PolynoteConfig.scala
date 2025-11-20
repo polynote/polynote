@@ -165,10 +165,13 @@ object Credentials {
 final case class ScalaVersionConfig(
   versionNumber: String,
   versionProperties: ShortMap[String, String] = ShortMap(Map.empty[String, String]),
-  sparkSubmitArgs: Option[String] = None
+  sparkSubmitArgs: Option[String] = None,
+  sparkVersion: String = ScalaVersionConfig.DEFAULT_SPARK_VERSION
 )
 
 object ScalaVersionConfig {
+  val DEFAULT_SPARK_VERSION = "3.3"
+
   implicit val encoder: Encoder.AsObject[ScalaVersionConfig] = deriveConfiguredEncoder
   implicit val decoder: Decoder[ScalaVersionConfig] = deriveConfiguredDecoder
 }

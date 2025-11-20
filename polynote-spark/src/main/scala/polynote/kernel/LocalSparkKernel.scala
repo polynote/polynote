@@ -7,7 +7,7 @@ import java.util.regex.Pattern
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import polynote.buildinfo.BuildInfo
-import polynote.config.{PolynoteConfig, SparkConfig}
+import polynote.config.{PolynoteConfig, ScalaVersionConfig, SparkConfig}
 import polynote.kernel.dependency.{Artifact, CoursierFetcher}
 import polynote.kernel.environment.{Config, CurrentNotebook, CurrentTask, Env}
 import polynote.kernel.interpreter.scal.{ScalaInterpreter, ScalaSparkInterpreter}
@@ -119,9 +119,73 @@ class LocalSparkKernelFactory extends Kernel.Factory.LocalService {
     settings
   }
 
+  private def detectScalaBinaryVersion: URIO[Config with CurrentNotebook, String] = {
+    CurrentNotebook.config.flatMap { notebookConfig =>
+      notebookConfig.scalaVersion match {
+        case Some(scalaVer) => ZIO.succeed(scalaVer.split('.').take(2).mkString("."))
+        case None => Config.access.map { serverConfig =>
+          serverConfig.kernel.scalaVersion.map(_.split('.').take(2).mkString(".")).getOrElse("2.12")
+        }
+      }
+    }
+  }
+
+  /**
+   * Selects the appropriate Spark runtime JAR based on configuration.
+   *
+   * Logic:
+   * 1. If notebook has a selected template, look up its version_configs and extract spark_version
+   * 2. Default: Falls back to DEFAULT_SPARK_VERSION if notebook has no template or version_configs not found
+   *
+   * Example configuration:
+   * spark:
+   *   property_sets:
+   *     - name: BDP / Spark 3.5
+   *       properties:
+   *         spark.driver.memory: 4g
+   *       version_configs:
+   *         - version_number: "2.12"
+   *           spark_version: "3.5"  # Determines which runtime JAR to load
+   */
+  private def selectSparkRuntimeJar(
+    scalaBinaryVersion: String,
+    config: PolynoteConfig,
+    nbConfig: NotebookConfig
+  ): URIO[Logging, File] = {
+    // Get Spark version from version_configs, defaults to DEFAULT_SPARK_VERSION
+    val sparkVersion = {
+      val versionConfigSparkVersion = for {
+        sparkConfig <- config.spark
+        propertySets <- sparkConfig.propertySets
+        selectedSetName <- nbConfig.sparkTemplate.map(_.name)
+        selectedSet <- propertySets.find(_.name == selectedSetName)
+        versionConfigs <- selectedSet.versionConfigs
+        // Each property set has one version_configs field containing a list of configs for different Scala versions.
+        // All entries in the list should have the same spark_version, so just take the first.
+        firstVersionConfig <- versionConfigs.headOption
+      } yield firstVersionConfig.sparkVersion
+
+      versionConfigSparkVersion.getOrElse(ScalaVersionConfig.DEFAULT_SPARK_VERSION)
+    }
+
+    val versionSpecificJar = new File(s"deps/${scalaBinaryVersion}/spark-${sparkVersion}/polynote-spark-runtime.jar")
+
+    if (versionSpecificJar.exists()) {
+      Logging.info(s"Using Spark ${sparkVersion} runtime JAR for Scala ${scalaBinaryVersion}: ${versionSpecificJar.getPath}") *>
+        ZIO.succeed(versionSpecificJar)
+    } else {
+      // Fallback to classpath JAR (for development/single-version deployments)
+      Logging.warn(s"Version-specific JAR not found at ${versionSpecificJar.getPath}, using classpath JAR") *>
+        ZIO.succeed(new File(pathOf(classOf[SparkReprsOf[_]]).getPath))
+    }
+  }
+
   def apply(): RIO[BaseEnv with GlobalEnv with CellEnv, Kernel] = for {
+    config           <- Config.access
+    nbConfig         <- CurrentNotebook.config
     scalaDeps        <- CoursierFetcher.fetch("scala")
-    sparkRuntimeJar   = new File(pathOf(classOf[SparkReprsOf[_]]).getPath)
+    scalaBinaryVer   <- detectScalaBinaryVersion
+    sparkRuntimeJar  <- selectSparkRuntimeJar(scalaBinaryVer, config, nbConfig)
     sparkClasspath   <- (sparkClasspath orElse systemClasspath).option.map(_.getOrElse(Nil))
     _                <- Logging.info(s"Using spark classpath: ${sparkClasspath.mkString(":")}")
     sparkJars         = (sparkRuntimeJar :: ScalaCompiler.requiredPolynotePaths).map(f => f.toString -> f) ::: scalaDeps.map {a => (a.url, a.file) }
