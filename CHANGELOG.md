@@ -1,4 +1,10 @@
 # 0.7.1 (TBD)
+This release adds support for Apache Spark 3.5 alongside Spark 3.3, upgrades to Java 17 runtime, and includes Python 3.10 compatibility fixes.
+
+**Breaking Changes:**
+- Spark 3.2.x and earlier versions are no longer supported
+  - Polynote now only supports Spark 3.3.4 and Spark 3.5.7
+
 **Features:**
 - Spark 3.5 Support #1479
   - Add Spark 3.5.7 support alongside existing Spark 3.3.4 support
