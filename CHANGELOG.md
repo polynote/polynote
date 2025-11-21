@@ -1,3 +1,54 @@
+# 0.7.1 (TBD)
+This release adds support for Apache Spark 3.5 alongside Spark 3.3, upgrades to Java 17 runtime, and includes Python 3.10 compatibility fixes.
+
+**Breaking Changes:**
+- Spark 3.2.x and earlier versions are no longer supported
+  - Polynote now only supports Spark 3.3.4 and Spark 3.5.7
+
+**Features:**
+- Spark 3.5 Support #1479
+  - Add Spark 3.5.7 support alongside existing Spark 3.3.4 support
+  - Users can now choose between Spark 3.3 and Spark 3.5 by setting `spark_version` in notebook configuration
+  - Automatic runtime selection based on configuration
+  - Both Scala 2.12 and 2.13 supported with each Spark version
+
+**Improvements:**
+- Upgrade to Apache Spark 3.3.4 #1478
+  - Updated from Spark 3.1.2/3.2.1 to 3.3.4
+  - Both Scala versions now use the same Spark version
+  - Updated to Hadoop 3.x binaries for improved cloud storage support
+- Use JDK 17 runtime #1471
+  - Upgraded from Java 8 to Java 17 for CI builds and runtime
+  - Added JVM compatibility flags for Spark to work with Java 17+
+  - Better performance and security with modern Java runtime
+- Bump Scala versions #1472
+  - Updated Scala 2.12.15 → 2.12.20
+  - Updated Scala 2.13.6 → 2.13.11
+- Update dependencies
+  - Update Jep and Pandas
+  - Update plugin config to use new structure
+- CI/Build improvements
+  - Extract test script for better maintainability #1476
+  - Bump OS version #1469
+  - Use `sbt ++` for consistent Scala version across all projects
+  - Add 30-minute timeout to prevent jobs from hanging
+
+**Bugfixes:**
+- Fix sbt warnings for unused circe version keys #1484
+- Fix build timeout by downloading Spark packages from GitHub instead of Apache archive #1483
+- Fix spark download deadlock in test setup #1475
+  - Improved lock file mechanism with robust cleanup
+  - Stale lock detection and automatic recovery
+  - Version-specific lock files to allow parallel builds
+- Fix polynote.py for Python 3.10 compatibility
+- Add vscode / metals to gitignore #1480
+- Shade Google dependencies in assembly #1477
+- Shade shapeless dependency to avoid version conflicts
+- Compiler gets boot classpath first without dep isolation
+- Remove circe from plugin API boundary
+- Add more python-ish stub methods to KernelRuntime.Output
+- Add PluginConfig
+
 # 0.6.1 (Jan 10, 2025)
 **Breaking Changes:**
 - Drop Scala 2.11 support #1443
