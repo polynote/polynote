@@ -189,11 +189,34 @@ class Dependencies extends Disposable {
             row.classList.remove(data.lang);
             data.lang = type.options[type.selectedIndex].value;
             row.classList.add(data.lang);
-
+            updateAdvancedVisibility();
         });
 
+        const isHttpUrl = (dep: string): boolean => {
+            try {
+                const url = new URL(dep);
+                return url.protocol === 'http:' || url.protocol === 'https:';
+            } catch {
+                return false;
+            }
+        };
+
+        const updateAdvancedVisibility = () => {
+            const isPython = data.lang === 'python';
+            const isHttp = isHttpUrl(data.dep);
+            const shouldShowCache = isPython || isHttp;
+
+            if (shouldShowCache) {
+                detail.style.display = '';
+            } else {
+                detail.style.display = 'none';
+                row.classList.remove("show-advanced");
+            }
+        };
+
         const input = textbox(['dependency'], 'Dependency coordinate, URL, pip package', data.dep).change(evt => {
-            data.dep = input.value.trim()
+            data.dep = input.value.trim();
+            updateAdvancedVisibility();
         });
 
         const remove = iconButton(['remove'], 'Remove', 'minus-circle-red', 'Remove').click(evt => {
@@ -215,7 +238,7 @@ class Dependencies extends Disposable {
             div([], [
                 para([], [
                     "Should Polynote use a cached version of this dependency, if available?",
-                    " Applicable to URL or pip dependencies only."]),
+                    " Applicable to HTTP/HTTPS URL or pip dependencies only."]),
                 para([], ["Note that if any pip dependency bypasses the cache, the entire virtual environment will be recreated."]),
                 cache
             ])
@@ -229,16 +252,34 @@ class Dependencies extends Disposable {
             div(['dependency-row', 'notebook-config-row'], [type, input, detail, remove, add, advanced]),
             { data })
         this.container.appendChild(row)
+        updateAdvancedVisibility();
     }
 
     get conf(): Record<string, string[]> {
+        const isHttpUrl = (dep: string): boolean => {
+            try {
+                const url = new URL(dep);
+                return url.protocol === 'http:' || url.protocol === 'https:';
+            } catch {
+                return false;
+            }
+        };
+
         return Array.from(this.container.children).reduce<Record<string, string[]>>((acc, row: DepRow) => {
             if (row.data.dep) {
+                const isPython = row.data.lang === 'python';
+                const isHttp = isHttpUrl(row.data.dep);
+                const shouldSupportCache = isPython || isHttp;
+
                 if (row.data.cache) {
+                    // Remove ?nocache if present
                     row.data.dep = row.data.dep.endsWith("?nocache") ? row.data.dep.substr(0, row.data.dep.length - "?nocache".length) : row.data.dep;
-                } else {
+                } else if (shouldSupportCache) {
+                    // Only add ?nocache for HTTP/HTTPS URLs or pip dependencies
                     row.data.dep = row.data.dep.endsWith("?nocache") ? row.data.dep : row.data.dep + "?nocache";
                 }
+                // For other URL types (s3, file, etc.), ignore cache setting and don't add ?nocache
+
                 acc[row.data.lang] = [...(acc[row.data.lang] || []), row.data.dep]
             }
             return acc
