@@ -140,6 +140,15 @@ class Dependencies extends Disposable {
     readonly el: TagElement<"div">;
     private container: TagElement<"div">;
 
+    private isHttpUrl(dep: string): boolean {
+        try {
+            const url = new URL(dep);
+            return url.protocol === 'http:' || url.protocol === 'https:';
+        } catch {
+            return false;
+        }
+    }
+
     constructor(dependenciesHandler: StateView<Record<string, string[]> | undefined>, stateHandler: StateHandler<NBConfig>) {
         super()
 
@@ -185,25 +194,9 @@ class Dependencies extends Disposable {
     private addDep(item?: DepRow["data"]) {
         const data = item ?? {lang: this.defaultLang, dep: "", cache: true}
 
-        const type = dropdown(['dependency-type'], {scala: 'scala/jvm', python: 'pip'}, data.lang).change(evt => {
-            row.classList.remove(data.lang);
-            data.lang = type.options[type.selectedIndex].value;
-            row.classList.add(data.lang);
-            updateAdvancedVisibility();
-        });
-
-        const isHttpUrl = (dep: string): boolean => {
-            try {
-                const url = new URL(dep);
-                return url.protocol === 'http:' || url.protocol === 'https:';
-            } catch {
-                return false;
-            }
-        };
-
         const updateAdvancedVisibility = () => {
             const isPython = data.lang === 'python';
-            const isHttp = isHttpUrl(data.dep);
+            const isHttp = this.isHttpUrl(data.dep);
             const shouldShowCache = isPython || isHttp;
 
             if (shouldShowCache) {
@@ -213,6 +206,13 @@ class Dependencies extends Disposable {
                 row.classList.remove("show-advanced");
             }
         };
+
+        const type = dropdown(['dependency-type'], {scala: 'scala/jvm', python: 'pip'}, data.lang).change(evt => {
+            row.classList.remove(data.lang);
+            data.lang = type.options[type.selectedIndex].value;
+            row.classList.add(data.lang);
+            updateAdvancedVisibility();
+        });
 
         const input = textbox(['dependency'], 'Dependency coordinate, URL, pip package', data.dep).change(evt => {
             data.dep = input.value.trim();
@@ -256,19 +256,10 @@ class Dependencies extends Disposable {
     }
 
     get conf(): Record<string, string[]> {
-        const isHttpUrl = (dep: string): boolean => {
-            try {
-                const url = new URL(dep);
-                return url.protocol === 'http:' || url.protocol === 'https:';
-            } catch {
-                return false;
-            }
-        };
-
         return Array.from(this.container.children).reduce<Record<string, string[]>>((acc, row: DepRow) => {
             if (row.data.dep) {
                 const isPython = row.data.lang === 'python';
-                const isHttp = isHttpUrl(row.data.dep);
+                const isHttp = this.isHttpUrl(row.data.dep);
                 const shouldSupportCache = isPython || isHttp;
 
                 if (row.data.cache) {
