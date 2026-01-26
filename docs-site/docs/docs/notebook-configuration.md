@@ -56,25 +56,26 @@ Note that this method will automatically cache all of the dependencies from the 
 
 #### Dependency Caching
 
-By default, Polynote caches JVM dependencies that are specified with URLs, as well as the [virtual environment created
-for your notebook](python.md#python-dependencies). 
+By default, Polynote caches JVM dependencies that are specified with HTTP/HTTPS URLs, as well as the [virtual environment created
+for your notebook](python.md#python-dependencies).
 
-You can choose to manually bust the cache by either appending `?nocache` to the end of the dependency, or by 
-unfolding the Advanced Options pane for your dependency by clicking on the `...` button next to it. 
+You can choose to manually bust the cache by either appending `?nocache` to the end of the dependency, or by
+unfolding the Advanced Options pane for your dependency by clicking on the `...` button next to it.
 
 ![Dependency Caching](images/notebook-configuration-cache.png)
 
-Changing the cache option affects different types of dependencies differently. 
+Changing the cache option affects different types of dependencies differently.
 
 - **JVM Dependencies**
-    - URL-based dependencies are affected by this setting. If using the cache, Polynote uses the cached file (if 
-      present) instead of downloading it again. Conversely, if the cache is disabled for this dependency then Polynote 
+    - HTTP/HTTPS URL-based dependencies are affected by this setting. If using the cache, Polynote uses the cached file (if
+      present) instead of downloading it again. Conversely, if the cache is disabled for this dependency then Polynote
       will download the jar anew each time.
+    - Other URL schemes (such as `s3://` or `file://`) are not affected by this setting and do not support caching.
     - GAV notation dependencies are unaffected by this change (Coursier caches these dependencies itself and we don't
       expose any way to change that for now)
 - **Python Dependencies**
-    - Python dependencies are affected by this setting. Since they share a virtual environment for this notebook, 
-      **bypassing the cache for any Python dependency will bust the cache for all Python dependencies**, since this is 
+    - Python dependencies are affected by this setting. Since they share a virtual environment for this notebook,
+      **bypassing the cache for any Python dependency will bust the cache for all Python dependencies**, since this is
       implmemented as a simple deletion and recreation of the virtual environment. 
       
 !!!question "Feedback requested"
