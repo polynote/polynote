@@ -19,7 +19,7 @@
       
       
       <link rel="icon" href="../../favicon.ico">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
@@ -27,7 +27,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.618322db.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1461,24 +1461,25 @@ documentation</a> for more details. </p>
 The <code>.txt</code> file will be downloaded and each dependency added individually. </p>
 <p>Note that this method will automatically cache all of the dependencies from the <code>.txt</code> file. </p>
 <h4 id="dependency-caching">Dependency Caching<a class="headerlink" href="#dependency-caching" title="Permanent link">&para;</a></h4>
-<p>By default, Polynote caches JVM dependencies that are specified with URLs, as well as the <a href="../python/#python-dependencies">virtual environment created
-for your notebook</a>. </p>
-<p>You can choose to manually bust the cache by either appending <code>?nocache</code> to the end of the dependency, or by 
-unfolding the Advanced Options pane for your dependency by clicking on the <code>...</code> button next to it. </p>
+<p>By default, Polynote caches JVM dependencies that are specified with HTTP/HTTPS URLs, as well as the <a href="../python/#python-dependencies">virtual environment created
+for your notebook</a>.</p>
+<p>You can choose to manually bust the cache by either appending <code>?nocache</code> to the end of the dependency, or by
+unfolding the Advanced Options pane for your dependency by clicking on the <code>...</code> button next to it.</p>
 <p><img alt="Dependency Caching" src="../images/notebook-configuration-cache.png" /></p>
-<p>Changing the cache option affects different types of dependencies differently. </p>
+<p>Changing the cache option affects different types of dependencies differently.</p>
 <ul>
 <li><strong>JVM Dependencies</strong><ul>
-<li>URL-based dependencies are affected by this setting. If using the cache, Polynote uses the cached file (if 
-  present) instead of downloading it again. Conversely, if the cache is disabled for this dependency then Polynote 
+<li>HTTP/HTTPS URL-based dependencies are affected by this setting. If using the cache, Polynote uses the cached file (if
+  present) instead of downloading it again. Conversely, if the cache is disabled for this dependency then Polynote
   will download the jar anew each time.</li>
+<li>Other URL schemes (such as <code>s3://</code> or <code>file://</code>) are not affected by this setting and do not support caching.</li>
 <li>GAV notation dependencies are unaffected by this change (Coursier caches these dependencies itself and we don't
   expose any way to change that for now)</li>
 </ul>
 </li>
 <li><strong>Python Dependencies</strong><ul>
-<li>Python dependencies are affected by this setting. Since they share a virtual environment for this notebook, 
-  <strong>bypassing the cache for any Python dependency will bust the cache for all Python dependencies</strong>, since this is 
+<li>Python dependencies are affected by this setting. Since they share a virtual environment for this notebook,
+  <strong>bypassing the cache for any Python dependency will bust the cache for all Python dependencies</strong>, since this is
   implmemented as a simple deletion and recreation of the virtual environment. </li>
 </ul>
 </li>
@@ -1587,7 +1588,7 @@ contents of your clipboard represent a valid notebook configuration. </p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.expand"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
     <script type="text/javascript">
@@ -1608,7 +1609,7 @@ contents of your clipboard represent a valid notebook configuration. </p>
         });
     </script>
     
-      <script src="../../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
 
