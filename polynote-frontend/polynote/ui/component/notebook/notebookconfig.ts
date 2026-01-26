@@ -149,6 +149,12 @@ class Dependencies extends Disposable {
         }
     }
 
+    private shouldSupportCaching(lang: string, dep: string): boolean {
+        const isPython = lang === 'python';
+        const isHttp = this.isHttpUrl(dep);
+        return isPython || isHttp;
+    }
+
     constructor(dependenciesHandler: StateView<Record<string, string[]> | undefined>, stateHandler: StateHandler<NBConfig>) {
         super()
 
@@ -195,9 +201,7 @@ class Dependencies extends Disposable {
         const data = item ?? {lang: this.defaultLang, dep: "", cache: true}
 
         const updateAdvancedVisibility = () => {
-            const isPython = data.lang === 'python';
-            const isHttp = this.isHttpUrl(data.dep);
-            const shouldShowCache = isPython || isHttp;
+            const shouldShowCache = this.shouldSupportCaching(data.lang, data.dep);
 
             if (shouldShowCache) {
                 detail.style.display = '';
@@ -258,9 +262,7 @@ class Dependencies extends Disposable {
     get conf(): Record<string, string[]> {
         return Array.from(this.container.children).reduce<Record<string, string[]>>((acc, row: DepRow) => {
             if (row.data.dep) {
-                const isPython = row.data.lang === 'python';
-                const isHttp = this.isHttpUrl(row.data.dep);
-                const shouldSupportCache = isPython || isHttp;
+                const shouldSupportCache = this.shouldSupportCaching(row.data.lang, row.data.dep);
 
                 if (row.data.cache) {
                     // Remove ?nocache if present
