@@ -262,12 +262,10 @@ class Dependencies extends Disposable {
     get conf(): Record<string, string[]> {
         return Array.from(this.container.children).reduce<Record<string, string[]>>((acc, row: DepRow) => {
             if (row.data.dep) {
-                const shouldSupportCache = this.shouldSupportCaching(row.data.lang, row.data.dep);
-
                 if (row.data.cache) {
                     // Remove ?nocache if present
                     row.data.dep = row.data.dep.endsWith("?nocache") ? row.data.dep.substr(0, row.data.dep.length - "?nocache".length) : row.data.dep;
-                } else if (shouldSupportCache) {
+                } else if (this.shouldSupportCaching(row.data.lang, row.data.dep)) {
                     // Only add ?nocache for HTTP/HTTPS URLs or pip dependencies
                     row.data.dep = row.data.dep.endsWith("?nocache") ? row.data.dep : row.data.dep + "?nocache";
                 }
