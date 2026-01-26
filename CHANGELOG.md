@@ -1,3 +1,12 @@
+# 0.7.2 (TBD)
+
+**Improvements:**
+- Restrict dependency caching to HTTP/HTTPS URLs only #1485
+  - The cache option now only applies to HTTP/HTTPS URLs and pip dependencies
+  - Other URL schemes (s3://, file://, etc.) no longer support the cache toggle
+  - The advanced cache options UI is now only shown for dependencies that support caching
+  - Updated documentation to reflect the caching behavior changes
+
 # 0.7.1 (TBD)
 This release adds support for Apache Spark 3.5 alongside Spark 3.3, upgrades to Java 17 runtime, and includes Python 3.10 compatibility fixes.
 
