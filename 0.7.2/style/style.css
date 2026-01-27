@@ -1,0 +1,250 @@
+@import url('https://fonts.googleapis.com/css?family=Raleway:400,400i,700,700i&display=swap');
+
+body {
+    font-size: 12pt;
+    line-height: 1.4;
+}
+
+.home {
+    font-family: 'Raleway', Helvetica, Arial, sans-serif;
+}
+
+#Home #Splash {
+    font-size: 200%;
+    text-align: center;
+    padding-top: 5em;
+}
+
+#Home #Splash h1 {
+    font-weight: 400;
+    font-size: 150%;
+}
+
+#Home #Splash h1 .scala {
+    color: #e50914;
+}
+
+#Home #Splash h2 {
+    font-weight: 400;
+    font-size: 60%;
+    text-transform: uppercase;
+    color: #888888;
+    letter-spacing: .3em;
+    margin: 2.1em 0;
+}
+
+#Home #Splash .heart {
+    color: pink;
+}
+
+#Home h3 {
+    font-size: 40%;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: .3em;
+    margin: 3.15em 0;
+    line-height: 4em;
+}
+
+#Home h3 a {
+    padding: 1em 2em;
+    border: 1px solid #888888;
+    border-radius: .5em;
+    color: #888888;
+    text-decoration: none;
+}
+
+#Home h3 a:hover {
+    background: black;
+    color: white;
+    border-color: black;
+}
+
+#Home .screenshot{
+    /* this thing lovingly lifted from Hydra: https://github.com/CloudCannon/hydra-jekyll-template */
+    max-width: 100%;
+    height: auto;
+    display: block;
+    box-shadow: 0 1px 0 #888, 0 1px 0 1px #ccc;
+    border-radius: 2px;
+    margin-left: auto;
+    margin-right: auto;
+    background: #DDD url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2244%22%20height%3D%2212%22%20viewBox%3D%220%200%2044%2012%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%226%22%20r%3D%224%22%20fill%3D%22%23eee%22%20%2F%3E%3Ccircle%20cx%3D%2222%22%20cy%3D%226%22%20r%3D%224%22%20fill%3D%22%23eee%22%20%2F%3E%3Ccircle%20cx%3D%2238%22%20cy%3D%226%22%20r%3D%224%22%20fill%3D%22%23eee%22%20%2F%3E%3C%2Fsvg%3E') 4px 4px no-repeat;
+    padding: 20px 0 0 0;
+    position: relative;
+}
+
+#Features {
+    max-width: 64em;
+    margin: 3em auto;
+}
+
+#Features section {
+    margin: 2em 0;
+}
+
+#Features section h2 {
+    font-size: 112%;
+    border-bottom: 1px solid #DDDDDD;
+}
+
+.feature-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.feature-row .feature-item {
+    font-size: 83%;
+    color: #444444;
+    padding-left: 1em;
+    border-left: 1px solid #eaeaea;
+    display: grid;
+    grid-column-gap: 1em;
+    grid-template-areas: 'image description';
+    grid-template-columns: 294px 1fr;
+    padding-top: 1em;
+    padding-bottom: 1em;
+}
+
+.feature-row .feature-item:first-child {
+    border-left: none;
+    padding-left: 0;
+    padding-right: 1em;
+    grid-template-areas: 'description image';
+    grid-template-columns: 1fr 294px;
+}
+
+.feature-item .feature-image {
+    grid-area: image;
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    opacity: 0.5;
+}
+
+.feature-item:hover .feature-image {
+    opacity: 1;
+}
+
+.feature-image img {
+    border: 1px solid #DDDDDD;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.feature-item .feature-desc {
+    grid-area: description;
+    justify-content: center;
+    display: flex;
+    flex-direction: column;
+}
+
+/*.feature-row p:nth-child(2) img {
+    float: left;
+    margin-right: 1em;
+}*/
+
+/*
+#Features section p:nth-of-type(2n + 1) {
+    clear: both;
+    float: left;
+}
+
+#Features section p:nth-of-type(2n) {
+    float: right;
+}
+
+#Features section p:nth-of-type(2n) img {
+    float: left;
+    margin-right: 2em;
+}
+
+#Features section p:nth-of-type(2n + 1) img {
+    float: right;
+    margin-left: 2em;
+}*/
+
+section.page-content, section.post-content {
+    max-width: 60em;
+}
+
+.page-content p, .post-content p {
+    hyphens: auto;
+}
+
+.page-content h1, .post-content h1 {
+    font-size: 180%;
+}
+
+.post-content {
+    max-width: 60em;
+}
+
+.page-content p img, .post-content p img {
+    max-width: 100%;
+}
+
+pre.highlight {
+    background: #f3f3f3;
+    border: 1px solid #cccccc;
+    padding: 1em;
+    border-radius: .5em;
+}
+
+p code {
+    padding: .25em .5em;
+    border: 1px solid #cccccc;
+    border-radius: .25em;
+    background-color: #f3f3f3;
+}
+
+.md-tabs__link {
+    margin-top: 0.4rem;
+}
+
+.md-tabs__item {
+    height: 2rem;
+}
+
+.md-logo img {
+    width: unset !important;
+    height: 2rem !important;
+}
+
+/* Hide the title since the logo already says 'Polynote' */
+.md-header__title .md-ellipsis {
+    display: none;
+}
+
+.num {
+    font-size: x-large;
+    line-height: 0;
+    vertical-align: middle;
+    color: red;
+}
+
+.md-header {
+    z-index: 10; /* header should float above. */
+}
+
+.ff-overlay {
+    z-index: 2 !important; /* the freezeframe library CSS has a z-index of 100 for some reason which messes with other things */
+}
+
+.centered-image, .ff-image {
+    /* center small images on screen */
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.ff-canvas {
+    /* center the freezeframe canvas to match the image*/
+    right: 0;
+    margin: auto;
+}
+
+.inline-image {
+    height: 1.5em !important;
+    vertical-align: middle;
+}
