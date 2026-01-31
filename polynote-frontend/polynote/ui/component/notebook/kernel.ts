@@ -123,6 +123,7 @@ export class Kernel extends Disposable {
             span(['left-buttons'], [
                 helpIconButton([], "https://polynote.org/latest/docs/kernel-pane/"),
             ]),
+            span(['middle-area'], ""),
             span(['right-buttons'], [
                 iconButton(['connect'], 'Connect to server', 'plug', 'Connect').click(evt => this.connect(evt)),
                 iconButton(['start'], 'Start kernel', 'power-off', 'Start').click(evt => this.startKernel(evt)),
