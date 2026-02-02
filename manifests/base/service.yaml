@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: service
+spec:
+  selector:
+    app: polynote
+  type: LoadBalancer
+  ports:
+  - protocol: TCP
+    port: 8192
+    targetPort: 8192
